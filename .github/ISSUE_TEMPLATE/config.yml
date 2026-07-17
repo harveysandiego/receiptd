@@ -1,0 +1,6 @@
+# url below assumes github.com/harveysandiego/receiptd — update if forked/renamed.
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question / get help
+    url: https://github.com/harveysandiego/receiptd/discussions
+    about: For usage questions and general discussion, please use GitHub Discussions rather than an issue.

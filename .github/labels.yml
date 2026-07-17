@@ -1,0 +1,64 @@
+# Canonical label set for this repository, synced by
+# .github/workflows/labels.yml (crazy-max/ghaction-github-labeler).
+# Edit this file rather than editing labels in the GitHub UI directly —
+# UI-only changes will be overwritten on the next sync.
+
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working as documented
+
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or request
+
+- name: documentation
+  color: "0075ca"
+  description: Improvements or corrections to documentation
+
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+
+- name: "good first issue"
+  color: "7057ff"
+  description: Good for newcomers to the project
+
+- name: "help wanted"
+  color: "008672"
+  description: Extra attention or a second pair of hands would help
+
+- name: "breaking change"
+  color: "b60205"
+  description: Changes the public API, REST contract, or Receipt schema
+
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+- name: dependencies
+  color: "0366d6"
+  description: Dependency updates (Dependabot)
+
+- name: go
+  color: "00add8"
+  description: Go module dependency updates
+
+- name: ci
+  color: "fbca04"
+  description: Continuous integration / GitHub Actions
+
+- name: docker
+  color: "2496ed"
+  description: Docker image / Dockerfile changes
+
+- name: security
+  color: "b60205"
+  description: Security-relevant issue or fix

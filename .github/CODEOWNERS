@@ -1,0 +1,10 @@
+# @harveysandiego below must be a real GitHub username/team with access to
+# this repo — update it if ownership changes.
+
+# Default owner for everything not matched below.
+* @harveysandiego
+
+# Architectural documents get an owner review by default — see
+# CONTRIBUTING.md's "How architectural changes should be proposed".
+/docs/ARCHITECTURE.md @harveysandiego
+/docs/adr/ @harveysandiego

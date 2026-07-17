@@ -1,0 +1,46 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test / coverage output
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go build cache / vendor (module-based, not vendored by default)
+/vendor/
+
+# Local job queue / asset data (runtime state, never committed)
+*.db
+*.bolt
+/data/
+
+# Local config overrides
+config.local.yml
+config.local.yaml
+.env
+.env.*
+
+# IDE / editor
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# goreleaser local dry-run output
+/dist/
+
+# Pre-commit
+.pre-commit-cache/

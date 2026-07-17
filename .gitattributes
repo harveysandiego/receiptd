@@ -1,0 +1,33 @@
+# Normalize line endings for everyone regardless of OS/editor.
+* text=auto eol=lf
+
+*.go text eol=lf diff=golang
+go.mod text eol=lf
+go.sum text eol=lf -diff
+*.md  text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Binary / generated assets — never diff, never line-ending-normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.db binary
+
+# Treat golden test fixtures as binary so git never rewrites bytes we're
+# asserting on in render/canvas and render/escpos golden tests. Scoped to
+# actual fixture extensions, not the whole testdata/ tree, so README.md
+# placeholders in testdata/ (see internal/render/canvas/testdata/,
+# internal/render/escpos/testdata/) still diff and normalize normally.
+/**/testdata/**/*.golden -text -diff
+/**/testdata/**/*.bin -text -diff
+
+# Let GitHub's linguist know generated/vendored paths shouldn't count
+# towards the repo's language statistics or show up in diffs by default.
+web/static/** linguist-generated=true

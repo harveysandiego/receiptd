@@ -1,0 +1,17 @@
+{
+  "name": "receiptd",
+  "image": "mcr.microsoft.com/devcontainers/go:1-bookworm",
+  "postCreateCommand": "make install-tools",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go", "editorconfig.editorconfig"],
+      "settings": {
+        "go.lintTool": "golangci-lint",
+        "go.formatTool": "goimports"
+      }
+    }
+  },
+  "remoteEnv": {
+    "CGO_ENABLED": "0"
+  }
+}

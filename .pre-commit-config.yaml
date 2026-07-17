@@ -1,0 +1,47 @@
+# Fast, local checks that mirror the start of CI so obvious mistakes never
+# reach a PR. Install with: pre-commit install
+# See CONTRIBUTING.md for setup instructions.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^.*/testdata/
+      - id: end-of-file-fixer
+        exclude: ^.*/testdata/
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: sh -c 'out=$(gofmt -l "$@"); [ -z "$out" ] || { echo "$out"; exit 1; }' --
+        language: system
+        types: [go]
+        pass_filenames: true
+
+      - id: goimports
+        name: goimports
+        entry: sh -c 'out=$(goimports -l "$@"); [ -z "$out" ] || { echo "$out"; exit 1; }' --
+        language: system
+        types: [go]
+        pass_filenames: true
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run
+        language: system
+        types: [go]
+        pass_filenames: false

@@ -1,0 +1,102 @@
+version: 2
+
+project_name: receiptd
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: receiptd
+    main: ./cmd/receiptd
+    binary: receiptd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: receipt
+    main: ./cmd/receipt
+    binary: receipt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    ids:
+      - receiptd
+      - receipt
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - docs/ARCHITECTURE.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  # No `github: {owner, name}` block here on purpose — GoReleaser infers
+  # the repository from the `origin` git remote at release time, so this
+  # file doesn't need updating if the repo is ever forked or renamed.
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Verifying a release
+
+    Checksums are published in `checksums.txt` alongside each release.
+
+    Docker images are not yet published (planned for Milestone 5) — see
+    docs/ARCHITECTURE.md for the roadmap.

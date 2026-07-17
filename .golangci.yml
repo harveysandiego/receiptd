@@ -1,0 +1,69 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - bodyclose
+    - contextcheck
+    - errorlint
+
+    # Style / maintainability, chosen to reinforce the architecture doc's
+    # own principles (small interfaces, no unnecessary complexity).
+    - unconvert
+    - unparam
+    - misspell
+    - revive
+    - gocritic
+    - nolintlint
+    - copyloopvar
+    - dupl
+    - goconst
+
+  settings:
+    errorlint:
+      # apperr.Error wraps causes via Unwrap(); require errors.Is/As
+      # instead of == or type assertions, everywhere in the codebase.
+      errorf: true
+    dupl:
+      threshold: 150
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+        - name: package-comments
+          disabled: false
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+
+  exclusions:
+    rules:
+      # Table-driven tests routinely duplicate setup shape; that's fine.
+      - path: _test\.go
+        linters:
+          - dupl
+          - goconst
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Must match the module path in go.mod exactly — update both
+      # together if this repo is ever forked or renamed.
+      local-prefixes:
+        - github.com/harveysandiego/receiptd
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
