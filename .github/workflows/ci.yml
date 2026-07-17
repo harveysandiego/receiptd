@@ -48,7 +48,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - uses: golangci/golangci-lint-action@v6
+      # v7+ required: .golangci.yml uses the v2 config schema, and only
+      # golangci-lint-action v7+ installs golangci-lint v2 (v6 and earlier
+      # only understand the v1 config format/binary).
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
