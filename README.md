@@ -12,7 +12,6 @@ appliance on your home network.
 [![CI](https://github.com/harveysandiego/receiptd/actions/workflows/ci.yml/badge.svg)](https://github.com/harveysandiego/receiptd/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/harveysandiego/receiptd.svg)](https://pkg.go.dev/github.com/harveysandiego/receiptd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/harveysandiego/receiptd)](https://goreportcard.com/report/github.com/harveysandiego/receiptd)
 
 > **Status:** pre-alpha, architecture-complete, implementation starting.
 > See [Current status](#current-status) before trying to run this.
@@ -69,12 +68,12 @@ other end. No client anywhere needs to know what an ESC/POS command is.
 
 ```
         ┌─────────┐   ┌──────────┐   ┌──────────┐
-JSON ──▶│         │   │          │   │          │
-Markdown│ Receipt │──▶│  Layout  │──▶│  Canvas  │──▶ ESC/POS ──▶ Printer
+JSON ──>│         │   │          │   │          │
+Markdown│ Receipt │──>│  Layout  │──>│  Canvas  │──> ESC/POS ──> Printer
 Template│ (model) │   │(measure) │   │ (paint)  │        │
-        └─────────┘   └──────────┘   └────┬─────┘        └─▶ Async job queue
+        └─────────┘   └──────────┘   └────┬─────┘        └─> Async job queue
                                            │                  (retry, persist)
-                                           ▼
+                                           v
                                      PNG preview
 ```
 
