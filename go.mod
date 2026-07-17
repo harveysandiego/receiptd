@@ -13,4 +13,6 @@ module github.com/harveysandiego/receiptd
 // Bump this only when the *previous* stable release changes (i.e. once
 // every ~6 months, together with the CI matrix), not on every new Go
 // release.
-go 1.25
+go 1.25.0
+
+require golang.org/x/image v0.44.0
