@@ -1,17 +1,20 @@
-// Command receiptd is Receiptd's composition root: it loads
-// configuration, constructs printer.Connections and turns them into
-// printer.Printer instances, registers templates and providers via blank
-// imports, wires up app.Service, and starts the queue worker and HTTP
+// Command receiptd is Receiptd's composition root. As of Milestone 2 it
+// loads configuration, constructs the configured queue Store, wires up
+// app.Service (with a log-file stand-in for a real printer), registers
+// the versioned API routes, applies Bearer-token middleware when
+// configured, and starts the background queue worker alongside the HTTP
 // server.
 //
-// It is the only place in the entire codebase that ever constructs a
-// printer.Connection — see docs/ARCHITECTURE.md §1.
-//
-// No functionality is implemented yet; this is a build/test skeleton
-// ahead of Milestone 1. See docs/ARCHITECTURE.md for the roadmap.
+// It will also become the only place in the codebase that ever
+// constructs a printer.Connection, once Milestone 3 adds a real printer
+// transport — see docs/ARCHITECTURE.md §1.
 package main
 
-import "fmt"
+import (
+	"flag"
+	"fmt"
+	"os"
+)
 
 // version, commit, and date are overridden via -ldflags at build time by
 // .goreleaser.yml (main.version, main.commit, main.date); they keep
@@ -23,5 +26,19 @@ var (
 )
 
 func main() {
-	fmt.Printf("receiptd %s (commit %s, built %s) — not yet implemented\n", version, commit, date)
+	configPath := flag.String("config", "/etc/receiptd/config.yaml", "path to Receiptd's YAML configuration file")
+	flag.Parse()
+
+	fmt.Printf("receiptd %s (commit %s, built %s)\n", version, commit, date)
+
+	d, err := loadAndBuild(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "receiptd: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := d.serve(); err != nil {
+		fmt.Fprintf(os.Stderr, "receiptd: %v\n", err)
+		os.Exit(1)
+	}
 }
