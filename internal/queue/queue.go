@@ -10,17 +10,22 @@ import (
 )
 
 // Queue accepts Jobs for asynchronous printing, persists them via a Store,
-// and processes them with a Processor. Retries, backoff and cancellation
-// are not implemented by this slice — see docs/ARCHITECTURE.md §2.
+// and processes them with a Processor, retrying apperr.KindTransient
+// failures with bounded exponential backoff (see ProcessNext) and
+// supporting cancellation of still-Pending Jobs (see Cancel).
 type Queue struct {
 	store     Store
 	processor Processor
+	// sleep is called between retry attempts; it's a field rather than a
+	// direct time.Sleep call so tests can inject a non-blocking stub
+	// instead of waiting out real backoff delays.
+	sleep func(time.Duration)
 }
 
 // New returns a Queue that persists Jobs via store and processes them with
 // processor.
 func New(store Store, processor Processor) *Queue {
-	return &Queue{store: store, processor: processor}
+	return &Queue{store: store, processor: processor, sleep: time.Sleep}
 }
 
 // Enqueue assigns j a new ID, sets its State to JobPending, stamps
