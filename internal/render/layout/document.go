@@ -22,8 +22,18 @@ type Block struct {
 
 // Document is the fully positioned, printer-agnostic intermediate
 // representation between a Receipt and a Canvas: an ordered list of
-// Blocks. render/canvas.Paint consumes a Document without ever touching
-// a receipt.Receipt again — see docs/ARCHITECTURE.md §2, §4.
+// Blocks plus the Font they were measured against. render/canvas.Paint
+// consumes a Document without ever touching a receipt.Receipt again —
+// see docs/ARCHITECTURE.md §2, §4.
+//
+// Font is carried here, rather than passed separately to each stage that
+// needs it, so Build's measurements and Paint's painted glyphs can never
+// silently come from different Font instances. WidthDots and HeightDots
+// from the frozen Document (ARCHITECTURE.md §2) are not yet present:
+// nothing in this codebase threads a printer.Profile through Build yet,
+// so there's no value to put there and no second use to justify adding
+// them ahead of that.
 type Document struct {
 	Blocks []Block
+	Font   Font
 }

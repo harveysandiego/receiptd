@@ -18,6 +18,17 @@ func TestBuild_EmptyReceipt(t *testing.T) {
 	}
 }
 
+func TestBuild_DocumentCarriesFont(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc, err := layout.Build(receipt.Receipt{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Font != layout.Font(f) {
+		t.Errorf("doc.Font = %v, want %v", doc.Font, f)
+	}
+}
+
 func TestBuild_OneText(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Milk"},

@@ -8,7 +8,10 @@ import (
 )
 
 // Build turns r into a Document: each receipt.Text becomes one Block,
-// stacked top to bottom in Receipt order, each Y advancing by f.LineHeight().
+// stacked top to bottom in Receipt order, each Y advancing by
+// f.LineHeight(). The returned Document carries f, so every later stage
+// (e.g. render/canvas.Paint) measures and paints against the same Font
+// Build used.
 //
 // This is an early, partial implementation of the Build described in
 // docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context,
@@ -28,5 +31,5 @@ func Build(r receipt.Receipt, f Font) (Document, error) {
 		blocks = append(blocks, Block{Y: y, Element: text})
 		y += f.LineHeight()
 	}
-	return Document{Blocks: blocks}, nil
+	return Document{Blocks: blocks, Font: f}, nil
 }
