@@ -23,17 +23,22 @@ func (p *noopProcessor) Process(_ context.Context, _ *queue.Job) error {
 	return nil
 }
 
-// fakeStore is a queue.Store test double that returns saveErr from Save,
-// letting tests observe how Service.Print propagates a Store failure
-// without needing a real Store implementation.
+// fakeStore is a queue.Store test double that returns saveErr from Save and
+// either getJob or getErr from Get, letting tests observe how Service
+// propagates a Store failure without needing a real Store implementation.
 type fakeStore struct {
 	saveErr error
+	getJob  *queue.Job
+	getErr  error
 }
 
 func (f *fakeStore) Save(_ context.Context, _ *queue.Job) error { return f.saveErr }
 
 func (f *fakeStore) Get(_ context.Context, _ string) (*queue.Job, error) {
-	return nil, nil
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.getJob, nil
 }
 
 func (f *fakeStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job, error) {
