@@ -41,8 +41,14 @@ func NewPrintHandler(svc printService) *PrintHandler {
 }
 
 func (h *PrintHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
 	var req printRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if isBodyTooLarge(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, err)
+			return
+		}
 		writeError(w, statusForError(err, http.StatusBadRequest), err)
 		return
 	}

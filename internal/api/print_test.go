@@ -136,6 +136,27 @@ func TestPrintHandler_MalformedReceiptElement_ReturnsBadRequest(t *testing.T) {
 	}
 }
 
+func TestPrintHandler_BodyTooLarge_ReturnsRequestEntityTooLarge(t *testing.T) {
+	svc := &fakePrintService{}
+	h := api.NewPrintHandler(svc)
+
+	// A large, unterminated JSON string literal: syntactically valid so far
+	// as the decoder can tell, so it keeps reading content bytes (rather
+	// than failing fast on a syntax error) until MaxBytesReader cuts it off.
+	body := append([]byte(`{"printer":"front-desk","receipt":{"elements":[{"type":"text","content":"`), bytes.Repeat([]byte("a"), 10<<20+1)...)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if svc.calls != 0 {
+		t.Errorf("Service.Print called %d times, want 0 for an oversized body", svc.calls)
+	}
+}
+
 func TestPrintHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 	tests := []struct {
 		name string

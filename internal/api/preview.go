@@ -32,8 +32,14 @@ func NewPreviewHandler(svc previewService) *PreviewHandler {
 }
 
 func (h *PreviewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
 	var rcpt receipt.Receipt
 	if err := json.NewDecoder(r.Body).Decode(&rcpt); err != nil {
+		if isBodyTooLarge(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, err)
+			return
+		}
 		writeError(w, statusForError(err, http.StatusBadRequest), err)
 		return
 	}

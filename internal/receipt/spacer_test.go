@@ -16,6 +16,8 @@ func TestSpacerValidate(t *testing.T) {
 		{"zero value", receipt.Spacer{}, false},
 		{"positive height", receipt.Spacer{Height: 20}, false},
 		{"negative height", receipt.Spacer{Height: -1}, true},
+		{"height at the max", receipt.Spacer{Height: 10000}, false},
+		{"height over the max", receipt.Spacer{Height: 10001}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

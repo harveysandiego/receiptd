@@ -138,6 +138,61 @@ func TestLoad_Success(t *testing.T) {
 	}
 }
 
+func TestLoad_AuthSectionOmitted_DefaultsEnabledTrue(t *testing.T) {
+	yaml := `
+queue:
+  store: bbolt
+  max_attempts: 3
+  retry_backoff: 5s
+
+printers:
+  - name: default
+    transport: network
+    address: 192.168.1.50:9100
+    width_mm: 80
+    dpi: 203
+    default_cut: partial
+`
+	path := writeConfig(t, yaml)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if !cfg.Auth.Enabled {
+		t.Error("Auth.Enabled = false, want true (auth must default on when the auth: section is omitted)")
+	}
+}
+
+func TestLoad_AuthExplicitlyDisabled_StaysDisabled(t *testing.T) {
+	yaml := `
+auth:
+  enabled: false
+
+queue:
+  store: bbolt
+  max_attempts: 3
+  retry_backoff: 5s
+
+printers:
+  - name: default
+    transport: network
+    address: 192.168.1.50:9100
+    width_mm: 80
+    dpi: 203
+    default_cut: partial
+`
+	path := writeConfig(t, yaml)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if cfg.Auth.Enabled {
+		t.Error("Auth.Enabled = true, want false (an explicit auth.enabled: false must still be honored)")
+	}
+}
+
 func TestLoad_FileNotFound(t *testing.T) {
 	_, err := config.Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
 	if err == nil {

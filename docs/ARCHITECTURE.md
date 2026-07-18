@@ -623,6 +623,13 @@ convenience — `config` is the one place that splits it into the
 `printer.Profile` and `printer.Connection` Go values, matching the "one
 config file, two internal types" trade-off described in §1.
 
+`auth.enabled` defaults to `true` if the `auth:` block is omitted from the
+document entirely, or present without an `enabled:` key — the API must
+never exist unsecured by omission. Only an explicit `enabled: false` opts
+out; `config.Config`'s custom `UnmarshalYAML` implements this by
+pre-populating the default before decoding, the standard yaml.v3 idiom for
+telling "absent" apart from "explicitly zero".
+
 ---
 
 ## 8. Extension model

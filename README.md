@@ -13,7 +13,8 @@ appliance on your home network.
 [![Go Reference](https://pkg.go.dev/badge/github.com/harveysandiego/receiptd.svg)](https://pkg.go.dev/github.com/harveysandiego/receiptd)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status:** pre-alpha, architecture-complete, implementation starting.
+> **Status:** pre-alpha. Milestones 1–2 (local render, REST API + queue +
+> auth) are implemented and tested; there is no real printer support yet.
 > See [Current status](#current-status) before trying to run this.
 
 ---
@@ -121,10 +122,16 @@ philosophy, and the reasoning behind each decision, lives in
 
 Receiptd's architecture is frozen (see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11) and implementation is
-starting, milestone by milestone, using test-driven development. There is
-no working release yet. Track progress via the [roadmap](#roadmap) below
-and the [milestones](https://github.com/harveysandiego/receiptd/milestones)
-on GitHub. See [VERSIONING.md](VERSIONING.md) and
+proceeding milestone by milestone, using test-driven development.
+Milestones 1 and 2 are done: the `receipt`/`render` pipeline, the REST API
+(`preview`, `print`, job status), the persistent job queue, Bearer-token
+auth (on by default; Basic auth exists in `auth` too, ready for
+Milestone 4's Web UI), and a CLI that talks to the API. Printing still
+writes to a log file rather than a real printer — that's Milestone 3.
+There is no working release yet. Track progress via the
+[roadmap](#roadmap) below and the
+[milestones](https://github.com/harveysandiego/receiptd/milestones) on
+GitHub. See [VERSIONING.md](VERSIONING.md) and
 [CHANGELOG.md](CHANGELOG.md) for how releases are numbered and tracked.
 
 ## Installation
@@ -171,21 +178,24 @@ service or via Docker exactly as above — either works well on a Pi 3/4/5.
 ## CLI examples
 
 ```sh
-# Print plain text
-receipt "Milk, eggs, bread"
-
-# Print a JSON Receipt document
-receipt render receipt.json --print
-
-# Render a Receipt to a local PNG without printing (no daemon required)
+# Render a Receipt to a local PNG, offline — no daemon required
 receipt render receipt.json --out preview.png
 
-# Print via the weather template
-receipt weather --location "London"
+# Preview a Receipt as a PNG via a running receiptd
+receipt preview receipt.json --out preview.png
+
+# Print a Receipt via a running receiptd
+receipt print receipt.json --printer front-desk
 
 # Check a job's status
-receipt jobs status <job-id>
+receipt jobs <job-id>
 ```
+
+`preview`, `print`, and `jobs` read the same `config.yaml` `receiptd`
+loads (`--config`, default `/etc/receiptd/config.yaml`) to find the daemon
+and its Bearer token; `render` is fully offline and ignores `--config`.
+Plain-text printing and the weather template (`receipt weather ...`) are
+planned for later milestones — see the [roadmap](#roadmap).
 
 ## REST API examples
 
@@ -206,22 +216,20 @@ curl -X POST http://receiptd.local:8080/api/v1/print \
 # Check job status
 curl http://receiptd.local:8080/api/v1/jobs/<job-id> \
   -H "Authorization: Bearer $RECEIPTD_TOKEN"
-
-# Weather template — build, preview, or print directly
-curl -X POST http://receiptd.local:8080/api/v1/templates/weather \
-  -H "Authorization: Bearer $RECEIPTD_TOKEN"
-curl -X POST http://receiptd.local:8080/api/v1/templates/weather/print \
-  -H "Authorization: Bearer $RECEIPTD_TOKEN"
 ```
+
+Template-backed convenience endpoints (e.g. `/api/v1/templates/weather`)
+are planned for Milestone 6 and don't exist yet — see the
+[roadmap](#roadmap).
 
 ## Roadmap
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#10-roadmap) for full
 detail on each milestone's scope.
 
-- [ ] **Milestone 1** — Local render, no server (`receipt`, `apperr`,
+- [x] **Milestone 1** — Local render, no server (`receipt`, `apperr`,
       `render/layout`, `render/canvas`, offline CLI preview)
-- [ ] **Milestone 2** — REST API, job queue, auth (fake printer sink)
+- [x] **Milestone 2** — REST API, job queue, auth (fake printer sink)
 - [ ] **Milestone 3** — Real printer support (ESC/POS encoding, network
       transport, remaining Element types) — first physical print
 - [ ] **Milestone 4** — Web UI

@@ -128,6 +128,27 @@ func TestPreviewHandler_MalformedReceiptElement_ReturnsBadRequest(t *testing.T) 
 	}
 }
 
+func TestPreviewHandler_BodyTooLarge_ReturnsRequestEntityTooLarge(t *testing.T) {
+	svc := &fakePreviewService{}
+	h := api.NewPreviewHandler(svc)
+
+	// A large, unterminated JSON string literal: syntactically valid so far
+	// as the decoder can tell, so it keeps reading content bytes (rather
+	// than failing fast on a syntax error) until MaxBytesReader cuts it off.
+	body := append([]byte(`{"elements":[{"type":"text","content":"`), bytes.Repeat([]byte("a"), 10<<20+1)...)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if svc.calls != 0 {
+		t.Errorf("Service.Preview called %d times, want 0 for an oversized body", svc.calls)
+	}
+}
+
 func TestPreviewHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 	tests := []struct {
 		name string

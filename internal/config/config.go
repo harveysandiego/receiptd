@@ -100,6 +100,23 @@ type WebConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+// UnmarshalYAML decodes a Config with Auth.Enabled defaulting to true
+// before any of the document's own keys are applied. The API must never
+// exist unsecured by omission (docs/ARCHITECTURE.md §10): whether the
+// document has no auth: section at all, or an auth: section that just
+// doesn't mention "enabled", the pre-set default survives, since Decode
+// only overwrites the fields the document actually specifies. Only an
+// explicit "enabled: false" turns auth off.
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
+	type alias Config
+	aux := alias{Auth: AuthConfig{Enabled: true}}
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+	*c = Config(aux)
+	return nil
+}
+
 // Load reads and parses the YAML configuration file at path, then
 // validates it against Config.Validate. A missing file is reported as
 // apperr.KindNotFound; any other read failure (e.g. permission denied) as
