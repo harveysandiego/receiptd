@@ -190,6 +190,48 @@ func TestPaint_HeadingAndTextBlocks_PreservesOrder(t *testing.T) {
 	assertGlyphPainted(t, c, lh, bmpB)
 }
 
+func TestPaint_OneSpacerBlock_ProducesBlankCanvasOfHeight(t *testing.T) {
+	doc := layout.Document{
+		Font: layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Spacer{Height: 20}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 0 {
+		t.Errorf("c.Width = %d, want 0", c.Width)
+	}
+	if c.Height != 20 {
+		t.Errorf("c.Height = %d, want 20", c.Height)
+	}
+	if len(c.Bits) != 0 {
+		t.Errorf("len(c.Bits) = %d, want 0 (no glyphs painted)", len(c.Bits))
+	}
+}
+
+func TestPaint_SpacerAndTextBlocks_PreservesOrder(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Spacer{Height: 20}},
+			{Y: 20, Element: receipt.Text{Content: "A"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := 20 + f.LineHeight(); c.Height != want {
+		t.Errorf("c.Height = %d, want %d", c.Height, want)
+	}
+	bmp, _ := f.Glyph('A')
+	assertGlyphPainted(t, c, 20, bmp)
+}
+
 func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc := layout.Document{

@@ -9,9 +9,10 @@ import (
 )
 
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
-// order. Each Block occupies one line of height f.LineHeight(), starting
-// at its Y; the Canvas is sized to exactly fit the painted content. Only
-// receipt.Text and receipt.Heading elements are supported — any other
+// order. receipt.Text and receipt.Heading each occupy one line of height
+// f.LineHeight(), starting at their Y, and paint their Content as glyphs.
+// receipt.Spacer occupies its own Height (dots) of blank space and paints
+// nothing. The Canvas is sized to exactly fit this content. Any other
 // element type returns apperr.KindPermanent rather than being skipped or
 // given placeholder pixels. A Heading paints identically to a Text with
 // the same Content: see render/layout.Build's docstring for why its
@@ -32,14 +33,16 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := 0, 0
 	for _, b := range doc.Blocks {
-		content, ok := textContent(b.Element)
+		bh, ok := blockHeight(b.Element, f)
 		if !ok {
 			return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
 		}
-		if w := f.Measure(content); w > width {
-			width = w
+		if content, ok := textContent(b.Element); ok {
+			if w := f.Measure(content); w > width {
+				width = w
+			}
 		}
-		if bottom := b.Y + f.LineHeight(); bottom > height {
+		if bottom := b.Y + bh; bottom > height {
 			height = bottom
 		}
 	}
@@ -51,7 +54,10 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	}
 
 	for _, b := range doc.Blocks {
-		content, _ := textContent(b.Element) // already validated above
+		content, ok := textContent(b.Element)
+		if !ok {
+			continue // e.g. receipt.Spacer: blank space, no glyphs to paint
+		}
 		x := 0
 		for _, r := range content {
 			bmp, advance := f.Glyph(r)
@@ -64,7 +70,7 @@ func Paint(doc layout.Document) (*Canvas, error) {
 }
 
 // textContent returns el's text content if el is a receipt.Text or
-// receipt.Heading, the only two element types Paint currently supports.
+// receipt.Heading, the only two element types Paint paints glyphs for.
 func textContent(el receipt.Element) (string, bool) {
 	switch e := el.(type) {
 	case receipt.Text:
@@ -73,6 +79,20 @@ func textContent(el receipt.Element) (string, bool) {
 		return e.Content, true
 	default:
 		return "", false
+	}
+}
+
+// blockHeight returns el's vertical extent in dots if el is a supported
+// element type: f.LineHeight() for receipt.Text and receipt.Heading, or
+// its own Height for receipt.Spacer.
+func blockHeight(el receipt.Element, f layout.Font) (int, bool) {
+	switch e := el.(type) {
+	case receipt.Text, receipt.Heading:
+		return f.LineHeight(), true
+	case receipt.Spacer:
+		return e.Height, true
+	default:
+		return 0, false
 	}
 }
 

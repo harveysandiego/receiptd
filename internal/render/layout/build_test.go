@@ -165,6 +165,67 @@ func TestBuild_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	}
 }
 
+func TestBuild_OneSpacer(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Spacer{Height: 20},
+	}}
+	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Spacer{Height: 20}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Spacer{Height: 20}", doc.Blocks[0].Element)
+	}
+}
+
+func TestBuild_SpacerAdvancesYByOwnHeight_NotLineHeight(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Spacer{Height: 20},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
+	}
+	if doc.Blocks[1].Y != 20 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 20 (Spacer's own Height, not f.LineHeight() = %d)", doc.Blocks[1].Y, f.LineHeight())
+	}
+}
+
+func TestBuild_SpacerAndText_PreservesOrder(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Spacer{Height: 20},
+		receipt.Text{Content: "Eggs"},
+	}}
+	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Element != (receipt.Text{Content: "Milk"}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Text{Content: \"Milk\"}", doc.Blocks[0].Element)
+	}
+	if doc.Blocks[1].Element != (receipt.Spacer{Height: 20}) {
+		t.Errorf("doc.Blocks[1].Element = %v, want Spacer{Height: 20}", doc.Blocks[1].Element)
+	}
+	if doc.Blocks[2].Element != (receipt.Text{Content: "Eggs"}) {
+		t.Errorf("doc.Blocks[2].Element = %v, want Text{Content: \"Eggs\"}", doc.Blocks[2].Element)
+	}
+}
+
 func TestBuild_Deterministic(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Milk"},
