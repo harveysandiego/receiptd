@@ -37,23 +37,9 @@ const (
 // Job's retries, per call — there is no background looping or scheduling
 // across calls.
 func (q *Queue) ProcessNext(ctx context.Context) error {
-	// TODO: listing every Job and scanning for the first JobPending is a
-	// temporary implementation detail of the current in-memory Store, not a
-	// property of this design. Once a persistent Store (BoltDB) exists,
-	// Store should grow an operation for efficiently selecting the next
-	// pending Job, and this scan should be replaced with that. Deferred to a
-	// future slice — not an issue with ProcessNext as it stands today.
-	jobs, err := q.store.List(ctx, Filter{})
+	next, err := q.store.NextPending(ctx)
 	if err != nil {
 		return err
-	}
-
-	var next *Job
-	for _, j := range jobs {
-		if j.State == JobPending {
-			next = j
-			break
-		}
 	}
 	if next == nil {
 		return nil

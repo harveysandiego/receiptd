@@ -143,3 +143,7 @@ func (f *fakeCancelStore) Get(_ context.Context, _ string) (*queue.Job, error) {
 func (f *fakeCancelStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job, error) {
 	return nil, nil
 }
+
+func (f *fakeCancelStore) NextPending(_ context.Context) (*queue.Job, error) {
+	return nil, nil
+}

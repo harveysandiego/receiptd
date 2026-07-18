@@ -104,3 +104,31 @@ func (s *boltStore) List(_ context.Context, _ Filter) ([]*Job, error) {
 	}
 	return out, nil
 }
+
+// NextPending returns the first Job (by ID) with State == JobPending, or
+// nil if none exists. It walks the bucket's Cursor — already ID-ordered,
+// same as List — stopping at the first match instead of unmarshaling
+// every Job into a slice first, which is the whole reason this method
+// exists as its own Store operation rather than a caller-side scan over
+// List's result.
+func (s *boltStore) NextPending(_ context.Context) (*Job, error) {
+	var next *Job
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		c := tx.Bucket(jobsBucket).Cursor()
+		for _, data := c.First(); data != nil; _, data = c.Next() {
+			j := new(Job)
+			if err := json.Unmarshal(data, j); err != nil {
+				return err
+			}
+			if j.State == JobPending {
+				next = j
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, apperr.Wrap(apperr.KindPermanent, "queue.Store.NextPending", err)
+	}
+	return next, nil
+}

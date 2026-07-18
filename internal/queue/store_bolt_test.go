@@ -141,6 +141,58 @@ func TestBoltStore_Save_DoesNotAliasCallersJob(t *testing.T) {
 	}
 }
 
+func TestBoltStore_NextPending_ReturnsFirstPendingByID(t *testing.T) {
+	s := newTestBoltStore(t)
+	ctx := context.Background()
+	if err := s.Save(ctx, &Job{ID: "job-2", State: JobDone}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+	if err := s.Save(ctx, &Job{ID: "job-3", State: JobPending}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+	if err := s.Save(ctx, &Job{ID: "job-1", State: JobPending}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+
+	got, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("NextPending() = nil, want job-1")
+	}
+	if got.ID != "job-1" {
+		t.Errorf("NextPending().ID = %q, want %q", got.ID, "job-1")
+	}
+}
+
+func TestBoltStore_NextPending_NoPendingJobs_ReturnsNil(t *testing.T) {
+	s := newTestBoltStore(t)
+	ctx := context.Background()
+	if err := s.Save(ctx, &Job{ID: "job-1", State: JobDone}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+
+	got, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("NextPending() = %+v, want nil", got)
+	}
+}
+
+func TestBoltStore_NextPending_EmptyStore_ReturnsNil(t *testing.T) {
+	s := newTestBoltStore(t)
+	got, err := s.NextPending(context.Background())
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("NextPending() = %+v, want nil", got)
+	}
+}
+
 func TestBoltStore_SurvivesReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "queue.db")
 	ctx := context.Background()

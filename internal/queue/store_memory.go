@@ -52,3 +52,22 @@ func (s *memoryStore) List(_ context.Context, _ Filter) ([]*Job, error) {
 	sort.Slice(out, func(i, k int) bool { return out[i].ID < out[k].ID })
 	return out, nil
 }
+
+func (s *memoryStore) NextPending(_ context.Context) (*Job, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var next *Job
+	for _, j := range s.jobs {
+		if j.State != JobPending {
+			continue
+		}
+		if next == nil || j.ID < next.ID {
+			next = j
+		}
+	}
+	if next == nil {
+		return nil, nil
+	}
+	cp := *next
+	return &cp, nil
+}

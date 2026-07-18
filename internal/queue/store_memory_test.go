@@ -135,6 +135,80 @@ func TestMemoryStore_Save_DoesNotAliasCallersJob(t *testing.T) {
 	}
 }
 
+func TestMemoryStore_NextPending_ReturnsFirstPendingByID(t *testing.T) {
+	s := queue.NewMemoryStore()
+	ctx := context.Background()
+	if err := s.Save(ctx, &queue.Job{ID: "job-2", State: queue.JobDone}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+	if err := s.Save(ctx, &queue.Job{ID: "job-3", State: queue.JobPending}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+	if err := s.Save(ctx, &queue.Job{ID: "job-1", State: queue.JobPending}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+
+	got, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got == nil {
+		t.Fatal("NextPending() = nil, want job-1")
+	}
+	if got.ID != "job-1" {
+		t.Errorf("NextPending().ID = %q, want %q", got.ID, "job-1")
+	}
+}
+
+func TestMemoryStore_NextPending_NoPendingJobs_ReturnsNil(t *testing.T) {
+	s := queue.NewMemoryStore()
+	ctx := context.Background()
+	if err := s.Save(ctx, &queue.Job{ID: "job-1", State: queue.JobDone}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+
+	got, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("NextPending() = %+v, want nil", got)
+	}
+}
+
+func TestMemoryStore_NextPending_EmptyStore_ReturnsNil(t *testing.T) {
+	s := queue.NewMemoryStore()
+	got, err := s.NextPending(context.Background())
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("NextPending() = %+v, want nil", got)
+	}
+}
+
+func TestMemoryStore_NextPending_DoesNotAliasStoredJob(t *testing.T) {
+	s := queue.NewMemoryStore()
+	ctx := context.Background()
+	if err := s.Save(ctx, &queue.Job{ID: "job-1", State: queue.JobPending}); err != nil {
+		t.Fatalf("Save() error = %v, want nil", err)
+	}
+
+	got, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	got.State = queue.JobFailed
+
+	again, err := s.NextPending(ctx)
+	if err != nil {
+		t.Fatalf("NextPending() error = %v, want nil", err)
+	}
+	if again.State != queue.JobPending {
+		t.Errorf("NextPending().State = %v after mutating a previous result, want unchanged %v", again.State, queue.JobPending)
+	}
+}
+
 func TestMemoryStore_ConcurrentSaveAndGet(t *testing.T) {
 	s := queue.NewMemoryStore()
 	ctx := context.Background()

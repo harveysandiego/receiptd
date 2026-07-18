@@ -45,6 +45,10 @@ func (f *fakeStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job, error
 	return nil, nil
 }
 
+func (f *fakeStore) NextPending(_ context.Context) (*queue.Job, error) {
+	return nil, nil
+}
+
 func validReceipt() receipt.Receipt {
 	return receipt.Receipt{
 		Elements: []receipt.Element{receipt.Text{Content: "hello"}},

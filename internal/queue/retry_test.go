@@ -51,6 +51,17 @@ func (s *retryStore) Save(_ context.Context, j *Job) error {
 	return nil
 }
 
+func (s *retryStore) NextPending(_ context.Context) (*Job, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	if s.job == nil || s.job.State != JobPending {
+		return nil, nil
+	}
+	cp := *s.job
+	return &cp, nil
+}
+
 func (s *retryStore) Get(_ context.Context, id string) (*Job, error) {
 	if s.job == nil || s.job.ID != id {
 		return nil, apperr.Wrap(apperr.KindNotFound, "retryStore.Get", errors.New("not found"))
