@@ -19,6 +19,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/image v0.44.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
