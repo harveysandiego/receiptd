@@ -3,26 +3,41 @@ package app
 import (
 	"context"
 
+	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// Process renders j.Receipt via the existing rendering pipeline. It
-// satisfies queue.Processor (docs/ARCHITECTURE.md §2) and is invoked by
-// Queue.ProcessNext, which owns every Job state transition — Process
-// itself never reads or writes j.State, j.Attempts, or any other Job
-// field besides Receipt, and never touches a printer.
+// Process renders j.Receipt via the existing rendering pipeline and writes
+// the result to LogSink. It satisfies queue.Processor (docs/ARCHITECTURE.md
+// §2) and is invoked by Queue.ProcessNext, which owns every Job state
+// transition — Process itself never reads or writes j.State, j.Attempts,
+// or any other Job field besides Receipt.
 //
-// This slice ends at a rendered Canvas: no printer.Profile lookup,
-// escpos encoding, or printer.Printer exists yet to carry the result
-// further, so a successful render's Canvas is discarded here. See
-// render for the actual rendering step, and docs/ARCHITECTURE.md §4 for
-// the steps this Process will grow into.
+// This slice ends at LogSink, not a real printer: no printer.Profile
+// lookup, escpos encoding, or printer.Printer exists yet to carry the
+// result further (docs/ARCHITECTURE.md §10 — that's Milestone 3). LogSink
+// is Milestone 2's stand-in, written as PNG bytes via the same
+// canvas.EncodePNG call Preview uses, so there is exactly one encoding
+// path from a Canvas to bytes as well as one rendering path from a
+// Receipt to a Canvas.
 func (s *Service) Process(ctx context.Context, j *queue.Job) error {
-	_, err := s.render(j.Receipt)
-	return err
+	c, err := s.render(j.Receipt)
+	if err != nil {
+		return err
+	}
+
+	out, err := c.EncodePNG()
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.LogSink.Write(out); err != nil {
+		return apperr.Wrap(apperr.KindPermanent, "app.Process", err)
+	}
+	return nil
 }
 
 // render turns r into a rendered Canvas by composing the existing
