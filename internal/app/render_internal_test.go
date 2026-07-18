@@ -64,7 +64,7 @@ func TestService_render_ReceiptContentReachesRendererUnchanged(t *testing.T) {
 
 func TestService_render_UnsupportedElement_ReturnsPermanentError(t *testing.T) {
 	s := &Service{}
-	r := receipt.Receipt{Elements: []receipt.Element{receipt.Heading{Content: "unsupported"}}}
+	r := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}}
 
 	c, err := s.render(r)
 	if !apperr.Is(err, apperr.KindPermanent) {

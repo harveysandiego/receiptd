@@ -98,11 +98,59 @@ func TestBuild_PreservesElementOrder(t *testing.T) {
 
 func TestBuild_UnsupportedElementReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
-		receipt.Heading{Content: "Shopping List"},
+		receipt.Divider{Style: "solid"},
 	}}
 	_, err := layout.Build(r, layout.EmbeddedFont{})
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
+	}
+}
+
+func TestBuild_OneHeading(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Heading{Content: "Shopping List"},
+	}}
+	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Heading{Content: "Shopping List"}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Heading{Content: \"Shopping List\"}", doc.Blocks[0].Element)
+	}
+}
+
+func TestBuild_HeadingAndText_PreservesOrderAndAdvancesY(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Heading{Content: "Shopping List"},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
+	}
+
+	lh := f.LineHeight()
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Heading{Content: "Shopping List"}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Heading{Content: \"Shopping List\"}", doc.Blocks[0].Element)
+	}
+	if doc.Blocks[1].Y != lh {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d", doc.Blocks[1].Y, lh)
+	}
+	if doc.Blocks[1].Element != (receipt.Text{Content: "Milk"}) {
+		t.Errorf("doc.Blocks[1].Element = %v, want Text{Content: \"Milk\"}", doc.Blocks[1].Element)
 	}
 }
 

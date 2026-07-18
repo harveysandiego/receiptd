@@ -139,13 +139,55 @@ func TestPaint_UnsupportedElementReturnsPermanentError(t *testing.T) {
 	doc := layout.Document{
 		Font: layout.EmbeddedFont{},
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Heading{Content: "Shopping List"}},
+			{Y: 0, Element: receipt.Divider{Style: "solid"}},
 		},
 	}
 	_, err := canvas.Paint(doc)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Paint() error = %v, want apperr.KindPermanent", err)
 	}
+}
+
+func TestPaint_OneHeadingBlock_MatchesFontGlyph(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Heading{Content: "A"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("A"); c.Width != want {
+		t.Errorf("c.Width = %d, want %d", c.Width, want)
+	}
+	if want := f.LineHeight(); c.Height != want {
+		t.Errorf("c.Height = %d, want %d", c.Height, want)
+	}
+	bmp, _ := f.Glyph('A')
+	assertGlyphPainted(t, c, 0, bmp)
+}
+
+func TestPaint_HeadingAndTextBlocks_PreservesOrder(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	lh := f.LineHeight()
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Heading{Content: "A"}},
+			{Y: lh, Element: receipt.Text{Content: "B"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	bmpA, _ := f.Glyph('A')
+	bmpB, _ := f.Glyph('B')
+	assertGlyphPainted(t, c, 0, bmpA)
+	assertGlyphPainted(t, c, lh, bmpB)
 }
 
 func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {

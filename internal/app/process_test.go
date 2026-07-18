@@ -23,12 +23,13 @@ func TestService_Process_Success_ReturnsNilError(t *testing.T) {
 
 func TestService_Process_RenderingError_Propagates(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	// receipt.Heading is a valid Element (passes Validate) but is not yet
-	// supported by render/layout.Build, which only handles receipt.Text —
-	// this is the current pipeline's real error path, not a contrived one.
+	// receipt.Divider is a valid Element (passes Validate) but is not yet
+	// supported by render/layout.Build, which only handles receipt.Text and
+	// receipt.Heading — this is the current pipeline's real error path, not
+	// a contrived one.
 	j := &queue.Job{
 		PrinterName: "front-desk",
-		Receipt:     receipt.Receipt{Elements: []receipt.Element{receipt.Heading{Content: "unsupported"}}},
+		Receipt:     receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}},
 	}
 
 	err := s.Process(context.Background(), j)
