@@ -12,7 +12,7 @@ import (
 
 func TestQueue_Enqueue_PersistsJobInStore(t *testing.T) {
 	store := queue.NewMemoryStore()
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 	ctx := context.Background()
 	j := &queue.Job{PrinterName: "front-desk"}
 
@@ -31,7 +31,7 @@ func TestQueue_Enqueue_PersistsJobInStore(t *testing.T) {
 
 func TestQueue_Enqueue_SetsInitialState(t *testing.T) {
 	store := queue.NewMemoryStore()
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 	j := &queue.Job{State: queue.JobDone} // pre-set to a non-pending state
 
 	if err := q.Enqueue(context.Background(), j); err != nil {
@@ -44,7 +44,7 @@ func TestQueue_Enqueue_SetsInitialState(t *testing.T) {
 
 func TestQueue_Enqueue_SetsTimestamps(t *testing.T) {
 	store := queue.NewMemoryStore()
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 	j := &queue.Job{}
 
 	before := time.Now()
@@ -63,7 +63,7 @@ func TestQueue_Enqueue_SetsTimestamps(t *testing.T) {
 
 func TestQueue_Enqueue_GeneratesID(t *testing.T) {
 	store := queue.NewMemoryStore()
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 	j := &queue.Job{}
 
 	if err := q.Enqueue(context.Background(), j); err != nil {
@@ -76,7 +76,7 @@ func TestQueue_Enqueue_GeneratesID(t *testing.T) {
 
 func TestQueue_Enqueue_MultipleJobsGetDistinctIDs(t *testing.T) {
 	store := queue.NewMemoryStore()
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 	ctx := context.Background()
 
 	j1 := &queue.Job{}
@@ -96,7 +96,7 @@ func TestQueue_Enqueue_MultipleJobsGetDistinctIDs(t *testing.T) {
 func TestQueue_Enqueue_StoreErrorPropagates(t *testing.T) {
 	wantErr := apperr.Wrap(apperr.KindPermanent, "fakeStore.Save", errors.New("disk full"))
 	store := &fakeStore{saveErr: wantErr}
-	q := queue.New(store)
+	q := queue.New(store, &stubProcessor{})
 
 	err := q.Enqueue(context.Background(), &queue.Job{})
 	if !apperr.Is(err, apperr.KindPermanent) {

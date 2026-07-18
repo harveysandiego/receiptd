@@ -9,16 +9,18 @@ import (
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
 
-// Queue accepts Jobs for asynchronous printing and persists them via a
-// Store. Processing, retries, backoff and cancellation are not
-// implemented by this slice — see docs/ARCHITECTURE.md §2.
+// Queue accepts Jobs for asynchronous printing, persists them via a Store,
+// and processes them with a Processor. Retries, backoff and cancellation
+// are not implemented by this slice — see docs/ARCHITECTURE.md §2.
 type Queue struct {
-	store Store
+	store     Store
+	processor Processor
 }
 
-// New returns a Queue that persists Jobs via store.
-func New(store Store) *Queue {
-	return &Queue{store: store}
+// New returns a Queue that persists Jobs via store and processes them with
+// processor.
+func New(store Store, processor Processor) *Queue {
+	return &Queue{store: store, processor: processor}
 }
 
 // Enqueue assigns j a new ID, sets its State to JobPending, stamps
