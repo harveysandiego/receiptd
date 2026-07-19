@@ -10,13 +10,21 @@ import (
 
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
 // order. receipt.Text and receipt.Heading each occupy one line of height
-// f.LineHeight(), starting at their Y, and paint their Content as glyphs.
-// receipt.Spacer occupies its own Height (dots) of blank space and paints
-// nothing. Any other element type returns apperr.KindPermanent rather
-// than being skipped or given placeholder pixels. A Heading paints
-// identically to a Text with the same Content: see render/layout.Build's
-// docstring for why its documented "bold + large" styling isn't applied
-// yet.
+// f.LineHeight() * b.Style.Size, starting at their Y, and paint their
+// Content as glyphs styled per b.Style (see styleGlyph). receipt.Spacer
+// occupies its own Height (dots) of blank space and paints nothing. Any
+// other element type returns apperr.KindPermanent rather than being
+// skipped or given placeholder pixels.
+//
+// Paint never inspects receipt.Text/receipt.Heading fields to decide how
+// to style a Block — only Block.Style, already fully resolved by
+// render/layout.Build (docs/ARCHITECTURE.md §3 "Text styling"). This is
+// what makes a receipt.Heading Block render identically to a receipt.Text
+// Block given the same Style: there is exactly one rendering pipeline,
+// not a Heading-specific one. The type switches below (textContent,
+// blockHeight) exist only to read structural data the frozen
+// receipt.Element interface doesn't expose generically — a Text/Heading's
+// Content, a Spacer's own Height — never to branch on styling.
 //
 // The Canvas is sized to doc.WidthDots when it's positive (the printer
 // width render/layout.Build resolved the Document against) — content
@@ -30,22 +38,22 @@ import (
 // paper length for Paint to target instead (see Document's own doc
 // comment).
 //
-// Paint assumes doc.Font is set, same as it assumes doc came from Build
-// rather than being hand-built: a Document is always produced with its
-// Font, so there's nothing to validate here (see docs/ARCHITECTURE.md §5
-// on not blurring Validate-style checks into stages that can trust their
-// input).
+// Paint assumes doc.Font is set and every Block's Style.Size is >= 1,
+// same as it assumes doc came from Build rather than being hand-built: a
+// Document is always produced with its Font and fully resolved Styles, so
+// there's nothing to validate here (see docs/ARCHITECTURE.md §5 on not
+// blurring Validate-style checks into stages that can trust their input).
 func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := doc.WidthDots, 0
 	for _, b := range doc.Blocks {
-		bh, ok := blockHeight(b.Element, f)
+		bh, ok := blockHeight(b, f)
 		if !ok {
 			return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
 		}
 		if width <= 0 {
 			if content, ok := textContent(b.Element); ok {
-				if w := f.Measure(content); w > width {
+				if w := f.Measure(content) * b.Style.Size; w > width {
 					width = w
 				}
 			}
@@ -69,8 +77,8 @@ func Paint(doc layout.Document) (*Canvas, error) {
 		x := 0
 		for _, r := range content {
 			bmp, advance := f.Glyph(r)
-			c.paintGlyph(x, b.Y, bmp)
-			x += advance
+			c.paintGlyph(x, b.Y, styleGlyph(bmp, b.Style))
+			x += advance * b.Style.Size
 		}
 	}
 
@@ -90,13 +98,14 @@ func textContent(el receipt.Element) (string, bool) {
 	}
 }
 
-// blockHeight returns el's vertical extent in dots if el is a supported
-// element type: f.LineHeight() for receipt.Text and receipt.Heading, or
-// its own Height for receipt.Spacer.
-func blockHeight(el receipt.Element, f layout.Font) (int, bool) {
-	switch e := el.(type) {
+// blockHeight returns b's vertical extent in dots if its Element is a
+// supported type: f.LineHeight() * b.Style.Size for receipt.Text and
+// receipt.Heading (the same Style.Size used to scale their glyphs — see
+// Paint), or the Spacer's own Height, unaffected by Style.
+func blockHeight(b layout.Block, f layout.Font) (int, bool) {
+	switch e := b.Element.(type) {
 	case receipt.Text, receipt.Heading:
-		return f.LineHeight(), true
+		return f.LineHeight() * b.Style.Size, true
 	case receipt.Spacer:
 		return e.Height, true
 	default:

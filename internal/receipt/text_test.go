@@ -17,15 +17,18 @@ func TestTextValidate(t *testing.T) {
 		{"empty content", receipt.Text{Content: ""}, true},
 		{"content only", receipt.Text{Content: "Milk"}, false},
 		{
-			"content with align, bold, size",
-			receipt.Text{Content: "Milk", Align: "center", Bold: true, Size: "large"},
+			"content with align and every style field set",
+			receipt.Text{Content: "Milk", Align: "center", Bold: true, Italic: true, Underline: true, Strikethrough: true, Size: 2},
 			false,
 		},
 		{
-			"align and size are not restricted to a fixed set",
-			receipt.Text{Content: "Milk", Align: "diagonal", Size: "enormous"},
+			"align is not restricted to a fixed set",
+			receipt.Text{Content: "Milk", Align: "diagonal"},
 			false,
 		},
+		{"omitted Size (zero value) is valid", receipt.Text{Content: "Milk", Size: 0}, false},
+		{"positive Size is valid", receipt.Text{Content: "Milk", Size: 3}, false},
+		{"negative Size is invalid", receipt.Text{Content: "Milk", Size: -1}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -38,7 +41,7 @@ func TestTextValidate(t *testing.T) {
 }
 
 func TestText_JSONRoundTrip(t *testing.T) {
-	original := receipt.Text{Content: "Milk", Align: "center", Bold: true, Size: "large"}
+	original := receipt.Text{Content: "Milk", Align: "center", Bold: true, Italic: true, Underline: true, Strikethrough: true, Size: 2}
 
 	data, err := json.Marshal(original)
 	if err != nil {

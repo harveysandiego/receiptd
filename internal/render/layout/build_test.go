@@ -140,15 +140,17 @@ func TestBuild_HeadingAndText_PreservesOrderAndAdvancesY(t *testing.T) {
 		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
 	}
 
-	lh := f.LineHeight()
+	// Heading resolves to Size: 2 (docs/ARCHITECTURE.md §3 "Text
+	// styling"), so it advances Y by twice f.LineHeight(), not once.
+	wantY := 2 * f.LineHeight()
 	if doc.Blocks[0].Y != 0 {
 		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
 	}
 	if doc.Blocks[0].Element != (receipt.Heading{Content: "Shopping List"}) {
 		t.Errorf("doc.Blocks[0].Element = %v, want Heading{Content: \"Shopping List\"}", doc.Blocks[0].Element)
 	}
-	if doc.Blocks[1].Y != lh {
-		t.Errorf("doc.Blocks[1].Y = %d, want %d", doc.Blocks[1].Y, lh)
+	if doc.Blocks[1].Y != wantY {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d (Heading's own line is twice f.LineHeight())", doc.Blocks[1].Y, wantY)
 	}
 	if doc.Blocks[1].Element != (receipt.Text{Content: "Milk"}) {
 		t.Errorf("doc.Blocks[1].Element = %v, want Text{Content: \"Milk\"}", doc.Blocks[1].Element)
@@ -488,7 +490,9 @@ func TestBuild_WrappedText_SubsequentElementYAccountsForExtraLines(t *testing.T)
 
 func TestBuild_HeadingAlsoWraps(t *testing.T) {
 	f := layout.EmbeddedFont{}
-	width := f.Measure("Hello World")
+	// Heading resolves to Size: 2, so it needs twice the width a Text at
+	// Size: 1 would to fit the same content on one line.
+	width := 2 * f.Measure("Hello World")
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Heading{Content: "Hello World Foo"},
 	}}
@@ -504,6 +508,110 @@ func TestBuild_HeadingAlsoWraps(t *testing.T) {
 		if doc.Blocks[i].Element != (receipt.Heading{Content: w}) {
 			t.Errorf("doc.Blocks[%d].Element = %v, want Heading{Content: %q}", i, doc.Blocks[i].Element, w)
 		}
+	}
+}
+
+func TestBuild_TextWithNoSize_ResolvesStyleSizeToOne(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if got := doc.Blocks[0].Style; got != (layout.Style{Size: 1}) {
+		t.Errorf("doc.Blocks[0].Style = %+v, want Style{Size: 1}", got)
+	}
+}
+
+func TestBuild_TextStyleFields_ResolveOntoBlockStyle(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{
+			Content:       "Milk",
+			Bold:          true,
+			Italic:        true,
+			Underline:     true,
+			Strikethrough: true,
+			Size:          3,
+		},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	want := layout.Style{Bold: true, Italic: true, Underline: true, Strikethrough: true, Size: 3}
+	if got := doc.Blocks[0].Style; got != want {
+		t.Errorf("doc.Blocks[0].Style = %+v, want %+v", got, want)
+	}
+}
+
+func TestBuild_Heading_ResolvesToBoldSizeTwo(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Heading{Content: "Shopping List"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	want := layout.Style{Bold: true, Size: 2}
+	if got := doc.Blocks[0].Style; got != want {
+		t.Errorf("doc.Blocks[0].Style = %+v, want %+v (Heading is presentation sugar over Text)", got, want)
+	}
+}
+
+func TestBuild_Spacer_ResolvesToNormalizedStyle(t *testing.T) {
+	// A Spacer has no styling fields of its own, but Style.Size >= 1 is a
+	// universal invariant on every Block Build produces (see Block's doc
+	// comment) — downstream code never special-cases element types that
+	// "don't have" a Style.
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Spacer{Height: 20},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if got := doc.Blocks[0].Style; got != (layout.Style{Size: 1}) {
+		t.Errorf("doc.Blocks[0].Style = %+v, want Style{Size: 1}", got)
+	}
+}
+
+func TestBuild_ScaledText_WrapsAtHalfTheWidthOfUnscaledText(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	width := f.Measure("Hello World") // exactly fits at Size: 1
+
+	unscaled := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Hello World"},
+	}}
+	doc, err := layout.Build(unscaled, printer.Profile{WidthDots: width}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1 (Size: 1 fits on one line)", len(doc.Blocks))
+	}
+
+	scaled := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Hello World", Size: 2},
+	}}
+	doc, err = layout.Build(scaled, printer.Profile{WidthDots: width}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	want := []string{"Hello", "World"}
+	if len(doc.Blocks) != len(want) {
+		t.Fatalf("len(doc.Blocks) = %d, want %d (Size: 2 needs twice the width per line)", len(doc.Blocks), len(want))
+	}
+	for i, w := range want {
+		if doc.Blocks[i].Element != (receipt.Text{Content: w, Size: 2}) {
+			t.Errorf("doc.Blocks[%d].Element = %v, want Text{Content: %q, Size: 2}", i, doc.Blocks[i].Element, w)
+		}
+		if doc.Blocks[i].Style != (layout.Style{Size: 2}) {
+			t.Errorf("doc.Blocks[%d].Style = %+v, want Style{Size: 2}", i, doc.Blocks[i].Style)
+		}
+	}
+	if want := f.LineHeight() * 2; doc.Blocks[1].Y != want {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d (Size: 2 advances Y by twice f.LineHeight())", doc.Blocks[1].Y, want)
 	}
 }
 

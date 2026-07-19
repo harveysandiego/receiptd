@@ -37,6 +37,42 @@ func assertGlyphPainted(t *testing.T, c *canvas.Canvas, originY int, bmp layout.
 	}
 }
 
+// assertScaledGlyphPainted fails t unless c contains bmp scaled by an
+// exact factorxfactor nearest-neighbour block per source pixel, offset
+// right by originX (all test glyphs in this file that need this
+// assertion start at y=0) — the behavioural contract
+// docs/ARCHITECTURE.md §3 "Text styling" describes for Style.Size,
+// verified without reaching into any unexported scaling helper.
+func assertScaledGlyphPainted(t *testing.T, c *canvas.Canvas, originX int, bmp layout.GlyphBitmap, factor int) {
+	t.Helper()
+	for y := 0; y < bmp.Height; y++ {
+		for x := 0; x < bmp.Width; x++ {
+			want := glyphPixelSet(bmp, x, y)
+			for dy := 0; dy < factor; dy++ {
+				for dx := 0; dx < factor; dx++ {
+					px, py := originX+x*factor+dx, y*factor+dy
+					if got := pixelSet(c, px, py); got != want {
+						t.Errorf("pixel(%d,%d) = %v, want %v (source glyph pixel %d,%d scaled x%d)", px, py, got, want, x, y, factor)
+					}
+				}
+			}
+		}
+	}
+}
+
+// countSetPixels returns how many of c's pixels are painted.
+func countSetPixels(c *canvas.Canvas) int {
+	count := 0
+	for y := 0; y < c.Height; y++ {
+		for x := 0; x < c.Width; x++ {
+			if pixelSet(c, x, y) {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func TestPaint_EmptyDocument(t *testing.T) {
 	c, err := canvas.Paint(layout.Document{Font: layout.EmbeddedFont{}})
 	if err != nil {
@@ -55,7 +91,7 @@ func TestPaint_OneTextBlock_MatchesFontGlyph(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "A"}},
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -78,7 +114,7 @@ func TestPaint_GlyphPlacementUsesBlockY(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: y, Element: receipt.Text{Content: "A"}},
+			{Y: y, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -95,8 +131,8 @@ func TestPaint_PreservesBlockOrder(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "A"}},
-			{Y: lh, Element: receipt.Text{Content: "B"}},
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
+			{Y: lh, Element: receipt.Text{Content: "B"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -114,8 +150,8 @@ func TestPaint_Deterministic(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "Milk"}},
-			{Y: f.LineHeight(), Element: receipt.Text{Content: "Eggs"}},
+			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1}},
+			{Y: f.LineHeight(), Element: receipt.Text{Content: "Eggs"}, Style: layout.Style{Size: 1}},
 		},
 	}
 
@@ -154,7 +190,7 @@ func TestPaint_OneHeadingBlock_MatchesFontGlyph(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Heading{Content: "A"}},
+			{Y: 0, Element: receipt.Heading{Content: "A"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -177,8 +213,8 @@ func TestPaint_HeadingAndTextBlocks_PreservesOrder(t *testing.T) {
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Heading{Content: "A"}},
-			{Y: lh, Element: receipt.Text{Content: "B"}},
+			{Y: 0, Element: receipt.Heading{Content: "A"}, Style: layout.Style{Size: 1}},
+			{Y: lh, Element: receipt.Text{Content: "B"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -219,7 +255,7 @@ func TestPaint_SpacerAndTextBlocks_PreservesOrder(t *testing.T) {
 		Font: f,
 		Blocks: []layout.Block{
 			{Y: 0, Element: receipt.Spacer{Height: 20}},
-			{Y: 20, Element: receipt.Text{Content: "A"}},
+			{Y: 20, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -239,7 +275,7 @@ func TestPaint_DocumentWidthDots_SetsCanvasWidth(t *testing.T) {
 		WidthDots: 384,
 		Font:      f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "A"}},
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -273,7 +309,7 @@ func TestPaint_NarrowContent_StillFillsFullWidthCanvas(t *testing.T) {
 
 func TestPaint_DifferentDocumentWidths_ProduceDifferentCanvasWidths(t *testing.T) {
 	f := layout.EmbeddedFont{}
-	blocks := []layout.Block{{Y: 0, Element: receipt.Text{Content: "A"}}}
+	blocks := []layout.Block{{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}}}
 
 	narrow, err := canvas.Paint(layout.Document{WidthDots: 200, Font: f, Blocks: blocks})
 	if err != nil {
@@ -300,7 +336,7 @@ func TestPaint_ZeroDocumentWidthDots_FallsBackToContentFit(t *testing.T) {
 		WidthDots: 0,
 		Font:      f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "Milk"}},
+			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -322,7 +358,7 @@ func TestPaint_ContentWiderThanDocumentWidth_ClipsWithoutPanicking(t *testing.T)
 		WidthDots: 8,
 		Font:      f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "Hello world"}},
+			{Y: 0, Element: receipt.Text{Content: "Hello world"}, Style: layout.Style{Size: 1}},
 		},
 	}
 	c, err := canvas.Paint(doc)
@@ -340,7 +376,7 @@ func TestPaint_DocumentWidthDots_Deterministic(t *testing.T) {
 		WidthDots: 384,
 		Font:      f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "Milk"}},
+			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1}},
 		},
 	}
 
@@ -383,12 +419,199 @@ func TestPaint_WrappedTextFromBuild_ProducesTallerCanvas(t *testing.T) {
 	}
 }
 
+func TestPaint_Size2Block_ScalesGlyphAndMeasurement(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 2}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("A") * 2; c.Width != want {
+		t.Errorf("c.Width = %d, want %d (f.Measure(\"A\") * Style.Size)", c.Width, want)
+	}
+	if want := f.LineHeight() * 2; c.Height != want {
+		t.Errorf("c.Height = %d, want %d (f.LineHeight() * Style.Size)", c.Height, want)
+	}
+	bmp, _ := f.Glyph('A')
+	assertScaledGlyphPainted(t, c, 0, bmp, 2)
+}
+
+func TestPaint_Size3Block_ScalesGlyphAndMeasurement(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 3}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("A") * 3; c.Width != want {
+		t.Errorf("c.Width = %d, want %d (f.Measure(\"A\") * Style.Size)", c.Width, want)
+	}
+	if want := f.LineHeight() * 3; c.Height != want {
+		t.Errorf("c.Height = %d, want %d (f.LineHeight() * Style.Size)", c.Height, want)
+	}
+	bmp, _ := f.Glyph('A')
+	assertScaledGlyphPainted(t, c, 0, bmp, 3)
+}
+
+func TestPaint_ScaledMultiCharContent_AdvancesByScaledWidth(t *testing.T) {
+	// Per-glyph advance must scale the same way overall measurement does,
+	// or a scaled multi-character string would paint with overlapping or
+	// gapped glyphs even though its total measured width is correct.
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "AB"}, Style: layout.Style{Size: 2}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	bmpA, advanceA := f.Glyph('A')
+	bmpB, _ := f.Glyph('B')
+	assertScaledGlyphPainted(t, c, 0, bmpA, 2)
+	assertScaledGlyphPainted(t, c, advanceA*2, bmpB, 2)
+}
+
+func TestPaint_ScaledText_DeterministicAcrossCalls(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		Font: f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 2}},
+		},
+	}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if first.Width != second.Width || first.Height != second.Height {
+		t.Fatalf("dimensions = %dx%d, then %dx%d, want equal", first.Width, first.Height, second.Width, second.Height)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_WrappedScaledTextFromBuild_HeightAccountsForScale(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	// At Size: 2, "Hello World" needs twice f.Measure("Hello World") to
+	// fit on one line (see layout.TestBuild_ScaledText_...), so doubling
+	// the width here reproduces the same two-line wrap ("Hello World" /
+	// "Foo") the unscaled TestPaint_WrappedTextFromBuild_... test uses.
+	width := 2 * f.Measure("Hello World")
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Hello World Foo", Size: 2},
+	}}
+	doc, err := layout.Build(r, printer.Profile{WidthDots: width}, f)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := 2 * f.LineHeight() * 2; c.Height != want {
+		t.Errorf("c.Height = %d, want %d (two wrapped lines, each twice f.LineHeight() at Size: 2)", c.Height, want)
+	}
+}
+
+func TestPaint_BoldStyle_PaintsAtLeastAsManyPixelsAsUnstyled(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	plain := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
+	}}
+	bold := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Bold: true}},
+	}}
+
+	cp, err := canvas.Paint(plain)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	cb, err := canvas.Paint(bold)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if cp.Width != cb.Width || cp.Height != cb.Height {
+		t.Errorf("bold dimensions = %dx%d, plain = %dx%d, want equal (bold does not change glyph advance)", cb.Width, cb.Height, cp.Width, cp.Height)
+	}
+	if plainCount, boldCount := countSetPixels(cp), countSetPixels(cb); boldCount <= plainCount {
+		t.Errorf("bold set %d pixels, plain set %d, want bold strictly more (neighbouring-pixel overdraw thickens strokes)", boldCount, plainCount)
+	}
+}
+
+func TestPaint_BoldStyle_DeterministicAcrossCalls(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1, Bold: true}},
+	}}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_HeadingAndTextWithSameStyle_RenderIdentically(t *testing.T) {
+	// Heading is presentation sugar over Text (docs/ARCHITECTURE.md §3):
+	// given the same resolved Style, canvas.Paint must not treat a
+	// receipt.Heading Block any differently from a receipt.Text Block —
+	// there is exactly one rendering pipeline.
+	f := layout.EmbeddedFont{}
+	style := layout.Style{Bold: true, Size: 2}
+	headingDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Heading{Content: "A"}, Style: style},
+	}}
+	textDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: style},
+	}}
+
+	ch, err := canvas.Paint(headingDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	ct, err := canvas.Paint(textDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if ch.Width != ct.Width || ch.Height != ct.Height {
+		t.Fatalf("Heading dimensions = %dx%d, Text = %dx%d, want equal", ch.Width, ch.Height, ct.Width, ct.Height)
+	}
+	if string(ch.Bits) != string(ct.Bits) {
+		t.Errorf("Heading and Text Bits differ given the same Style, want identical")
+	}
+}
+
 func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc := layout.Document{
 		Font: f,
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Text{Content: "Milk"}},
+			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1}},
 			{Y: f.LineHeight(), Element: receipt.Divider{Style: "solid"}},
 		},
 	}
