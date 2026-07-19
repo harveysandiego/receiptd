@@ -210,11 +210,272 @@ func TestPaint_Deterministic(t *testing.T) {
 	}
 }
 
+// unsupportedElement is a receipt.Element with no canvas.Paint support,
+// used only to exercise Paint's "unrecognized type" error path — now
+// that receipt.Divider is a real, supported element, it can no longer
+// stand in for "unsupported" the way earlier tests used it.
+type unsupportedElement struct{}
+
+func (unsupportedElement) Validate() error { return nil }
+
+// assertRowClear fails t unless every pixel in row y across [0, width) is
+// unset — used to prove a divider's line stops exactly at its documented
+// thickness rather than bleeding into neighbouring rows.
+func assertRowClear(t *testing.T, c *canvas.Canvas, width, y int) {
+	t.Helper()
+	for x := 0; x < width; x++ {
+		if pixelSet(c, x, y) {
+			t.Errorf("pixel(%d,%d) set, want row clear (outside divider thickness)", x, y)
+		}
+	}
+}
+
+func TestPaint_OneDividerBlock_PaintsFullWidthLine(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 100,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 100 {
+		t.Fatalf("c.Width = %d, want 100", c.Width)
+	}
+	assertHLineSet(t, c, 100, 0, layout.DividerThickness)
+}
+
+func TestPaint_DividerRespectsDocumentWidth_NotContentWidth(t *testing.T) {
+	// A Divider must never assume a fixed width of its own: it spans
+	// whatever Document.WidthDots resolved to, the same printable width
+	// every other Block is painted against.
+	narrow := layout.Document{WidthDots: 50, Font: layout.EmbeddedFont{}, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+	}}
+	wide := layout.Document{WidthDots: 300, Font: layout.EmbeddedFont{}, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+	}}
+
+	cn, err := canvas.Paint(narrow)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	cw, err := canvas.Paint(wide)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, cn, 50, 0, layout.DividerThickness)
+	assertHLineSet(t, cw, 300, 0, layout.DividerThickness)
+}
+
+func TestPaint_DividerThickness_StopsExactlyAtDocumentedThickness(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 20,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+			{Y: layout.DividerThickness, Element: receipt.Spacer{Height: 5}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, 20, 0, layout.DividerThickness)
+	assertRowClear(t, c, 20, layout.DividerThickness)
+}
+
+func TestPaint_OneDividerBlock_CanvasHeightMatchesThickness(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 20,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Height != layout.DividerThickness {
+		t.Errorf("c.Height = %d, want %d (layout.DividerThickness)", c.Height, layout.DividerThickness)
+	}
+}
+
+func TestPaint_DividerBetweenTextBlocks(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	lh := f.LineHeight()
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "A"},
+		receipt.Divider{},
+		receipt.Text{Content: "B"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A")}, f)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	bmpA, _ := f.Glyph('A')
+	bmpB, _ := f.Glyph('B')
+	assertGlyphPainted(t, c, 0, bmpA)
+	assertHLineSet(t, c, c.Width, lh, layout.DividerThickness)
+	assertGlyphPainted(t, c, lh+layout.DividerThickness, bmpB)
+}
+
+func TestPaint_MultipleDividers_EachPaintsOwnLine(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 30,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+			{Y: layout.DividerThickness, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+			{Y: 2 * layout.DividerThickness, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	for i := 0; i < 3; i++ {
+		assertHLineSet(t, c, 30, i*layout.DividerThickness, layout.DividerThickness)
+	}
+}
+
+func TestPaint_DividerAfterSpacer(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 20,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Spacer{Height: 20}, Style: layout.Style{Size: 1}},
+			{Y: 20, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertRowClear(t, c, 20, 0)
+	assertHLineSet(t, c, 20, 20, layout.DividerThickness)
+}
+
+func TestPaint_DividerAsLastBlock(t *testing.T) {
+	// Stands in for "divider before feed" — see the equivalent note on
+	// layout.TestBuild_DividerAsFinalElement: receipt.Feed isn't a Go type
+	// this codebase implements yet, so the closest verifiable behaviour is
+	// that a trailing Divider paints and sizes the Canvas correctly with
+	// nothing after it.
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "A"},
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A")}, f)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.LineHeight() + layout.DividerThickness; c.Height != want {
+		t.Errorf("c.Height = %d, want %d", c.Height, want)
+	}
+	assertHLineSet(t, c, c.Width, f.LineHeight(), layout.DividerThickness)
+}
+
+func TestPaint_DividerOnly_ContentFit_ProducesZeroWidthCanvas_NoPanic(t *testing.T) {
+	// A Divider contributes no text content to measure, so — like a
+	// Spacer-only Document (TestPaint_OneSpacerBlock_ProducesBlankCanvasOfHeight)
+	// — a Divider-only Document with no printer.Profile has nothing to
+	// size a content-fit width against. This documents that behaviour
+	// rather than asserting Paint should invent a width.
+	doc := layout.Document{
+		WidthDots: 0,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 0 {
+		t.Errorf("c.Width = %d, want 0 (no text content to size against)", c.Width)
+	}
+	if c.Height != layout.DividerThickness {
+		t.Errorf("c.Height = %d, want %d", c.Height, layout.DividerThickness)
+	}
+}
+
+func TestPaint_DividerDeterministic(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 40,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if first.Width != second.Width || first.Height != second.Height {
+		t.Fatalf("dimensions = %dx%d, then %dx%d, want equal", first.Width, first.Height, second.Width, second.Height)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_DividerStyleValue_DoesNotAffectRendering(t *testing.T) {
+	// receipt.Divider.Style ("solid"/"dashed", docs/ARCHITECTURE.md §3) is
+	// accepted by receipt.Divider.Validate() but dashed-pattern rendering
+	// is explicitly out of scope for this slice — both styles, and the
+	// empty (default) style, must paint an identical solid line, the same
+	// "accepted but not yet visually distinct" position Text's
+	// Italic/Underline/Strikethrough fields held before their own
+	// rendering landed.
+	widthDots := 20
+	styles := []string{"", "solid", "dashed"}
+	var results [][]byte
+	for _, style := range styles {
+		doc := layout.Document{
+			WidthDots: widthDots,
+			Font:      layout.EmbeddedFont{},
+			Blocks: []layout.Block{
+				{Y: 0, Element: receipt.Divider{Style: style}, Style: layout.Style{Size: 1}},
+			},
+		}
+		c, err := canvas.Paint(doc)
+		if err != nil {
+			t.Fatalf("Paint() error = %v, want nil (style %q)", err, style)
+		}
+		results = append(results, c.Bits)
+	}
+	for i := 1; i < len(results); i++ {
+		if string(results[i]) != string(results[0]) {
+			t.Errorf("Bits for style %q differ from style %q, want identical (dashed rendering not yet implemented)", styles[i], styles[0])
+		}
+	}
+}
+
 func TestPaint_UnsupportedElementReturnsPermanentError(t *testing.T) {
 	doc := layout.Document{
 		Font: layout.EmbeddedFont{},
 		Blocks: []layout.Block{
-			{Y: 0, Element: receipt.Divider{Style: "solid"}},
+			{Y: 0, Element: unsupportedElement{}},
 		},
 	}
 	_, err := canvas.Paint(doc)
@@ -947,7 +1208,7 @@ func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 		Font: f,
 		Blocks: []layout.Block{
 			{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1}},
-			{Y: f.LineHeight(), Element: receipt.Divider{Style: "solid"}},
+			{Y: f.LineHeight(), Element: unsupportedElement{}},
 		},
 	}
 	_, err := canvas.Paint(doc)

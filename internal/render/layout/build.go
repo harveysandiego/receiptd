@@ -10,22 +10,24 @@ import (
 )
 
 // Build turns r into a Document: each receipt.Text or receipt.Heading
-// becomes one Block per wrapped line, and each receipt.Spacer becomes one
-// Block, stacked top to bottom in Receipt order. Every Block advances Y by
-// f.LineHeight() times its resolved Style.Size, except a Spacer, which
-// advances Y by its own Height (dots), per its documented meaning in
-// docs/ARCHITECTURE.md §3. The returned Document carries f and
-// p.WidthDots (see Document.WidthDots), so every later stage (e.g.
-// render/canvas.Paint) measures and paints against the same Font and
-// target width Build used.
+// becomes one Block per wrapped line, each receipt.Spacer becomes one
+// Block, and each receipt.Divider becomes one Block, stacked top to
+// bottom in Receipt order. Every Block advances Y by f.LineHeight() times
+// its resolved Style.Size, except a Spacer (which advances Y by its own
+// Height, dots) and a Divider (which advances Y by DividerThickness),
+// per their documented meaning in docs/ARCHITECTURE.md §3. The returned
+// Document carries f and p.WidthDots (see Document.WidthDots), so every
+// later stage (e.g. render/canvas.Paint) measures and paints against the
+// same Font and target width Build used.
 //
 // Every Block Build produces carries a fully resolved Style: a
 // receipt.Text's own Bold/Italic/Underline/Strikethrough/Size fields (see
 // textStyle), a receipt.Heading's fixed headingStyle (it is presentation
 // sugar over Text, not a second styling system — docs/ARCHITECTURE.md
-// §3), or normalStyle for anything else (e.g. receipt.Spacer).
-// Style.Size is always >= 1 once resolved — see resolveSize — so no
-// downstream code ever special-cases a zero or invalid Size.
+// §3), or normalStyle for anything else (e.g. receipt.Spacer,
+// receipt.Divider). Style.Size is always >= 1 once resolved — see
+// resolveSize — so no downstream code ever special-cases a zero or
+// invalid Size.
 //
 // Text and Heading Content is wrapped to p.WidthDots via wrapText before
 // becoming Blocks, measured at the resolved Style's Size (see wrapText's
@@ -36,9 +38,9 @@ import (
 // This is an early, partial implementation of the Build described in
 // docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context or
 // assets.Store, since this slice performs no I/O. Element types other
-// than receipt.Text, receipt.Heading, and receipt.Spacer are not yet
-// supported and are reported as an apperr.KindPermanent error rather than
-// skipped or given placeholder positions.
+// than receipt.Text, receipt.Heading, receipt.Spacer, and receipt.Divider
+// are not yet supported and are reported as an apperr.KindPermanent error
+// rather than skipped or given placeholder positions.
 func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 	var blocks []Block
 	y := 0
@@ -60,6 +62,9 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 		case receipt.Spacer:
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += e.Height
+		case receipt.Divider:
+			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
+			y += DividerThickness
 		default:
 			return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("unsupported element type %T", el))
 		}
@@ -75,10 +80,28 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 var headingStyle = Style{Bold: true, Size: 2}
 
 // normalStyle is the resolved Style for element types with no styling
-// concept of their own (e.g. receipt.Spacer): unstyled, at the
-// normalized Size — see Block's doc comment for why every Block Build
-// produces has Style.Size >= 1, not just Text/Heading ones.
+// concept of their own (e.g. receipt.Spacer, receipt.Divider): unstyled,
+// at the normalized Size — see Block's doc comment for why every Block
+// Build produces has Style.Size >= 1, not just Text/Heading ones.
 var normalStyle = Style{Size: 1}
+
+// DividerThickness is the fixed height, in dots, every receipt.Divider
+// occupies, and the exact number of rows render/canvas.Paint paints for
+// it (see blockHeight there) — Build and Paint share this single
+// constant rather than each hard-coding the same number, the same
+// reason both already agree on f.LineHeight()*Style.Size for text.
+//
+// docs/ARCHITECTURE.md §3 documents Divider's Style field (solid/dashed)
+// but no numeric thickness, and this slice implements only the one
+// thickness a "horizontal rule" requires: the finest line a 1bpp Canvas
+// can represent, one dot. Style is deliberately not read here or in
+// Paint — "dashed" is accepted by receipt.Divider.Validate() as valid
+// input (a schema value shipped ahead of its rendering, the same
+// position Text's Italic/Underline/Strikethrough fields held before
+// their own rendering landed — docs/ARCHITECTURE.md §3 "Text styling")
+// but renders identically to "solid" until a later slice implements the
+// dashed pattern itself.
+const DividerThickness = 1
 
 // textStyle resolves t's own styling fields into a Style, normalizing
 // Size via resolveSize so the result always has Size >= 1.

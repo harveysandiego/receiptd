@@ -15,9 +15,13 @@ import (
 // underline/strikethrough decoration (see paintDecorations) — decorations
 // are drawn onto the Canvas after glyph painting, never folded into a
 // glyph's own bitmap. receipt.Spacer occupies its own Height (dots) of
-// blank space and paints nothing. Any other element type returns
-// apperr.KindPermanent rather than being skipped or given placeholder
-// pixels.
+// blank space and paints nothing. receipt.Divider occupies
+// layout.DividerThickness dots and paints one horizontal line spanning
+// the Canvas's full width (paintHLine, the same primitive underline and
+// strikethrough already reuse) — it is not part of the text-styling
+// pipeline, so b.Style is not read for it. Any other element type
+// returns apperr.KindPermanent rather than being skipped or given
+// placeholder pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
@@ -74,6 +78,10 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	}
 
 	for _, b := range doc.Blocks {
+		if _, ok := b.Element.(receipt.Divider); ok {
+			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness)
+			continue
+		}
 		content, ok := textContent(b.Element)
 		if !ok {
 			continue // e.g. receipt.Spacer: blank space, no glyphs to paint
@@ -106,13 +114,18 @@ func textContent(el receipt.Element) (string, bool) {
 // blockHeight returns b's vertical extent in dots if its Element is a
 // supported type: f.LineHeight() * b.Style.Size for receipt.Text and
 // receipt.Heading (the same Style.Size used to scale their glyphs — see
-// Paint), or the Spacer's own Height, unaffected by Style.
+// Paint), the Spacer's own Height (unaffected by Style), or
+// layout.DividerThickness for a receipt.Divider — the same constant
+// layout.Build already advanced Y by, so the two stages can never
+// disagree about how tall a Divider Block is.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
 	case receipt.Text, receipt.Heading:
 		return f.LineHeight() * b.Style.Size, true
 	case receipt.Spacer:
 		return e.Height, true
+	case receipt.Divider:
+		return layout.DividerThickness, true
 	default:
 		return 0, false
 	}

@@ -77,11 +77,10 @@ func TestService_Preview_UnconfiguredPrinter_ReturnsNotFoundError(t *testing.T) 
 }
 
 func TestService_Preview_UnsupportedElement_ReturnsPermanentError(t *testing.T) {
-	// receipt.Divider passes Validate but is not yet handled by
-	// render/canvas.Paint — the same real error path exercised by
-	// TestService_Process_RenderingError_Propagates.
+	// unsupportedElement (defined in process_test.go) exercises the same
+	// real error path as TestService_Process_RenderingError_Propagates.
 	s := previewServiceWithProfile()
-	r := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}}
+	r := receipt.Receipt{Elements: []receipt.Element{unsupportedElement{}}}
 
 	b, err := s.Preview(context.Background(), r, "front-desk")
 	if !apperr.Is(err, apperr.KindPermanent) {

@@ -97,9 +97,17 @@ func TestBuild_PreservesElementOrder(t *testing.T) {
 	}
 }
 
+// unsupportedElement is a receipt.Element with no layout.Build support,
+// used only to exercise Build's "unrecognized type" error path — now
+// that receipt.Divider is a real, supported element, it can no longer
+// stand in for "unsupported" the way earlier tests used it.
+type unsupportedElement struct{}
+
+func (unsupportedElement) Validate() error { return nil }
+
 func TestBuild_UnsupportedElementReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
-		receipt.Divider{Style: "solid"},
+		unsupportedElement{},
 	}}
 	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if !apperr.Is(err, apperr.KindPermanent) {
@@ -160,7 +168,7 @@ func TestBuild_HeadingAndText_PreservesOrderAndAdvancesY(t *testing.T) {
 func TestBuild_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Milk"},
-		receipt.Divider{Style: "solid"},
+		unsupportedElement{},
 	}}
 	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if !apperr.Is(err, apperr.KindPermanent) {
@@ -612,6 +620,202 @@ func TestBuild_ScaledText_WrapsAtHalfTheWidthOfUnscaledText(t *testing.T) {
 	}
 	if want := f.LineHeight() * 2; doc.Blocks[1].Y != want {
 		t.Errorf("doc.Blocks[1].Y = %d, want %d (Size: 2 advances Y by twice f.LineHeight())", doc.Blocks[1].Y, want)
+	}
+}
+
+func TestBuild_OneDivider(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Divider{}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Divider{}", doc.Blocks[0].Element)
+	}
+}
+
+func TestBuild_Divider_ResolvesToNormalizedStyle(t *testing.T) {
+	// A Divider has no styling fields of its own, but Style.Size >= 1 is a
+	// universal invariant on every Block Build produces — the same
+	// guarantee TestBuild_Spacer_ResolvesToNormalizedStyle already makes
+	// for Spacer.
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if got := doc.Blocks[0].Style; got != (layout.Style{Size: 1}) {
+		t.Errorf("doc.Blocks[0].Style = %+v, want Style{Size: 1}", got)
+	}
+}
+
+func TestBuild_DividerAdvancesYByThickness(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Divider{},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
+	}
+	if doc.Blocks[1].Y != layout.DividerThickness {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d (layout.DividerThickness, not f.LineHeight())", doc.Blocks[1].Y, layout.DividerThickness)
+	}
+}
+
+func TestBuild_DividerBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Divider{},
+		receipt.Text{Content: "Eggs"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Element != (receipt.Text{Content: "Milk"}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Text{Content: \"Milk\"}", doc.Blocks[0].Element)
+	}
+	if wantY := f.LineHeight(); doc.Blocks[1].Y != wantY || doc.Blocks[1].Element != (receipt.Divider{}) {
+		t.Errorf("doc.Blocks[1] = {Y:%d, Element:%v}, want {Y:%d, Element:Divider{}}", doc.Blocks[1].Y, doc.Blocks[1].Element, wantY)
+	}
+	if wantY := f.LineHeight() + layout.DividerThickness; doc.Blocks[2].Y != wantY {
+		t.Errorf("doc.Blocks[2].Y = %d, want %d", doc.Blocks[2].Y, wantY)
+	}
+	if doc.Blocks[2].Element != (receipt.Text{Content: "Eggs"}) {
+		t.Errorf("doc.Blocks[2].Element = %v, want Text{Content: \"Eggs\"}", doc.Blocks[2].Element)
+	}
+}
+
+func TestBuild_MultipleDividers_EachAdvancesIndependently(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Divider{},
+		receipt.Divider{},
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3", len(doc.Blocks))
+	}
+	for i, b := range doc.Blocks {
+		if want := i * layout.DividerThickness; b.Y != want {
+			t.Errorf("doc.Blocks[%d].Y = %d, want %d", i, b.Y, want)
+		}
+	}
+}
+
+func TestBuild_DividerAfterSpacer(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Spacer{Height: 20},
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
+	}
+	if doc.Blocks[1].Y != 20 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 20 (Spacer's own Height)", doc.Blocks[1].Y)
+	}
+	if doc.Blocks[1].Element != (receipt.Divider{}) {
+		t.Errorf("doc.Blocks[1].Element = %v, want Divider{}", doc.Blocks[1].Element)
+	}
+}
+
+func TestBuild_DividerAsFinalElement(t *testing.T) {
+	// Stands in for "divider before feed": receipt.Feed isn't a Go type
+	// this codebase implements yet (§3's element table lists it as a
+	// future v0.1 type, but only Text/Heading/Spacer/Divider exist so
+	// far), so the closest thing layout.Build can verify is that a
+	// Divider positioned last still resolves cleanly — nothing downstream
+	// (escpos.Encode's eventual feed/cut) needs Build to have done
+	// anything special for a trailing Divider.
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Divider{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2", len(doc.Blocks))
+	}
+	if want := f.LineHeight(); doc.Blocks[1].Y != want {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d", doc.Blocks[1].Y, want)
+	}
+	if doc.Blocks[1].Element != (receipt.Divider{}) {
+		t.Errorf("doc.Blocks[1].Element = %v, want Divider{}", doc.Blocks[1].Element)
+	}
+}
+
+func TestBuild_DividerStyleValue_DoesNotAffectPositioning(t *testing.T) {
+	// receipt.Divider.Style ("solid"/"dashed", docs/ARCHITECTURE.md §3) is
+	// not read by Build at all: dashed-pattern rendering is out of scope
+	// for this slice (see canvas.TestPaint_DividerStyleValue_...), and Y
+	// advancement never varied by style to begin with.
+	solid := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}, receipt.Text{Content: "A"}}}
+	dashed := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "dashed"}, receipt.Text{Content: "A"}}}
+
+	docSolid, err := layout.Build(solid, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	docDashed, err := layout.Build(dashed, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if docSolid.Blocks[1].Y != docDashed.Blocks[1].Y {
+		t.Errorf("solid Y = %d, dashed Y = %d, want equal", docSolid.Blocks[1].Y, docDashed.Blocks[1].Y)
+	}
+}
+
+func TestBuild_WithDivider_Deterministic(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Divider{},
+		receipt.Text{Content: "Eggs"},
+	}}
+	f := layout.EmbeddedFont{}
+
+	first, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	second, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(first.Blocks) != len(second.Blocks) {
+		t.Fatalf("len(first.Blocks) = %d, len(second.Blocks) = %d, want equal", len(first.Blocks), len(second.Blocks))
+	}
+	for i := range first.Blocks {
+		if first.Blocks[i] != second.Blocks[i] {
+			t.Errorf("Blocks[%d] = %v, then %v, want equal", i, first.Blocks[i], second.Blocks[i])
+		}
 	}
 }
 

@@ -63,9 +63,20 @@ func TestService_render_ReceiptContentReachesRendererUnchanged(t *testing.T) {
 	}
 }
 
+// unsupportedElement is a receipt.Element with no render/layout.Build or
+// render/canvas.Paint support, used to exercise render's error
+// propagation. receipt.Divider filled this role until it became a
+// supported element in its own right — every other element type
+// documented in docs/ARCHITECTURE.md §3 (image, asset, qrcode, etc.)
+// doesn't exist as a receipt.Go type yet, so a small local fake is now
+// the only way to construct a "valid but unrenderable" Receipt.
+type unsupportedElement struct{}
+
+func (unsupportedElement) Validate() error { return nil }
+
 func TestService_render_UnsupportedElement_ReturnsPermanentError(t *testing.T) {
 	s := &Service{}
-	r := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}}
+	r := receipt.Receipt{Elements: []receipt.Element{unsupportedElement{}}}
 
 	c, err := s.render(r, printer.Profile{})
 	if !apperr.Is(err, apperr.KindPermanent) {

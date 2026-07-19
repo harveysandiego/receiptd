@@ -15,6 +15,18 @@ import (
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
 
+// unsupportedElement is a receipt.Element with no render/layout.Build or
+// render/canvas.Paint support, used across this package's tests to
+// exercise real error propagation through app.Service. receipt.Divider
+// filled this role until it became a supported element in its own
+// right — every other element type documented in
+// docs/ARCHITECTURE.md §3 (image, asset, qrcode, etc.) doesn't exist as
+// a receipt.Go type yet, so a small local fake is now the only way to
+// construct a "valid but unrenderable" Receipt.
+type unsupportedElement struct{}
+
+func (unsupportedElement) Validate() error { return nil }
+
 // fakePrinter is a printer.Printer test double that records every Send call
 // and either succeeds (copying data into sent) or returns sendErr, letting
 // tests observe how Process orchestrates the printer stage without needing
@@ -89,13 +101,9 @@ func TestService_Process_RenderingError_Propagates(t *testing.T) {
 	fp := &fakePrinter{}
 	s.Printers = map[string]printer.Printer{"front-desk": fp}
 	s.Profiles = map[string]printer.Profile{"front-desk": {}}
-	// receipt.Divider is a valid Element (passes Validate) but is not yet
-	// supported by render/layout.Build, which only handles receipt.Text and
-	// receipt.Heading — this is the current pipeline's real error path, not
-	// a contrived one.
 	j := &queue.Job{
 		PrinterName: "front-desk",
-		Receipt:     receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}},
+		Receipt:     receipt.Receipt{Elements: []receipt.Element{unsupportedElement{}}},
 	}
 
 	err := s.Process(context.Background(), j)
