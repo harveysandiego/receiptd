@@ -16,6 +16,7 @@ module github.com/harveysandiego/receiptd
 go 1.25.0
 
 require (
+	github.com/boombuler/barcode v1.1.0
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/image v0.44.0

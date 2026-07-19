@@ -8,6 +8,50 @@ import (
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
+// rasterBitmap resolves el's decoded/generated bitmap if el is a
+// receipt.Image or receipt.QRCode — the two element types Paint treats
+// as "just another image" (docs/ARCHITECTURE.md §4): scaled/generated to
+// fit maxWidth and converted to the same layout.GlyphBitmap
+// representation glyphs already use, so both paint through the exact
+// same paintGlyph primitive with no element-specific drawing logic of
+// their own. ok is false for any other Element, in which case bmp and
+// err are both zero. A receipt.QRCode's bitmap is generated fresh here
+// (render/layout.GenerateQRCodeBitmap), the render-time analogue of
+// decoding a receipt.Image's bytes — Paint never distinguishes a
+// generated bitmap from a decoded one once it has one.
+func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok bool, err error) {
+	switch e := el.(type) {
+	case receipt.Image:
+		bmp, err = layout.DecodeImageBitmap(e.Data, maxWidth)
+		if err != nil {
+			err = fmt.Errorf("image: %w", err)
+		}
+		return bmp, true, err
+	case receipt.QRCode:
+		bmp, err = layout.GenerateQRCodeBitmap(e, maxWidth)
+		if err != nil {
+			err = fmt.Errorf("qrcode: %w", err)
+		}
+		return bmp, true, err
+	default:
+		return layout.GlyphBitmap{}, false, nil
+	}
+}
+
+// isRasterElement reports whether el is one of the element types
+// rasterBitmap resolves a bitmap for — used by Paint's painting pass to
+// decide whether a Block's already-resolved bitmap (see rasterBitmap)
+// should be painted via paintGlyph, without re-running the (potentially
+// expensive, in QRCode's case CPU-bound) resolution itself a second time.
+func isRasterElement(el receipt.Element) bool {
+	switch el.(type) {
+	case receipt.Image, receipt.QRCode:
+		return true
+	default:
+		return false
+	}
+}
+
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
 // order. receipt.Text and receipt.Heading each occupy one line of height
 // f.LineHeight() * b.Style.Size, starting at their Y, and paint their
@@ -19,12 +63,15 @@ import (
 // layout.DividerThickness dots and paints one horizontal line spanning
 // the Canvas's full width (paintHLine, the same primitive underline and
 // strikethrough already reuse) — it is not part of the text-styling
-// pipeline, so b.Style is not read for it. receipt.Image is decoded via
-// layout.DecodeImageBitmap (scaled to fit doc.WidthDots) into a
-// layout.GlyphBitmap and painted with the same paintGlyph primitive text
-// glyphs use — there is exactly one bitmap-painting path, not a parallel
-// one for images (docs/ARCHITECTURE.md §4); like Divider, b.Style is not
-// read for it. Any other element type returns apperr.KindPermanent rather
+// pipeline, so b.Style is not read for it. receipt.Image and
+// receipt.QRCode are both resolved to a layout.GlyphBitmap (scaled to
+// fit doc.WidthDots) by rasterBitmap — decoded via
+// layout.DecodeImageBitmap for Image, generated via
+// layout.GenerateQRCodeBitmap for QRCode — then painted with the same
+// paintGlyph primitive text glyphs use: there is exactly one
+// bitmap-painting path, not a parallel one per raster element type
+// (docs/ARCHITECTURE.md §4); like Divider, b.Style is not read for
+// either. Any other element type returns apperr.KindPermanent rather
 // than being skipped or given placeholder pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
@@ -58,13 +105,12 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := doc.WidthDots, 0
 	contentFit := width <= 0         // doc.WidthDots itself never changes; capture this once, before width becomes the running content-fit max below.
-	var bitmaps []layout.GlyphBitmap // lazily allocated: most Documents paint no receipt.Image Blocks at all
+	var bitmaps []layout.GlyphBitmap // lazily allocated: most Documents paint no raster (Image/QRCode) Blocks at all
 	for i, b := range doc.Blocks {
 		var bh int
-		if img, ok := b.Element.(receipt.Image); ok {
-			bmp, err := layout.DecodeImageBitmap(img.Data, doc.WidthDots)
+		if bmp, ok, err := rasterBitmap(b.Element, doc.WidthDots); ok {
 			if err != nil {
-				return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("image: %w", err))
+				return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", err)
 			}
 			if bitmaps == nil {
 				bitmaps = make([]layout.GlyphBitmap, len(doc.Blocks))
@@ -104,7 +150,7 @@ func Paint(doc layout.Document) (*Canvas, error) {
 			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness)
 			continue
 		}
-		if _, ok := b.Element.(receipt.Image); ok {
+		if isRasterElement(b.Element) {
 			c.paintGlyph(0, b.Y, bitmaps[i])
 			continue
 		}

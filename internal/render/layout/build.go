@@ -12,12 +12,14 @@ import (
 // Build turns r into a Document: each receipt.Text or receipt.Heading
 // becomes one Block per wrapped line, each receipt.Spacer becomes one
 // Block, each receipt.Divider becomes one Block, and each receipt.Image
-// becomes one Block, stacked top to bottom in Receipt order. Every Block
-// advances Y by f.LineHeight() times its resolved Style.Size, except a
-// Spacer (which advances Y by its own Height, dots), a Divider (which
-// advances Y by DividerThickness), and an Image (which advances Y by its
-// decoded, printable-width-scaled height — see imageDimensions), per
-// their documented meaning in docs/ARCHITECTURE.md §3. The returned
+// or receipt.QRCode becomes one Block, stacked top to bottom in Receipt
+// order. Every Block advances Y by f.LineHeight() times its resolved
+// Style.Size, except a Spacer (which advances Y by its own Height, dots),
+// a Divider (which advances Y by DividerThickness), an Image (which
+// advances Y by its decoded, printable-width-scaled height — see
+// imageDimensions), and a QRCode (which advances Y by its generated,
+// printable-width-scaled size — see qrCodeDimensions), per their
+// documented meaning in docs/ARCHITECTURE.md §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
@@ -71,6 +73,13 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			_, h, err := imageDimensions(e.Data, p.WidthDots)
 			if err != nil {
 				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("image: %w", err))
+			}
+			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
+			y += h
+		case receipt.QRCode:
+			_, h, err := qrCodeDimensions(e, p.WidthDots)
+			if err != nil {
+				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("qrcode: %w", err))
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
