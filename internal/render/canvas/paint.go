@@ -49,12 +49,13 @@ import (
 func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := doc.WidthDots, 0
+	contentFit := width <= 0 // doc.WidthDots itself never changes; capture this once, before width becomes the running content-fit max below.
 	for _, b := range doc.Blocks {
 		bh, ok := blockHeight(b, f)
 		if !ok {
 			return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
 		}
-		if width <= 0 {
+		if contentFit {
 			if content, ok := textContent(b.Element); ok {
 				if w := f.Measure(content) * b.Style.Size; w > width {
 					width = w

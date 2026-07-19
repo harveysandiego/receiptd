@@ -386,6 +386,32 @@ func TestPaint_ZeroDocumentWidthDots_FallsBackToContentFit(t *testing.T) {
 	}
 }
 
+func TestPaint_ContentFit_WidthIsMaxAcrossAllBlocks_NotJustTheFirst(t *testing.T) {
+	// Content-fit width must be the max f.Measure(content) * Style.Size
+	// over every block, not just the first block with non-empty content —
+	// a later, wider block must still grow the Canvas rather than being
+	// silently clipped to the first block's width.
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		WidthDots: 0,
+		Font:      f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "Hi"}, Style: layout.Style{Size: 1}},
+			{Y: f.LineHeight(), Element: receipt.Text{Content: "This is a much longer line"}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("This is a much longer line"); c.Width != want {
+		t.Errorf("c.Width = %d, want %d (widest block, not the first)", c.Width, want)
+	}
+
+	bmp, _ := f.Glyph('T')
+	assertGlyphPainted(t, c, f.LineHeight(), bmp)
+}
+
 func TestPaint_ContentWiderThanDocumentWidth_ClipsWithoutPanicking(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	// "Hello world" measures far wider than 8 dots at this embedded face;
