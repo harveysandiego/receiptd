@@ -130,16 +130,21 @@ var normalStyle = Style{Size: 1}
 // reason both already agree on f.LineHeight()*Style.Size for text.
 //
 // docs/ARCHITECTURE.md §3 documents Divider's Style field (solid/dashed)
-// but no numeric thickness, and this slice implements only the one
-// thickness a "horizontal rule" requires: the finest line a 1bpp Canvas
-// can represent, one dot. Style is deliberately not read here or in
+// but no numeric thickness, so this is a private implementation detail,
+// the same category of decision docs/adr/0008-embedded-font-legibility.md
+// makes for EmbeddedFont's native glyph size. It was originally one dot —
+// the finest line a 1bpp Canvas can represent — but a physical print on
+// the 203 DPI TM-m30II showed a one-dot rule to be nearly invisible, the
+// same hardware-legibility problem ADR-0008 found for the unscaled font;
+// four dots (about 0.5mm at 203 DPI) is a clearly visible rule without
+// reading as a solid bar. Style is deliberately not read here or in
 // Paint — "dashed" is accepted by receipt.Divider.Validate() as valid
 // input (a schema value shipped ahead of its rendering, the same
 // position Text's Italic/Underline/Strikethrough fields held before
 // their own rendering landed — docs/ARCHITECTURE.md §3 "Text styling")
 // but renders identically to "solid" until a later slice implements the
 // dashed pattern itself.
-const DividerThickness = 1
+const DividerThickness = 4
 
 // textStyle resolves t's own styling fields into a Style, normalizing
 // Size via resolveSize so the result always has Size >= 1.
