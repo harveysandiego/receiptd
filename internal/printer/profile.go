@@ -7,6 +7,15 @@ package printer
 // receives a Profile.
 type Profile struct {
 	// WidthDots is the printer's paper width, in dots, at DPI.
+	// config.Validate requires every configured printer to have a
+	// positive WidthDots, so zero only ever occurs for a Profile nobody
+	// configured — e.g. the zero-value Profile cmd/receipt's fully
+	// offline `render` command passes, since it has no daemon or config
+	// to resolve a real printer from. render/layout.Build and
+	// render/canvas.Paint treat that case as "no printer width
+	// constraint," sizing the canvas to its painted content instead —
+	// the same "0 = no constraint" convention MaxImageHeightDots below
+	// already uses, so it introduces no new sentinel idiom.
 	WidthDots int
 	// DPI is the printer's horizontal/vertical dot density.
 	DPI int

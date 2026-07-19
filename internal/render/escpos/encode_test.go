@@ -406,7 +406,7 @@ func TestEncode_Pipeline_TextReceiptProducesRasterOutput(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "A"},
-	}}, f)
+	}}, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}

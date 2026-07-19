@@ -12,34 +12,42 @@ import (
 // order. receipt.Text and receipt.Heading each occupy one line of height
 // f.LineHeight(), starting at their Y, and paint their Content as glyphs.
 // receipt.Spacer occupies its own Height (dots) of blank space and paints
-// nothing. The Canvas is sized to exactly fit this content. Any other
-// element type returns apperr.KindPermanent rather than being skipped or
-// given placeholder pixels. A Heading paints identically to a Text with
-// the same Content: see render/layout.Build's docstring for why its
-// documented "bold + large" styling isn't applied yet.
+// nothing. Any other element type returns apperr.KindPermanent rather
+// than being skipped or given placeholder pixels. A Heading paints
+// identically to a Text with the same Content: see render/layout.Build's
+// docstring for why its documented "bold + large" styling isn't applied
+// yet.
+//
+// The Canvas is sized to doc.WidthDots when it's positive (the printer
+// width render/layout.Build resolved the Document against) — content
+// narrower than that still produces a full-width Canvas, and content
+// wider than it is clipped rather than expanding the Canvas or wrapping
+// onto another line (see paintGlyph). When doc.WidthDots is zero — a
+// Document Build produced with no printer.Profile, or one hand-built by
+// a caller that never set it — the Canvas falls back to exactly fitting
+// its painted content, this package's original behavior. Height is
+// always computed from content: a printer.Profile carries no notion of
+// paper length for Paint to target instead (see Document's own doc
+// comment).
 //
 // Paint assumes doc.Font is set, same as it assumes doc came from Build
 // rather than being hand-built: a Document is always produced with its
 // Font, so there's nothing to validate here (see docs/ARCHITECTURE.md §5
 // on not blurring Validate-style checks into stages that can trust their
 // input).
-//
-// This is an early, partial implementation of the Paint described in
-// docs/ARCHITECTURE.md §2 — it does not yet accept a printer.Profile, and
-// sizes the Canvas to fit the painted content rather than to
-// Document.WidthDots x HeightDots, since Document does not yet carry
-// those fields (the same gap noted in render/layout.Build's docstring).
 func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
-	width, height := 0, 0
+	width, height := doc.WidthDots, 0
 	for _, b := range doc.Blocks {
 		bh, ok := blockHeight(b.Element, f)
 		if !ok {
 			return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
 		}
-		if content, ok := textContent(b.Element); ok {
-			if w := f.Measure(content); w > width {
-				width = w
+		if width <= 0 {
+			if content, ok := textContent(b.Element); ok {
+				if w := f.Measure(content); w > width {
+					width = w
+				}
 			}
 		}
 		if bottom := b.Y + bh; bottom > height {
@@ -96,7 +104,14 @@ func blockHeight(el receipt.Element, f layout.Font) (int, bool) {
 	}
 }
 
-// paintGlyph copies bmp's set pixels into c, offset by (x, y).
+// paintGlyph copies bmp's set pixels into c, offset by (x, y), silently
+// dropping any pixel that falls outside c's bounds rather than growing c
+// or wrapping onto another line. Before doc.WidthDots existed (Paint
+// always sized the Canvas to fit its content), that could never happen;
+// a Document built against a printer.Profile can now specify a width
+// narrower than some painted line's content, so this guard is load-bearing,
+// not defensive filler — without it, x or y could index past the end of
+// c.Bits.
 func (c *Canvas) paintGlyph(x, y int, bmp layout.GlyphBitmap) {
 	rowBytes := (c.Width + 7) / 8
 	srcRowBytes := (bmp.Width + 7) / 8
@@ -106,6 +121,9 @@ func (c *Canvas) paintGlyph(x, y int, bmp layout.GlyphBitmap) {
 				continue
 			}
 			px, py := x+col, y+row
+			if px >= c.Width || py >= c.Height {
+				continue
+			}
 			c.Bits[py*rowBytes+px/8] |= 0x80 >> uint(px%8)
 		}
 	}

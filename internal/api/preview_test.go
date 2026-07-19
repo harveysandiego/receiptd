@@ -12,6 +12,7 @@ import (
 	"github.com/harveysandiego/receiptd/internal/api"
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
@@ -25,16 +26,18 @@ type fakePreviewService struct {
 
 	calls      int
 	gotReceipt receipt.Receipt
+	gotPrinter string
 }
 
-func (f *fakePreviewService) Preview(_ context.Context, r receipt.Receipt) ([]byte, error) {
+func (f *fakePreviewService) Preview(_ context.Context, r receipt.Receipt, printerName string) ([]byte, error) {
 	f.calls++
 	f.gotReceipt = r
+	f.gotPrinter = printerName
 	return f.png, f.err
 }
 
 func validPreviewRequestBody() []byte {
-	return []byte(`{"version":1,"elements":[{"type":"text","content":"hello"}]}`)
+	return []byte(`{"printer":"front-desk","receipt":{"version":1,"elements":[{"type":"text","content":"hello"}]}}`)
 }
 
 func TestPreviewHandler_Success_ReturnsPNGBytesWithStatusOK(t *testing.T) {
@@ -89,6 +92,9 @@ func TestPreviewHandler_Success_PassesReceiptToService(t *testing.T) {
 	if text.Content != "hello" {
 		t.Errorf("Content = %q, want %q", text.Content, "hello")
 	}
+	if svc.gotPrinter != "front-desk" {
+		t.Errorf("Printer = %q, want %q", svc.gotPrinter, "front-desk")
+	}
 }
 
 func TestPreviewHandler_MalformedJSON_ReturnsBadRequest(t *testing.T) {
@@ -114,7 +120,7 @@ func TestPreviewHandler_MalformedReceiptElement_ReturnsBadRequest(t *testing.T) 
 
 	// Syntactically valid JSON, but "content" doesn't fit Text.Content (a
 	// string) — mirrors TestPrintHandler_MalformedReceiptElement_ReturnsBadRequest.
-	body := []byte(`{"version":1,"elements":[{"type":"text","content":123}]}`)
+	body := []byte(`{"printer":"front-desk","receipt":{"version":1,"elements":[{"type":"text","content":123}]}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -135,7 +141,7 @@ func TestPreviewHandler_BodyTooLarge_ReturnsRequestEntityTooLarge(t *testing.T) 
 	// A large, unterminated JSON string literal: syntactically valid so far
 	// as the decoder can tell, so it keeps reading content bytes (rather
 	// than failing fast on a syntax error) until MaxBytesReader cuts it off.
-	body := append([]byte(`{"elements":[{"type":"text","content":"`), bytes.Repeat([]byte("a"), 10<<20+1)...)
+	body := append([]byte(`{"printer":"front-desk","receipt":{"elements":[{"type":"text","content":"`), bytes.Repeat([]byte("a"), 10<<20+1)...)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -185,6 +191,7 @@ func TestPreviewHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 func TestPreviewHandler_RealService_ReturnsDecodablePNG(t *testing.T) {
 	store := queue.NewMemoryStore()
 	svc := app.New(queue.New(store, &noopProcessor{}))
+	svc.Profiles = map[string]printer.Profile{"front-desk": {}}
 	h := api.NewPreviewHandler(svc)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(validPreviewRequestBody()))
@@ -204,6 +211,7 @@ func TestPreviewHandler_RealService_NeverEnqueuesOrProcesses(t *testing.T) {
 	store := queue.NewMemoryStore()
 	proc := &noopProcessor{}
 	svc := app.New(queue.New(store, proc))
+	svc.Profiles = map[string]printer.Profile{"front-desk": {}}
 	h := api.NewPreviewHandler(svc)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(validPreviewRequestBody()))
@@ -227,7 +235,7 @@ func TestPreviewHandler_RealService_InvalidReceipt_ReturnsBadRequest(t *testing.
 	svc := app.New(queue.New(store, &noopProcessor{}))
 	h := api.NewPreviewHandler(svc)
 
-	body := []byte(`{"version":1,"elements":[{"type":"text","content":""}]}`)
+	body := []byte(`{"printer":"front-desk","receipt":{"version":1,"elements":[{"type":"text","content":""}]}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 

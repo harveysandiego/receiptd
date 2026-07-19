@@ -64,7 +64,7 @@ func TestPreviewCmd_Success_WritesResponseToOutFile(t *testing.T) {
 	in := writeInput(t, validReceiptJSON)
 	out := filepath.Join(t.TempDir(), "preview.png")
 
-	if _, err := execCLI(t, "preview", in, "--out", out, "--config", cfgPath); err != nil {
+	if _, err := execCLI(t, "preview", in, "--out", out, "--printer", "front-desk", "--config", cfgPath); err != nil {
 		t.Fatalf("execute preview error = %v, want nil", err)
 	}
 
@@ -165,7 +165,7 @@ func TestPreviewCmd_InvalidDaemonAddress_FailsCleanlyWithoutWritingOutput(t *tes
 	in := writeInput(t, validReceiptJSON)
 	out := filepath.Join(t.TempDir(), "preview.png")
 
-	if _, err := execCLI(t, "preview", in, "--out", out, "--config", cfgPath); err == nil {
+	if _, err := execCLI(t, "preview", in, "--out", out, "--printer", "front-desk", "--config", cfgPath); err == nil {
 		t.Fatal("execute preview error = nil, want non-nil for an unreachable daemon address")
 	}
 	if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {

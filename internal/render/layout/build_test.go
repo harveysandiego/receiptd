@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
 func TestBuild_EmptyReceipt(t *testing.T) {
-	doc, err := layout.Build(receipt.Receipt{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(receipt.Receipt{}, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -20,7 +21,7 @@ func TestBuild_EmptyReceipt(t *testing.T) {
 
 func TestBuild_DocumentCarriesFont(t *testing.T) {
 	f := layout.EmbeddedFont{}
-	doc, err := layout.Build(receipt.Receipt{}, f)
+	doc, err := layout.Build(receipt.Receipt{}, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -33,7 +34,7 @@ func TestBuild_OneText(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -55,7 +56,7 @@ func TestBuild_MultipleText_YIncreasesByLineHeight(t *testing.T) {
 		receipt.Text{Content: "Eggs"},
 		receipt.Text{Content: "Bread"},
 	}}
-	doc, err := layout.Build(r, f)
+	doc, err := layout.Build(r, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -77,7 +78,7 @@ func TestBuild_PreservesElementOrder(t *testing.T) {
 		receipt.Text{Content: "Second"},
 		receipt.Text{Content: "Third"},
 	}}
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -100,7 +101,7 @@ func TestBuild_UnsupportedElementReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Divider{Style: "solid"},
 	}}
-	_, err := layout.Build(r, layout.EmbeddedFont{})
+	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}
@@ -110,7 +111,7 @@ func TestBuild_OneHeading(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Heading{Content: "Shopping List"},
 	}}
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -131,7 +132,7 @@ func TestBuild_HeadingAndText_PreservesOrderAndAdvancesY(t *testing.T) {
 		receipt.Heading{Content: "Shopping List"},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, f)
+	doc, err := layout.Build(r, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -159,7 +160,7 @@ func TestBuild_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 		receipt.Text{Content: "Milk"},
 		receipt.Divider{Style: "solid"},
 	}}
-	_, err := layout.Build(r, layout.EmbeddedFont{})
+	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}
@@ -169,7 +170,7 @@ func TestBuild_OneSpacer(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Spacer{Height: 20},
 	}}
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -190,7 +191,7 @@ func TestBuild_SpacerAdvancesYByOwnHeight_NotLineHeight(t *testing.T) {
 		receipt.Spacer{Height: 20},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, f)
+	doc, err := layout.Build(r, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -208,7 +209,7 @@ func TestBuild_SpacerAndText_PreservesOrder(t *testing.T) {
 		receipt.Spacer{Height: 20},
 		receipt.Text{Content: "Eggs"},
 	}}
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -233,11 +234,11 @@ func TestBuild_Deterministic(t *testing.T) {
 	}}
 	f := layout.EmbeddedFont{}
 
-	first, err := layout.Build(r, f)
+	first, err := layout.Build(r, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
-	second, err := layout.Build(r, f)
+	second, err := layout.Build(r, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -249,5 +250,54 @@ func TestBuild_Deterministic(t *testing.T) {
 		if first.Blocks[i] != second.Blocks[i] {
 			t.Errorf("Blocks[%d] = %v, then %v, want equal", i, first.Blocks[i], second.Blocks[i])
 		}
+	}
+	if first.WidthDots != second.WidthDots {
+		t.Errorf("WidthDots = %d, then %d, want equal", first.WidthDots, second.WidthDots)
+	}
+}
+
+func TestBuild_WidthDotsFromProfile(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{WidthDots: 384}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.WidthDots != 384 {
+		t.Errorf("doc.WidthDots = %d, want 384 (profile.WidthDots)", doc.WidthDots)
+	}
+}
+
+func TestBuild_DifferentProfileWidths_ProduceDifferentDocumentWidths(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "Milk"}}}
+
+	narrow, err := layout.Build(r, printer.Profile{WidthDots: 200}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	wide, err := layout.Build(r, printer.Profile{WidthDots: 400}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+
+	if narrow.WidthDots != 200 || wide.WidthDots != 400 {
+		t.Errorf("WidthDots = %d, %d, want 200, 400 (each Document reflects its own Profile)", narrow.WidthDots, wide.WidthDots)
+	}
+}
+
+func TestBuild_ZeroProfileWidthDots_DocumentWidthDotsIsZero(t *testing.T) {
+	// printer.Profile{} is what cmd/receipt's offline `render` command
+	// passes, having no daemon or config to resolve a real printer from.
+	// Build must not invent a width for it — Document.WidthDots stays 0,
+	// the documented "no constraint" sentinel render/canvas.Paint falls
+	// back to content-fit sizing for.
+	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "Milk"}}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.WidthDots != 0 {
+		t.Errorf("doc.WidthDots = %d, want 0", doc.WidthDots)
 	}
 }

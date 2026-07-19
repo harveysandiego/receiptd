@@ -182,7 +182,7 @@ service or via Docker exactly as above — either works well on a Pi 3/4/5.
 receipt render receipt.json --out preview.png
 
 # Preview a Receipt as a PNG via a running receiptd
-receipt preview receipt.json --out preview.png
+receipt preview receipt.json --out preview.png --printer front-desk
 
 # Print a Receipt via a running receiptd
 receipt print receipt.json --printer front-desk
@@ -199,19 +199,24 @@ planned for later milestones — see the [roadmap](#roadmap).
 
 ## REST API examples
 
+Both `/preview` and `/print` take the same request body shape: a
+`printer` name alongside the `receipt` itself — a preview is only ever
+rendered relative to a specific printer's paper width (see
+[docs/adr/0006](docs/adr/0006-preview-requires-printer-profile.md)).
+
 ```sh
 # Preview a Receipt as a PNG, without printing it
 curl -X POST http://receiptd.local:8080/api/v1/preview \
   -H "Authorization: Bearer $RECEIPTD_TOKEN" \
   -H "Content-Type: application/json" \
-  -d @receipt.json \
+  -d '{"printer": "front-desk", "receipt": {"version": 1, "elements": [{"type": "text", "content": "Hello"}]}}' \
   -o preview.png
 
 # Print a Receipt
 curl -X POST http://receiptd.local:8080/api/v1/print \
   -H "Authorization: Bearer $RECEIPTD_TOKEN" \
   -H "Content-Type: application/json" \
-  -d @receipt.json
+  -d '{"printer": "front-desk", "receipt": {"version": 1, "elements": [{"type": "text", "content": "Hello"}]}}'
 
 # Check job status
 curl http://receiptd.local:8080/api/v1/jobs/<job-id> \

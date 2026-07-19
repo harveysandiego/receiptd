@@ -14,16 +14,20 @@ import (
 // newPreviewCmd builds the "preview" subcommand: POST a Receipt to a
 // running receiptd's /api/v1/preview and write the PNG it returns to
 // --out. Unlike "render" (render.go), this needs a running daemon and
-// does no rendering itself — all rendering happens server-side.
+// does no rendering itself — all rendering happens server-side. --printer
+// is required, matching "print": Preview renders against a specific
+// printer's Profile, so there is no printer-agnostic preview to produce —
+// see docs/adr/0006-preview-requires-printer-profile.md.
 func newPreviewCmd() *cobra.Command {
 	var out string
+	var printerName string
 
 	cmd := &cobra.Command{
 		Use:   "preview <receipt.json>",
 		Short: "Render a Receipt to a PNG preview via receiptd's API",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPreview(args[0], out)
+			return runPreview(args[0], out, printerName)
 		},
 	}
 
@@ -31,14 +35,18 @@ func newPreviewCmd() *cobra.Command {
 	if err := cmd.MarkFlagRequired("out"); err != nil {
 		panic(err)
 	}
+	cmd.Flags().StringVar(&printerName, "printer", "", "name of the printer to preview against (required)")
+	if err := cmd.MarkFlagRequired("printer"); err != nil {
+		panic(err)
+	}
 
 	return cmd
 }
 
-// runPreview reads the Receipt at inPath, POSTs it to receiptd's
-// /api/v1/preview, and writes the resulting PNG to outPath. It writes
-// nothing to outPath unless every prior step succeeds.
-func runPreview(inPath, outPath string) error {
+// runPreview reads the Receipt at inPath, POSTs it and printerName to
+// receiptd's /api/v1/preview, and writes the resulting PNG to outPath. It
+// writes nothing to outPath unless every prior step succeeds.
+func runPreview(inPath, outPath, printerName string) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -54,7 +62,7 @@ func runPreview(inPath, outPath string) error {
 		return err
 	}
 
-	png, err := client.preview(context.Background(), r)
+	png, err := client.preview(context.Background(), r, printerName)
 	if err != nil {
 		return err
 	}

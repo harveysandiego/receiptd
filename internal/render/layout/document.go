@@ -28,12 +28,20 @@ type Block struct {
 //
 // Font is carried here, rather than passed separately to each stage that
 // needs it, so Build's measurements and Paint's painted glyphs can never
-// silently come from different Font instances. WidthDots and HeightDots
-// from the frozen Document (ARCHITECTURE.md §2) are not yet present:
-// nothing in this codebase threads a printer.Profile through Build yet,
-// so there's no value to put there and no second use to justify adding
-// them ahead of that.
+// silently come from different Font instances.
+//
+// WidthDots is the frozen Document's (ARCHITECTURE.md §2) printer-driven
+// canvas width, now present: Build sets it from the printer.Profile it
+// was given. A zero value means Build had no positive width to constrain
+// to (see printer.Profile.WidthDots's doc comment), and Paint falls back
+// to sizing the Canvas to its painted content, exactly as this codebase
+// has always done. HeightDots from the frozen struct is not yet present —
+// unlike width, a printer.Profile carries no notion of paper length (a
+// continuous roll has none to declare), so there is no second value to
+// thread through yet, and Paint continues to compute the Canvas's height
+// from content itself.
 type Document struct {
-	Blocks []Block
-	Font   Font
+	WidthDots int
+	Blocks    []Block
+	Font      Font
 }

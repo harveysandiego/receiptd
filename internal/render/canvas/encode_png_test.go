@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
@@ -61,7 +62,7 @@ func TestEncodePNG_Pipeline_PixelValuesMatchPaintedGlyph(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "A"},
-	}}, f)
+	}}, printer.Profile{}, f)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}

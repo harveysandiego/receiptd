@@ -232,6 +232,134 @@ func TestPaint_SpacerAndTextBlocks_PreservesOrder(t *testing.T) {
 	assertGlyphPainted(t, c, 20, bmp)
 }
 
+func TestPaint_DocumentWidthDots_SetsCanvasWidth(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		WidthDots: 384,
+		Font:      f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "A"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 384 {
+		t.Errorf("c.Width = %d, want 384 (doc.WidthDots), not content-fit (%d)", c.Width, f.Measure("A"))
+	}
+}
+
+func TestPaint_NarrowContent_StillFillsFullWidthCanvas(t *testing.T) {
+	// A Spacer-only Document has no text content at all, so the old
+	// content-fit sizing would have produced a zero-width Canvas. With
+	// doc.WidthDots set, the Canvas must still be sized to it.
+	doc := layout.Document{
+		WidthDots: 384,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Spacer{Height: 20}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 384 {
+		t.Errorf("c.Width = %d, want 384", c.Width)
+	}
+}
+
+func TestPaint_DifferentDocumentWidths_ProduceDifferentCanvasWidths(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	blocks := []layout.Block{{Y: 0, Element: receipt.Text{Content: "A"}}}
+
+	narrow, err := canvas.Paint(layout.Document{WidthDots: 200, Font: f, Blocks: blocks})
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	wide, err := canvas.Paint(layout.Document{WidthDots: 400, Font: f, Blocks: blocks})
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if narrow.Width != 200 || wide.Width != 400 {
+		t.Errorf("Width = %d, %d, want 200, 400 (each Canvas reflects its own Document.WidthDots)", narrow.Width, wide.Width)
+	}
+}
+
+func TestPaint_ZeroDocumentWidthDots_FallsBackToContentFit(t *testing.T) {
+	// The same assertion TestPaint_OneTextBlock_MatchesFontGlyph already
+	// makes implicitly (via a Document with no WidthDots set at all) —
+	// stated explicitly here as the documented "0 = content-fit" contract,
+	// exercised through Build's own zero-value Profile case rather than a
+	// hand-built Document.
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		WidthDots: 0,
+		Font:      f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "Milk"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("Milk"); c.Width != want {
+		t.Errorf("c.Width = %d, want %d (content-fit)", c.Width, want)
+	}
+}
+
+func TestPaint_ContentWiderThanDocumentWidth_ClipsWithoutPanicking(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	// "Hello world" measures far wider than 8 dots at this embedded face;
+	// before doc.WidthDots existed, the Canvas always grew to fit content,
+	// so this situation could never arise. paintGlyph must clip rather
+	// than index past c.Bits.
+	doc := layout.Document{
+		WidthDots: 8,
+		Font:      f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "Hello world"}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 8 {
+		t.Errorf("c.Width = %d, want 8 (fixed to doc.WidthDots, not grown for the wider content)", c.Width)
+	}
+}
+
+func TestPaint_DocumentWidthDots_Deterministic(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{
+		WidthDots: 384,
+		Font:      f,
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "Milk"}},
+		},
+	}
+
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if first.Width != second.Width || first.Height != second.Height {
+		t.Fatalf("dimensions = %dx%d, then %dx%d, want equal", first.Width, first.Height, second.Width, second.Height)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
 func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc := layout.Document{

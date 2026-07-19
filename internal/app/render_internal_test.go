@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
@@ -21,7 +22,7 @@ func TestService_render_Success_ReturnsRenderedCanvas(t *testing.T) {
 	s := &Service{}
 	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello"}}}
 
-	c, err := s.render(r)
+	c, err := s.render(r, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
@@ -42,11 +43,11 @@ func TestService_render_ReceiptContentReachesRendererUnchanged(t *testing.T) {
 	s := &Service{}
 	f := layout.EmbeddedFont{}
 
-	short, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}})
+	short, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
-	long, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello world"}}})
+	long, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello world"}}}, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
@@ -66,11 +67,24 @@ func TestService_render_UnsupportedElement_ReturnsPermanentError(t *testing.T) {
 	s := &Service{}
 	r := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}}}
 
-	c, err := s.render(r)
+	c, err := s.render(r, printer.Profile{})
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("render() error = %v, want apperr.KindPermanent", err)
 	}
 	if c != nil {
 		t.Errorf("render() canvas = %+v, want nil on error", c)
+	}
+}
+
+func TestService_render_ProfileWidthDots_SetsCanvasWidth(t *testing.T) {
+	s := &Service{}
+	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}
+
+	c, err := s.render(r, printer.Profile{WidthDots: 200})
+	if err != nil {
+		t.Fatalf("render() error = %v, want nil", err)
+	}
+	if c.Width != 200 {
+		t.Errorf("canvas.Width = %d, want 200 (profile.WidthDots, not content-fit)", c.Width)
 	}
 }

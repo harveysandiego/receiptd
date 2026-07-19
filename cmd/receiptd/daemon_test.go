@@ -21,6 +21,12 @@ import (
 // validConfig returns a minimal, valid *config.Config for build/loadAndBuild
 // tests: an in-memory queue store and auth disabled. Every path is confined
 // to t.TempDir() so tests never write into the repo's working directory.
+//
+// It configures one printer, "preview-printer", solely so previewRequest()
+// has a real Profile to resolve — Preview only ever reads Service.Profiles,
+// never Service.Printers, so this never dials anything (docs/adr/0006).
+// Deliberately not named "front-desk": several /print tests below rely on
+// that specific name staying unconfigured here.
 func validConfig(t *testing.T) *config.Config {
 	t.Helper()
 	return &config.Config{
@@ -32,11 +38,18 @@ func validConfig(t *testing.T) *config.Config {
 			MaxAttempts:  3,
 			RetryBackoff: 5 * time.Second,
 		},
+		Printers: []config.PrinterConfig{
+			{
+				Name:       "preview-printer",
+				Connection: printer.Connection{Transport: "network", Address: "127.0.0.1:0"},
+				Profile:    printer.Profile{WidthDots: 384, DPI: 203},
+			},
+		},
 	}
 }
 
 func previewRequest() *http.Request {
-	body := `{"elements":[{"type":"text","content":"hi"}]}`
+	body := `{"printer":"preview-printer","receipt":{"elements":[{"type":"text","content":"hi"}]}}`
 	return httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewBufferString(body))
 }
 
@@ -224,7 +237,8 @@ func TestBuild_PrintWithConfiguredPrinter_JobSucceeds(t *testing.T) {
 
 func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
 	// build() wires Service.Printers/Profiles from cfg.Printers, but
-	// validConfig(t) configures no printers at all — so a Job targeting
+	// validConfig(t) never configures a printer named "front-desk" (only
+	// "preview-printer", for previewRequest()) — so a Job targeting
 	// "front-desk" still has neither a Printer nor a Profile to resolve,
 	// and is expected to fail. This pins the (still honest) failure
 	// behavior for a printer name that simply isn't in cfg.Printers.

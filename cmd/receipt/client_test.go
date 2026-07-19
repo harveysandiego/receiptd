@@ -27,12 +27,15 @@ func TestAPIClient_Preview_Success_ReturnsResponseBytes(t *testing.T) {
 	want := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/preview", func(w http.ResponseWriter, r *http.Request) {
-		var got receipt.Receipt
-		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+		var req previewRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Errorf("decode request body: %v", err)
 		}
-		if len(got.Elements) != 1 {
-			t.Errorf("len(Elements) = %d, want 1", len(got.Elements))
+		if len(req.Receipt.Elements) != 1 {
+			t.Errorf("len(Elements) = %d, want 1", len(req.Receipt.Elements))
+		}
+		if req.Printer != "front-desk" {
+			t.Errorf("Printer = %q, want %q", req.Printer, "front-desk")
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
@@ -40,7 +43,7 @@ func TestAPIClient_Preview_Success_ReturnsResponseBytes(t *testing.T) {
 	})
 	client := newTestClient(t, mux, "")
 
-	got, err := client.preview(context.Background(), sampleReceipt())
+	got, err := client.preview(context.Background(), sampleReceipt(), "front-desk")
 	if err != nil {
 		t.Fatalf("preview() error = %v, want nil", err)
 	}
@@ -104,7 +107,7 @@ func TestAPIClient_SendsBearerTokenWhenSet(t *testing.T) {
 	})
 	client := newTestClient(t, mux, "secret-token")
 
-	if _, err := client.preview(context.Background(), sampleReceipt()); err != nil {
+	if _, err := client.preview(context.Background(), sampleReceipt(), "front-desk"); err != nil {
 		t.Fatalf("preview() error = %v, want nil", err)
 	}
 	if want := "Bearer secret-token"; gotAuth != want {
@@ -121,7 +124,7 @@ func TestAPIClient_NoTokenConfigured_OmitsAuthorizationHeader(t *testing.T) {
 	})
 	client := newTestClient(t, mux, "")
 
-	if _, err := client.preview(context.Background(), sampleReceipt()); err != nil {
+	if _, err := client.preview(context.Background(), sampleReceipt(), "front-desk"); err != nil {
 		t.Fatalf("preview() error = %v, want nil", err)
 	}
 	if sawHeader {
@@ -175,7 +178,7 @@ func TestAPIClient_UnreachableAddress_PropagatesCleanly(t *testing.T) {
 
 	client := &apiClient{baseURL: "http://" + addr, http: http.DefaultClient}
 
-	if _, err := client.preview(context.Background(), sampleReceipt()); err == nil {
+	if _, err := client.preview(context.Background(), sampleReceipt(), "front-desk"); err == nil {
 		t.Fatal("preview() error = nil, want non-nil for an unreachable daemon address")
 	}
 }

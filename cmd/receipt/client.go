@@ -29,6 +29,15 @@ type printRequest struct {
 	Receipt receipt.Receipt `json:"receipt"`
 }
 
+// previewRequest is the wire shape of a POST /api/v1/preview request
+// body, mirroring printRequest — see
+// docs/adr/0006-preview-requires-printer-profile.md for why Preview needs
+// a target printer at all.
+type previewRequest struct {
+	Printer string          `json:"printer"`
+	Receipt receipt.Receipt `json:"receipt"`
+}
+
 // printResponse is the wire shape of a successful POST /api/v1/print
 // response body.
 type printResponse struct {
@@ -134,11 +143,10 @@ func (c *apiClient) do(ctx context.Context, method, path string, body []byte) ([
 	return data, nil
 }
 
-// preview calls POST /api/v1/preview with r's JSON encoding as the
-// request body — no envelope, matching PreviewHandler's decode — and
-// returns the PNG bytes it responds with.
-func (c *apiClient) preview(ctx context.Context, r receipt.Receipt) ([]byte, error) {
-	body, err := json.Marshal(r)
+// preview calls POST /api/v1/preview with r and printerName wrapped in a
+// previewRequest, and returns the PNG bytes it responds with.
+func (c *apiClient) preview(ctx context.Context, r receipt.Receipt, printerName string) ([]byte, error) {
+	body, err := json.Marshal(previewRequest{Printer: printerName, Receipt: r})
 	if err != nil {
 		return nil, err
 	}

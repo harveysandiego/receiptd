@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
@@ -14,7 +15,11 @@ import (
 // newRenderCmd builds the "render" subcommand: an offline path from a
 // Receipt JSON file to a PNG preview that needs no running daemon, using
 // exactly the same layout.Build + canvas.Paint pipeline app.Service uses
-// server-side (docs/ARCHITECTURE.md §4).
+// server-side (docs/ARCHITECTURE.md §4). It has no config or daemon to
+// resolve a real printer.Profile from, so it renders against the
+// zero-value Profile — printer.Profile.WidthDots's documented "no printer
+// configured" case — producing the same content-fit PNG this command has
+// always produced.
 func newRenderCmd() *cobra.Command {
 	var out string
 
@@ -53,7 +58,7 @@ func runRender(inPath, outPath string) error {
 		return err
 	}
 
-	doc, err := layout.Build(r, layout.EmbeddedFont{})
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
 	if err != nil {
 		return err
 	}
