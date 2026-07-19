@@ -73,6 +73,44 @@ func countSetPixels(c *canvas.Canvas) int {
 	return count
 }
 
+// assertGlyphPaintedExceptRows behaves like assertGlyphPainted but skips
+// bmp rows in [excludeFrom, excludeTo) — the rows a decoration (e.g. an
+// underline sharing bmp's own bottom row) legitimately painted over,
+// which assertGlyphPainted's exact-match would otherwise flag as the
+// glyph bitmap having been modified when it wasn't.
+func assertGlyphPaintedExceptRows(t *testing.T, c *canvas.Canvas, originY int, bmp layout.GlyphBitmap, excludeFrom, excludeTo int) {
+	t.Helper()
+	for y := 0; y < bmp.Height; y++ {
+		if y >= excludeFrom && y < excludeTo {
+			continue
+		}
+		for x := 0; x < bmp.Width; x++ {
+			want := glyphPixelSet(bmp, x, y)
+			got := pixelSet(c, x, originY+y)
+			if got != want {
+				t.Errorf("pixel(%d,%d) = %v, want %v (glyph pixel %d,%d)", x, originY+y, got, want, x, y)
+			}
+		}
+	}
+}
+
+// assertHLineSet fails t unless every pixel in the horizontal band
+// [0, width) x [y0, y0+thickness) is painted in c — the shape a
+// rendered underline or strikethrough decoration must have
+// (docs/ARCHITECTURE.md §3 "Text styling"; all decorated content in
+// this file starts at x=0, the same assumption assertGlyphPainted
+// already makes).
+func assertHLineSet(t *testing.T, c *canvas.Canvas, width, y0, thickness int) {
+	t.Helper()
+	for y := y0; y < y0+thickness; y++ {
+		for x := 0; x < width; x++ {
+			if !pixelSet(c, x, y) {
+				t.Errorf("pixel(%d,%d) not set, want decoration line painted", x, y)
+			}
+		}
+	}
+}
+
 func TestPaint_EmptyDocument(t *testing.T) {
 	c, err := canvas.Paint(layout.Document{Font: layout.EmbeddedFont{}})
 	if err != nil {
@@ -600,6 +638,277 @@ func TestPaint_HeadingAndTextWithSameStyle_RenderIdentically(t *testing.T) {
 
 	if ch.Width != ct.Width || ch.Height != ct.Height {
 		t.Fatalf("Heading dimensions = %dx%d, Text = %dx%d, want equal", ch.Width, ch.Height, ct.Width, ct.Height)
+	}
+	if string(ch.Bits) != string(ct.Bits) {
+		t.Errorf("Heading and Text Bits differ given the same Style, want identical")
+	}
+}
+
+func TestPaint_ItalicStyle_PreservesMeasurementAndDimensions(t *testing.T) {
+	// Italic is a bitmap shear, not a width change (docs/ARCHITECTURE.md
+	// §3): the sheared glyph still occupies its original Width, so
+	// measurement (f.Measure) stays valid for italic content without a
+	// second, italic-aware measurement path.
+	f := layout.EmbeddedFont{}
+	plain := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
+	}}
+	italic := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Italic: true}},
+	}}
+
+	cp, err := canvas.Paint(plain)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	ci, err := canvas.Paint(italic)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if cp.Width != ci.Width || cp.Height != ci.Height {
+		t.Errorf("italic dimensions = %dx%d, plain = %dx%d, want equal (italic does not change glyph advance)", ci.Width, ci.Height, cp.Width, cp.Height)
+	}
+}
+
+func TestPaint_ItalicStyle_ChangesPixelArrangement(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	plain := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1}},
+	}}
+	italic := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Italic: true}},
+	}}
+
+	cp, err := canvas.Paint(plain)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	ci, err := canvas.Paint(italic)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(cp.Bits) == string(ci.Bits) {
+		t.Errorf("italic Bits identical to plain, want a sheared (different) pixel arrangement")
+	}
+}
+
+func TestPaint_ItalicStyle_DeterministicAcrossCalls(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{Size: 1, Italic: true}},
+	}}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_BoldItalicComposition_ProducesDistinctDeterministicResult(t *testing.T) {
+	// Composition must not degrade into "only one style wins": bold-only,
+	// italic-only, and bold+italic together must all paint distinct
+	// pixel arrangements, and bold+italic must itself be deterministic.
+	f := layout.EmbeddedFont{}
+	styles := map[string]layout.Style{
+		"bold":       {Size: 1, Bold: true},
+		"italic":     {Size: 1, Italic: true},
+		"boldItalic": {Size: 1, Bold: true, Italic: true},
+	}
+	results := make(map[string]*canvas.Canvas, len(styles))
+	for name, style := range styles {
+		doc := layout.Document{Font: f, Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "A"}, Style: style},
+		}}
+		c, err := canvas.Paint(doc)
+		if err != nil {
+			t.Fatalf("Paint() error = %v, want nil", err)
+		}
+		results[name] = c
+	}
+
+	if string(results["bold"].Bits) == string(results["boldItalic"].Bits) {
+		t.Errorf("bold+italic Bits identical to bold-only, want italic to have visibly composed")
+	}
+	if string(results["italic"].Bits) == string(results["boldItalic"].Bits) {
+		t.Errorf("bold+italic Bits identical to italic-only, want bold to have visibly composed")
+	}
+
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: styles["boldItalic"]},
+	}}
+	again, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(again.Bits) != string(results["boldItalic"].Bits) {
+		t.Errorf("bold+italic Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_SizeItalicComposition_ScalesDimensions(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 2, Italic: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := f.Measure("A") * 2; c.Width != want {
+		t.Errorf("c.Width = %d, want %d (italic does not change scaled measurement)", c.Width, want)
+	}
+	if want := f.LineHeight() * 2; c.Height != want {
+		t.Errorf("c.Height = %d, want %d (italic does not change scaled measurement)", c.Height, want)
+	}
+}
+
+func TestPaint_UnderlineStyle_DrawsLineAtBottomOfBlock(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	width := f.Measure("A")
+	lh := f.LineHeight()
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Underline: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, width, lh-1, 1)
+
+	// The decoration must not have modified the glyph bitmap itself —
+	// every row outside the underline's own band still matches the
+	// unstyled glyph exactly.
+	bmp, _ := f.Glyph('A')
+	assertGlyphPaintedExceptRows(t, c, 0, bmp, lh-1, lh)
+}
+
+func TestPaint_UnderlineStyle_ScalesWithSize(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	const size = 2
+	width := f.Measure("A") * size
+	lh := f.LineHeight() * size
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: size, Underline: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, width, lh-size, size)
+}
+
+func TestPaint_StrikethroughStyle_DrawsLineThroughMiddle(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	width := f.Measure("A")
+	lh := f.LineHeight()
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Strikethrough: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, width, lh/2, 1)
+
+	// Same guarantee as the underline test above: rows outside the
+	// strikethrough's own band are unaffected.
+	bmp, _ := f.Glyph('A')
+	assertGlyphPaintedExceptRows(t, c, 0, bmp, lh/2, lh/2+1)
+}
+
+func TestPaint_StrikethroughStyle_ScalesWithSize(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	const size = 2
+	width := f.Measure("A") * size
+	lh := f.LineHeight() * size
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: size, Strikethrough: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, width, lh/2, size)
+}
+
+func TestPaint_UnderlineAndStrikethrough_BothRender(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	width := f.Measure("A")
+	lh := f.LineHeight()
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: layout.Style{Size: 1, Underline: true, Strikethrough: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, width, lh-1, 1)
+	assertHLineSet(t, c, width, lh/2, 1)
+}
+
+func TestPaint_EmptyContentWithUnderline_DoesNotPanic(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: ""}, Style: layout.Style{Size: 1, Underline: true, Strikethrough: true}},
+	}}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Width != 0 {
+		t.Errorf("c.Width = %d, want 0 (no content to underline)", c.Width)
+	}
+}
+
+func TestPaint_AllStylesComposed_DeterministicAcrossCalls(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	doc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "Milk"}, Style: layout.Style{
+			Size: 2, Bold: true, Italic: true, Underline: true, Strikethrough: true,
+		}},
+	}}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if first.Width != second.Width || first.Height != second.Height {
+		t.Fatalf("dimensions = %dx%d, then %dx%d, want equal", first.Width, first.Height, second.Width, second.Height)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_HeadingWithUnderline_RendersSameAsTextWithSameStyle(t *testing.T) {
+	// Extends TestPaint_HeadingAndTextWithSameStyle_RenderIdentically to
+	// decorations: there is still exactly one rendering pipeline once
+	// underline exists.
+	f := layout.EmbeddedFont{}
+	style := layout.Style{Bold: true, Size: 2, Underline: true, Strikethrough: true}
+	headingDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Heading{Content: "A"}, Style: style},
+	}}
+	textDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "A"}, Style: style},
+	}}
+
+	ch, err := canvas.Paint(headingDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	ct, err := canvas.Paint(textDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
 	}
 	if string(ch.Bits) != string(ct.Bits) {
 		t.Errorf("Heading and Text Bits differ given the same Style, want identical")

@@ -4,16 +4,20 @@ import "github.com/harveysandiego/receiptd/internal/render/layout"
 
 // styleGlyph applies style to bmp, the base bitmap layout.Font.Glyph
 // returned, per docs/ARCHITECTURE.md §3 "Text styling"'s fixed pipeline:
-// scale first, then bold. Font itself never sees style — it remains the
-// sole source of a glyph's unscaled, unstyled pixels; everything style
-// changes about those pixels happens here, in the one place Blocks are
-// turned into painted pixels. Future styles (underline, strikethrough,
-// italic) are additional steps appended to this same pipeline when
-// implemented, not a reason to redesign it.
+// scale, then bold, then italic. Font itself never sees style — it
+// remains the sole source of a glyph's unscaled, unstyled pixels;
+// everything style changes about those pixels happens here, in the one
+// place Blocks are turned into painted pixels. Underline and
+// strikethrough are not part of this pipeline: they don't transform a
+// glyph's bitmap at all, so they're painted directly onto the Canvas
+// after glyphs are (see paintDecorations in paint.go).
 func styleGlyph(bmp layout.GlyphBitmap, style layout.Style) layout.GlyphBitmap {
 	bmp = scaleGlyph(bmp, style.Size)
 	if style.Bold {
 		bmp = boldGlyph(bmp)
+	}
+	if style.Italic {
+		bmp = italicGlyph(bmp)
 	}
 	return bmp
 }
@@ -72,4 +76,44 @@ func boldGlyph(bmp layout.GlyphBitmap) layout.GlyphBitmap {
 		}
 	}
 	return out
+}
+
+// italicGlyph returns bmp with a deterministic synthetic-italic shear
+// applied: each row is shifted right by italicShear(bmp.Height, y), so
+// the glyph's top leans further right than its bottom — a rightward
+// lean, the same visual direction as a real italic face. The shift is
+// an integer number of whole pixels (no interpolation, so edges stay
+// sharp), and bmp's Width and Height are unchanged: a pixel shifted
+// past the right edge is dropped rather than growing the bitmap, which
+// is what keeps italic from needing its own measurement — the already
+// exact Font.Measure(s) * Style.Size formula stays correct for italic
+// content too.
+func italicGlyph(bmp layout.GlyphBitmap) layout.GlyphBitmap {
+	rowBytes := (bmp.Width + 7) / 8
+	out := layout.GlyphBitmap{Width: bmp.Width, Height: bmp.Height, Bits: make([]byte, len(bmp.Bits))}
+
+	for y := 0; y < bmp.Height; y++ {
+		shift := italicShear(bmp.Height, y)
+		for x := 0; x < bmp.Width; x++ {
+			if bmp.Bits[y*rowBytes+x/8]&(0x80>>uint(x%8)) == 0 {
+				continue
+			}
+			sx := x + shift
+			if sx < 0 || sx >= bmp.Width {
+				continue
+			}
+			out.Bits[y*rowBytes+sx/8] |= 0x80 >> uint(sx%8)
+		}
+	}
+	return out
+}
+
+// italicShear returns the rightward pixel shift for row y of a
+// height-tall glyph: 0 at the bottom row, increasing by one pixel every
+// three rows moving up. The exact ratio is a visual tuning choice (the
+// architecture only requires "a deterministic bitmap shear... visually
+// pleasing... sufficient" — docs/ARCHITECTURE.md §3), not a value a
+// caller should depend on.
+func italicShear(height, y int) int {
+	return (height - 1 - y) / 3
 }

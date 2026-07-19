@@ -11,10 +11,13 @@ import (
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
 // order. receipt.Text and receipt.Heading each occupy one line of height
 // f.LineHeight() * b.Style.Size, starting at their Y, and paint their
-// Content as glyphs styled per b.Style (see styleGlyph). receipt.Spacer
-// occupies its own Height (dots) of blank space and paints nothing. Any
-// other element type returns apperr.KindPermanent rather than being
-// skipped or given placeholder pixels.
+// Content as glyphs styled per b.Style (see styleGlyph), followed by any
+// underline/strikethrough decoration (see paintDecorations) — decorations
+// are drawn onto the Canvas after glyph painting, never folded into a
+// glyph's own bitmap. receipt.Spacer occupies its own Height (dots) of
+// blank space and paints nothing. Any other element type returns
+// apperr.KindPermanent rather than being skipped or given placeholder
+// pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
@@ -80,6 +83,7 @@ func Paint(doc layout.Document) (*Canvas, error) {
 			c.paintGlyph(x, b.Y, styleGlyph(bmp, b.Style))
 			x += advance * b.Style.Size
 		}
+		c.paintDecorations(b, f, x)
 	}
 
 	return c, nil
@@ -110,6 +114,54 @@ func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 		return e.Height, true
 	default:
 		return 0, false
+	}
+}
+
+// paintDecorations draws b's underline and/or strikethrough, if styled,
+// directly onto c across [0, textWidth) — the width of the content
+// paintGlyph already painted for b. Unlike Bold/Italic (styleGlyph),
+// these are decorations layered on after the glyph bitmaps are painted,
+// never folded into the glyph bitmap itself (docs/ARCHITECTURE.md §3
+// "Text styling"): a decoration's shape doesn't depend on what glyphs
+// happen to be under it, only on b's line box, so there's nothing for
+// styleGlyph's per-glyph pipeline to do here.
+//
+// Both lines are positioned and sized (thickness) from b's own resolved
+// line height (blockHeight, the same f.LineHeight() * b.Style.Size
+// every other placement decision in this file uses), so they stay
+// correctly placed and scale naturally as Style.Size grows without Font
+// needing to expose a baseline or x-height concept it doesn't have.
+func (c *Canvas) paintDecorations(b layout.Block, f layout.Font, textWidth int) {
+	if textWidth <= 0 || (!b.Style.Underline && !b.Style.Strikethrough) {
+		return
+	}
+	lineHeight, _ := blockHeight(b, f)
+	thickness := b.Style.Size
+	if b.Style.Underline {
+		c.paintHLine(0, textWidth, b.Y+lineHeight-thickness, thickness)
+	}
+	if b.Style.Strikethrough {
+		c.paintHLine(0, textWidth, b.Y+lineHeight/2, thickness)
+	}
+}
+
+// paintHLine sets every pixel in the horizontal band [x0, x1) x
+// [y0, y0+thickness) on c, silently dropping anything outside c's
+// bounds — the same clipping behaviour as paintGlyph, and for the same
+// reason: a Document built against a printer.Profile can specify a
+// width narrower than a decorated line's content.
+func (c *Canvas) paintHLine(x0, x1, y0, thickness int) {
+	rowBytes := (c.Width + 7) / 8
+	for y := y0; y < y0+thickness; y++ {
+		if y < 0 || y >= c.Height {
+			continue
+		}
+		for x := x0; x < x1; x++ {
+			if x < 0 || x >= c.Width {
+				continue
+			}
+			c.Bits[y*rowBytes+x/8] |= 0x80 >> uint(x%8)
+		}
 	}
 }
 
