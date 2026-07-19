@@ -425,7 +425,7 @@ unconfigured `Job.PrinterName`.
 | `image`    | `data` (inline base64) — always bytes the client already has        |
 | `asset`    | `name`, `width`, `align` — resolved by name via `assets.Store` at layout time |
 | `qrcode`   | `content`, `size`, `error_correction`                                |
-| `barcode`  | `content`, `symbology`, `height`, `show_text`                        |
+| `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` |
 | `columns`  | `columns: []{ weight int, elements: []Element }` — recursive        |
 | `table`    | `headers: []string`, `rows: [][]string` — flat, no nested Elements  |
 | `feed`     | `lines`                                                              |
@@ -571,6 +571,39 @@ already-decoded pixel content on a `Block` by the time `layout.Build`
 returns — `canvas.Paint` never distinguishes between them, only `layout`
 does.
 
+### Barcode symbologies
+
+`barcode.symbology` accepts exactly six values — the complete, stable set
+for v1, defined in `docs/adr/0009-barcode-symbologies.md`:
+
+| Symbology                | `symbology` value |
+|----------------------------|-------------------|
+| Code 128                   | `code128`         |
+| EAN-13                      | `ean13`           |
+| EAN-8                       | `ean8`            |
+| UPC-A                       | `upca`            |
+| Code 39                     | `code39`          |
+| Interleaved 2 of 5 (ITF)    | `itf`             |
+
+Any other value — including a symbology `github.com/boombuler/barcode`
+itself supports but this list omits (Codabar, Code 93, Data Matrix,
+PDF417, Aztec Code, 2 of 5) — fails `receipt.Barcode.Validate()` with
+`apperr.KindValidation`, the same closed-vocabulary pattern
+`QRCode.ErrorCorrection`/`QRCodeErrorCorrectionLevels` already establishes
+for `qrcode.error_correction`. An empty/omitted `symbology` is invalid too;
+unlike `qrcode.error_correction` (which defaults to `"medium"`), there is
+no default symbology.
+
+`Barcode` generation follows `QRCode`'s established pipeline exactly, per
+`docs/adr/0002-raster-rendering.md` (unchanged by this decision):
+`render/layout` generates the selected symbology as a bitmap via
+`github.com/boombuler/barcode`, producing the same `GlyphBitmap`
+`DecodeImageBitmap`/`GenerateQRCodeBitmap` already produce, which
+`render/canvas.Paint` paints via the one shared `paintGlyph` primitive
+every raster element uses. No printer-native ESC/POS barcode command is
+emitted for any symbology — `render/escpos` gains no barcode-specific
+encoding of its own.
+
 ### JSON representation
 
 Unchanged — discriminated union via `type`, same shape as Slack's Block Kit:
@@ -656,7 +689,7 @@ deferred to the stage that already does I/O.
       outside world.
    c. `canvas.Paint(document)` — paints every Block onto a monochrome
       bitmap using `document.Font.Glyph()` for text, scaled and bolded per
-      `Block.Style` (§3's rendering model pipeline), `go-qrcode` /
+      `Block.Style` (§3's rendering model pipeline),
       `boombuler/barcode`-generated bitmaps for QR/barcode Blocks, decoded
       image pixels for Image/Asset Blocks, lines for dividers.
    d. If the Receipt didn't end with an explicit `cut`, `escpos.Encode`

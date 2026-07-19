@@ -37,9 +37,10 @@ initialization, feed, and cut — everything else is pixels.
 
 Text rendering therefore never depends on the printer's codepage: glyphs
 are painted from the embedded font, not sent as codepage-dependent bytes.
-QR codes and barcodes are generated as bitmaps (via `go-qrcode` and
-`boombuler/barcode`) and painted onto the canvas like any other graphic,
-rather than emitted via vendor-specific native QR/barcode ESC/POS
+QR codes and barcodes are generated as bitmaps (via `boombuler/barcode`,
+see `docs/adr/0009-barcode-symbologies.md` for the symbologies `barcode`
+supports) and painted onto the canvas like any other graphic, rather than
+emitted via vendor-specific native QR/barcode ESC/POS
 commands.
 
 `render/escpos.Encode(canvas, profile)` is the one place printer-specific

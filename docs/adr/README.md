@@ -18,6 +18,7 @@ does without reopening a discussion that already happened.
 | [0006](0006-preview-requires-printer-profile.md) | Preview requires an explicit printer target |
 | [0007](0007-bitmap-text-styling.md) | Integer bitmap scaling as the public text-styling API |
 | [0008](0008-embedded-font-legibility.md) | Doubling the embedded font's native resolution for legibility |
+| [0009](0009-barcode-symbologies.md) | Fixed set of barcode symbologies for v1 |
 
 ## Conventions
 
