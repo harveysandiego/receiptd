@@ -676,6 +676,37 @@ func TestBuild_DividerAdvancesYByThickness(t *testing.T) {
 	}
 }
 
+func TestBuild_DividerSize2_AdvancesYByDoubleThickness(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Divider{Size: 2},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if wantY := 2 * layout.DividerThickness; doc.Blocks[1].Y != wantY {
+		t.Errorf("doc.Blocks[1].Y = %d, want %d (2 * layout.DividerThickness)", doc.Blocks[1].Y, wantY)
+	}
+}
+
+func TestBuild_DividerZeroSize_TreatedSameAsOmitted(t *testing.T) {
+	explicit := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Size: 0}, receipt.Text{Content: "A"}}}
+	omitted := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{}, receipt.Text{Content: "A"}}}
+
+	docExplicit, err := layout.Build(explicit, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	docOmitted, err := layout.Build(omitted, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if docExplicit.Blocks[1].Y != docOmitted.Blocks[1].Y {
+		t.Errorf("Y with Size: 0 = %d, Y with Size omitted = %d, want equal", docExplicit.Blocks[1].Y, docOmitted.Blocks[1].Y)
+	}
+}
+
 func TestBuild_DividerBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	r := receipt.Receipt{Elements: []receipt.Element{

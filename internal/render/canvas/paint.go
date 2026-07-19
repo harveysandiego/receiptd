@@ -71,10 +71,13 @@ func isRasterElement(el receipt.Element) bool {
 // are drawn onto the Canvas after glyph painting, never folded into a
 // glyph's own bitmap. receipt.Spacer occupies its own Height (dots) of
 // blank space and paints nothing. receipt.Divider occupies
-// layout.DividerThickness dots and paints one horizontal line spanning
-// the Canvas's full width (paintHLine, the same primitive underline and
+// layout.DividerThickness dots times its own resolved Size
+// (layout.ResolveSize) and paints one horizontal line spanning the
+// Canvas's full width (paintHLine, the same primitive underline and
 // strikethrough already reuse) — it is not part of the text-styling
-// pipeline, so b.Style is not read for it. receipt.Image, receipt.QRCode,
+// pipeline, so b.Style is not read for it; its own Size field is read
+// directly instead, the same way Spacer's own Height already is.
+// receipt.Image, receipt.QRCode,
 // and receipt.Barcode are all resolved to a layout.GlyphBitmap (scaled to
 // fit doc.WidthDots) by rasterBitmap — decoded via
 // layout.DecodeImageBitmap for Image, generated via
@@ -166,8 +169,8 @@ func Paint(doc layout.Document) (*Canvas, error) {
 			c.Controls = append(c.Controls, Control{Y: b.Y, Element: b.Element, Terminal: i == len(doc.Blocks)-1})
 			continue
 		}
-		if _, ok := b.Element.(receipt.Divider); ok {
-			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness)
+		if d, ok := b.Element.(receipt.Divider); ok {
+			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness*layout.ResolveSize(d.Size))
 			continue
 		}
 		if isRasterElement(b.Element) {
@@ -215,10 +218,12 @@ func textContent(el receipt.Element) (string, bool) {
 // receipt.Heading, and layout.TableLine alike (the same Style.Size used to
 // scale their glyphs — see Paint; a TableLine's Style is always
 // layout.Build's normalStyle, Size 1), the Spacer's own Height (unaffected
-// by Style), layout.DividerThickness for a receipt.Divider — the same
-// constant layout.Build already advanced Y by, so the two stages can never
-// disagree about how tall a Divider Block is — or 0 for a receipt.Feed or
-// receipt.Cut, which layout.Build never advances Y for either.
+// by Style), layout.DividerThickness times the Divider's own resolved Size
+// for a receipt.Divider (layout.ResolveSize, the same resolution and the
+// same DividerThickness constant layout.Build already advanced Y by, so
+// the two stages can never disagree about how tall a Divider Block is) —
+// or 0 for a receipt.Feed or receipt.Cut, which layout.Build never
+// advances Y for either.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
 	case receipt.Text, receipt.Heading, layout.TableLine:
@@ -226,7 +231,7 @@ func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	case receipt.Spacer:
 		return e.Height, true
 	case receipt.Divider:
-		return layout.DividerThickness, true
+		return layout.DividerThickness * layout.ResolveSize(e.Size), true
 	case receipt.Feed, receipt.Cut:
 		return 0, true
 	default:

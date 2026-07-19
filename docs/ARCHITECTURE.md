@@ -423,7 +423,7 @@ unconfigured `Job.PrinterName`.
 |------------|--------------------------------------------------------------------|
 | `text`     | `content`, `align`, `bold`, `italic`, `underline`, `strikethrough`, `size` |
 | `heading`  | `content` (implies `bold: true, size: 2`, see "Text styling" below) |
-| `divider`  | `style` (solid/dashed, optional)                                    |
+| `divider`  | `style` (solid/dashed, optional), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
 | `spacer`   | `height` (dots)                                                     |
 | `image`    | `data` (inline base64) — always bytes the client already has        |
 | `asset`    | `name`, `width`, `align` — resolved by name via `assets.Store` at layout time |
@@ -554,6 +554,21 @@ exact and uniform in both axes, the effective width of a `Size: N` string
 is precisely `Font.Measure(s) * N`. `render/layout`'s wrapping (`Build`'s
 `wrapText`) computes candidate line widths this way, so measurement and
 rendering can never disagree about how wide a scaled string is.
+
+### Divider thickness
+
+`render/layout.DividerThickness` (2 dots at `Size: 1`, about 0.25mm at 203
+DPI) is the base height a `divider` renders at — visible on real thermal
+hardware without reading as a solid filled bar. `Divider.Size` is an
+integer thickness scale factor over that base, the same "0 or omitted
+means unscaled" convention `Text.Size` uses: the rendered line is
+`DividerThickness * Size` dots. Unlike `Text.Size`, this does not go
+through `Block.Style` — a `Divider`'s own `Size` field is read directly by
+both `render/layout.Build` (`Y` advancement) and `render/canvas.Paint`
+(line thickness), the same way a `Spacer`'s own `Height` already is,
+since `Style` is documented as text-rendering hints and a divider's
+thickness isn't one. See
+`docs/adr/0012-divider-thickness-default-and-scaling.md`.
 
 ### Image vs. Asset — restored as separate types
 

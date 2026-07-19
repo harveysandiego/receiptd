@@ -1,6 +1,6 @@
 # 0011. Raising the default divider thickness for hardware legibility
 
-Status: Accepted
+Status: Superseded by [0012](0012-divider-thickness-default-and-scaling.md)
 
 ## Context
 

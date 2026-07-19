@@ -20,7 +20,8 @@ does without reopening a discussion that already happened.
 | [0008](0008-embedded-font-legibility.md) | Doubling the embedded font's native resolution for legibility |
 | [0009](0009-barcode-symbologies.md) | Fixed set of barcode symbologies for v1 |
 | [0010](0010-printer-control-elements-via-canvas-controls.md) | Positioned printer-control elements carried via Canvas.Controls |
-| [0011](0011-divider-thickness-legibility.md) | Raising the default divider thickness for hardware legibility |
+| [0011](0011-divider-thickness-legibility.md) | Raising the default divider thickness for hardware legibility — superseded by 0012 |
+| [0012](0012-divider-thickness-default-and-scaling.md) | Lowering the default divider thickness and adding a Size scale factor |
 
 ## Conventions
 

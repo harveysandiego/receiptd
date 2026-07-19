@@ -15,7 +15,8 @@ import (
 // receipt.QRCode, or receipt.Barcode becomes one Block, stacked top to
 // bottom in Receipt order. Every Block advances Y by f.LineHeight() times
 // its resolved Style.Size, except a Spacer (which advances Y by its own
-// Height, dots), a Divider (which advances Y by DividerThickness), an
+// Height, dots), a Divider (which advances Y by DividerThickness times
+// its own resolved Size — see ResolveSize), an
 // Image (which advances Y by its decoded, printable-width-scaled height —
 // see imageDimensions), a QRCode (which advances Y by its generated,
 // printable-width-scaled size — see qrCodeDimensions), a Barcode (which
@@ -42,7 +43,7 @@ import (
 // sugar over Text, not a second styling system — docs/ARCHITECTURE.md
 // §3), or normalStyle for anything else (e.g. receipt.Spacer,
 // receipt.Divider). Style.Size is always >= 1 once resolved — see
-// resolveSize — so no downstream code ever special-cases a zero or
+// ResolveSize — so no downstream code ever special-cases a zero or
 // invalid Size.
 //
 // Text and Heading Content is wrapped to p.WidthDots via wrapText before
@@ -82,7 +83,7 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			y += e.Height
 		case receipt.Divider:
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
-			y += DividerThickness
+			y += DividerThickness * ResolveSize(e.Size)
 		case receipt.Image:
 			_, h, err := imageDimensions(e.Data, p.WidthDots)
 			if err != nil {
@@ -134,33 +135,38 @@ var headingStyle = Style{Bold: true, Size: 2}
 // Build produces has Style.Size >= 1, not just Text/Heading ones.
 var normalStyle = Style{Size: 1}
 
-// DividerThickness is the fixed height, in dots, every receipt.Divider
-// occupies — Build and Paint share this one constant (see blockHeight)
-// so the two stages can't disagree. Raised from an original 1 to 4 for
-// hardware legibility; see docs/adr/0011-divider-thickness-legibility.md.
+// DividerThickness is the height, in dots, a receipt.Divider occupies at
+// Size 1 — Build and Paint share this one constant (see blockHeight) so
+// the two stages can't disagree, and both scale it by
+// ResolveSize(receipt.Divider.Size) the same way. See
+// docs/adr/0012-divider-thickness-default-and-scaling.md (which supersedes
+// docs/adr/0011-divider-thickness-legibility.md's now-changed default).
 // Style ("solid"/"dashed") is not read here or in Paint — a Divider
 // always renders as this one solid line until dashed rendering lands.
-const DividerThickness = 4
+const DividerThickness = 2
 
 // textStyle resolves t's own styling fields into a Style, normalizing
-// Size via resolveSize so the result always has Size >= 1.
+// Size via ResolveSize so the result always has Size >= 1.
 func textStyle(t receipt.Text) Style {
 	return Style{
 		Bold:          t.Bold,
 		Italic:        t.Italic,
 		Underline:     t.Underline,
 		Strikethrough: t.Strikethrough,
-		Size:          resolveSize(t.Size),
+		Size:          ResolveSize(t.Size),
 	}
 }
 
-// resolveSize normalizes a receipt.Text.Size value into the >= 1 scale
-// factor Style.Size always holds: 0 (an omitted field) becomes 1, per
-// docs/adr/0007-bitmap-text-styling.md's "0 or omitted means unscaled"
-// convention. receipt.Text.Validate() already rejects negative Size
-// before a Receipt reaches Build; resolveSize also floors it to 1 rather
-// than propagating it, so the >= 1 invariant holds unconditionally.
-func resolveSize(size int) int {
+// ResolveSize normalizes a receipt.Text.Size or receipt.Divider.Size value
+// into the >= 1 scale factor each field's "0 or omitted means unscaled"
+// convention promises (docs/adr/0007-bitmap-text-styling.md,
+// docs/adr/0012-divider-thickness-default-and-scaling.md). Both types'
+// Validate() already reject a negative Size before a Receipt reaches
+// Build; ResolveSize also floors it to 1 rather than propagating it, so
+// the >= 1 invariant holds unconditionally. Exported so render/canvas can
+// resolve a receipt.Divider's Size the same way Build itself does (see
+// canvas.blockHeight), without a second copy of this rule.
+func ResolveSize(size int) int {
 	if size < 1 {
 		return 1
 	}

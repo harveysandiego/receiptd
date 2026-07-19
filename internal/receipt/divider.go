@@ -2,24 +2,36 @@ package receipt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
 // Divider is a horizontal rule. Style is optional; when empty,
-// render/layout chooses a default.
+// render/layout chooses a default. Size is an integer thickness scale
+// factor, the same "0 or omitted means unscaled" convention Text.Size
+// uses (docs/adr/0007-bitmap-text-styling.md): the rendered line is
+// render/layout.DividerThickness dots at Size 1, or a Size multiple of it
+// for a deliberately heavier rule — see
+// docs/adr/0012-divider-thickness-default-and-scaling.md.
 type Divider struct {
 	Style string `json:"style,omitempty"`
+	Size  int    `json:"size,omitempty"`
 }
 
 // Validate reports whether d is well-formed: Style must be empty,
-// "solid", or "dashed" — the values docs/ARCHITECTURE.md defines.
+// "solid", or "dashed" — the values docs/ARCHITECTURE.md defines — and
+// Size, if set, must not be negative (the same rule Text.Validate()
+// applies to its own Size).
 func (d Divider) Validate() error {
 	switch d.Style {
 	case "", "solid", "dashed":
-		return nil
 	default:
 		return fmt.Errorf("divider: invalid style %q", d.Style)
 	}
+	if d.Size < 0 {
+		return errors.New("divider: size must not be negative")
+	}
+	return nil
 }
 
 // MarshalJSON encodes d alongside the "type":"divider" discriminator the

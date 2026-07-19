@@ -248,6 +248,46 @@ func TestPaint_OneDividerBlock_PaintsFullWidthLine(t *testing.T) {
 	assertHLineSet(t, c, 100, 0, layout.DividerThickness)
 }
 
+func TestPaint_DividerSize2_PaintsDoubleThicknessLine(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 100,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{Size: 2}, Style: layout.Style{Size: 1}},
+			{Y: 2 * layout.DividerThickness, Element: receipt.Spacer{Height: 5}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	assertHLineSet(t, c, 100, 0, 2*layout.DividerThickness)
+	assertRowClear(t, c, 100, 2*layout.DividerThickness)
+	if c.Height != 2*layout.DividerThickness+5 {
+		t.Errorf("c.Height = %d, want %d", c.Height, 2*layout.DividerThickness+5)
+	}
+}
+
+func TestPaint_DividerZeroSize_SameThicknessAsOmitted(t *testing.T) {
+	explicit := layout.Document{WidthDots: 40, Font: layout.EmbeddedFont{}, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Divider{Size: 0}, Style: layout.Style{Size: 1}},
+	}}
+	omitted := layout.Document{WidthDots: 40, Font: layout.EmbeddedFont{}, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+	}}
+	ce, err := canvas.Paint(explicit)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	co, err := canvas.Paint(omitted)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(ce.Bits) != string(co.Bits) {
+		t.Errorf("Bits with Size: 0 differ from Size omitted, want identical")
+	}
+}
+
 func TestPaint_DividerRespectsDocumentWidth_NotContentWidth(t *testing.T) {
 	// A Divider must never assume a fixed width of its own: it spans
 	// whatever Document.WidthDots resolved to, the same printable width

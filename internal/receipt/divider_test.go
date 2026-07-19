@@ -17,6 +17,9 @@ func TestDividerValidate(t *testing.T) {
 		{"solid", receipt.Divider{Style: "solid"}, false},
 		{"dashed", receipt.Divider{Style: "dashed"}, false},
 		{"invalid style", receipt.Divider{Style: "dotted"}, true},
+		{"zero size", receipt.Divider{Size: 0}, false},
+		{"positive size", receipt.Divider{Size: 2}, false},
+		{"negative size", receipt.Divider{Size: -1}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -29,7 +32,7 @@ func TestDividerValidate(t *testing.T) {
 }
 
 func TestDivider_JSONRoundTrip(t *testing.T) {
-	original := receipt.Divider{Style: "dashed"}
+	original := receipt.Divider{Style: "dashed", Size: 2}
 
 	data, err := json.Marshal(original)
 	if err != nil {
