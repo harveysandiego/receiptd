@@ -15,6 +15,7 @@ does without reopening a discussion that already happened.
 | [0003](0003-print-queue.md) | Asynchronous, persistent print queue from day one |
 | [0004](0004-extension-model.md) | Compile-time registration over runtime plugins |
 | [0005](0005-error-handling.md) | Typed errors via a Kind + Op + wrapped-cause taxonomy |
+| [0006](0006-preview-requires-printer-profile.md) | Preview requires an explicit printer target |
 
 ## Conventions
 

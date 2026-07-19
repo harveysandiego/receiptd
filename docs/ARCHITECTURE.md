@@ -368,11 +368,22 @@ type Service struct {
 }
 
 func (s *Service) Print(ctx context.Context, r receipt.Receipt, printerName string) (jobID string, err error)
-func (s *Service) Preview(ctx context.Context, r receipt.Receipt) ([]byte, error) // PNG only for now
+func (s *Service) Preview(ctx context.Context, r receipt.Receipt, printerName string) ([]byte, error) // PNG only for now
 func (s *Service) RunTemplate(ctx context.Context, name string, p templates.Params) (receipt.Receipt, error)
 func (s *Service) JobStatus(ctx context.Context, id string) (*queue.Job, error)
 func (s *Service) Process(ctx context.Context, j *queue.Job) error // satisfies queue.Processor
 ```
+
+`Preview` takes the same `printerName` string `Print` does — see
+`docs/adr/0006-preview-requires-printer-profile.md`. Once rendering is
+`printer.Profile`-aware (canvas width sized to `profile.WidthDots`, §4
+step 8b), a preview is only meaningful relative to a specific printer's
+width; there is no "default printer" concept anywhere else in this
+schema, and inventing one for `Preview` alone would mean either a second,
+non-deterministic rendering path or a fabricated fallback `Profile` with
+no basis in configuration. An unknown or missing `printerName` is
+`apperr.KindNotFound`, the same behavior `Process` already has for an
+unconfigured `Job.PrinterName`.
 
 ---
 
@@ -466,8 +477,10 @@ deferred to the stage that already does I/O.
 6. Depending on which of the three template endpoints was called:
    - `POST /api/v1/templates/weather` → stop here, return the Receipt JSON.
    - `POST /api/v1/templates/weather/preview` → `app.Service` takes the
-     Receipt it just built and calls `s.Preview(ctx, receipt)` — the same
-     method the raw `/api/v1/preview` endpoint uses — and returns PNG bytes.
+     Receipt it just built and calls `s.Preview(ctx, receipt, printerName)`
+     — the same method the raw `/api/v1/preview` endpoint uses, and the
+     same `printerName` the `/print` variant below already needs — and
+     returns PNG bytes.
    - `POST /api/v1/templates/weather/print` → `app.Service` takes the same
      built Receipt and calls `s.Print(ctx, receipt, printerName)` — the same
      method `/api/v1/print` uses — and returns a job ID.
