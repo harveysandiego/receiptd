@@ -80,14 +80,11 @@ func isRasterElement(el receipt.Element) bool {
 // for Barcode — then painted with the same paintGlyph primitive text
 // glyphs use: there is exactly one bitmap-painting path, not a parallel
 // one per raster element type (docs/ARCHITECTURE.md §4); like Divider,
-// b.Style is not read for any of them. receipt.Feed and receipt.Cut
-// occupy zero height and paint no pixels at all — they are
-// printer-control elements, not bitmap content (ADR-0002) — but each
-// still becomes one entry in Canvas.Controls, in Block order, recording
-// where in the Document it fell; render/escpos.Encode is what later turns
-// each into ESC/POS bytes at that position. Any other element type
-// returns apperr.KindPermanent rather than being skipped or given
-// placeholder pixels.
+// b.Style is not read for any of them. receipt.Feed and receipt.Cut paint
+// nothing and occupy zero height; each becomes one Canvas.Controls entry
+// instead (docs/adr/0010-printer-control-elements-via-canvas-controls.md).
+// Any other element type returns apperr.KindPermanent rather than being
+// skipped or given placeholder pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by

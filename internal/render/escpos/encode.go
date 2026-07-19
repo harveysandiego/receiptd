@@ -26,50 +26,21 @@ var rasterCommandFixed = []byte{0x1D, 0x76, 0x30, 0x00}
 // fixed mechanical part of the cut sequence, not an independent knob.
 const defaultFeedLines = 4
 
-// Encode turns c into the ESC/POS byte stream needed to print it:
-// initialization, c painted as one or more GS v 0 raster bands (see
-// docs/adr/0002-raster-rendering.md), interleaved with the ESC/POS bytes
-// for any c.Controls (explicit receipt.Feed/receipt.Cut elements, each
-// emitted at its own Control.Y — see appendRasterBands and
-// controlCommand), then — when profile.SupportsCut and the Receipt didn't
-// already end with an explicit receipt.Cut — a trailing feed and cut
-// command, per docs/ARCHITECTURE.md §4 step 8d/8e ("init bytes, raster
-// commands ... feed, cut") and ADR-0002 ("`escpos.Encode(canvas, profile)`
-// is the one place printer-specific byte sequences are produced"). profile
-// is the single, authoritative source of printer-specific behavior; Encode
-// has no other configuration surface.
+// Encode turns c into the ESC/POS byte stream needed to print it: init,
+// c's pixels as one or more GS v 0 raster bands (chunked to at most
+// profile.MaxImageHeightDots rows each), and — when profile.SupportsCut —
+// a trailing feed+cut (docs/adr/0002-raster-rendering.md). c.Controls are
+// interleaved at their own Y, splitting the raster bands around them, and
+// an explicit trailing receipt.Cut suppresses the automatic one — see
+// endsWithExplicitCut and docs/adr/0010-printer-control-elements-via-canvas-controls.md.
 //
-// When profile.SupportsCut is false, Encode emits no automatic trailing
-// feed or cut at all — there's nothing to clear a cutter for — and any
-// explicit receipt.Cut in c.Controls is likewise skipped (see
-// controlCommand): a receipt is printer-agnostic and can't know whether
-// its target has a cutter, so printer.Profile alone decides whether any
-// cut, explicit or automatic, is ever honored. An explicit receipt.Feed
-// has no such dependency and is always emitted, since feeding paper needs
-// no cutter hardware.
+// profile.SupportsCut gates any cut, explicit or automatic — a Receipt
+// can't know whether its target has a cutter — but not receipt.Feed,
+// which needs no cutter hardware (see controlCommand).
 //
-// When the automatic trailing cut does fire, profile.DefaultCut selects
-// "full" or "partial"; any other value (including "") is a misconfigured
-// Profile and Encode returns apperr.KindPermanent. Resolving *which*
-// Profile applies to a given Job is a decision made above Encode, not
-// inside it (docs/ARCHITECTURE.md §4 step 8a).
-//
-// Encode is agnostic to what c contains — text, an image, a QR code — it
-// only ever sees painted pixels, per ADR-0002. A Canvas with zero Width or
-// Height has no content to print and returns apperr.KindPermanent,
-// mirroring canvas.EncodePNG's contract for the same input. Encode also
-// rejects a Canvas whose Bits length doesn't match Width x Height — a
-// package-boundary check, since a malformed Bits slice would otherwise
-// silently produce a raster command whose declared dimensions don't match
-// the data that follows it.
-//
-// Between Controls, c is split into consecutive raster bands, each at
-// most profile.MaxImageHeightDots rows tall (docs/ARCHITECTURE.md §4 step
-// 8e, §11) — a printer-compatibility concern only: chunking changes how
-// the image is transmitted, never what it depicts. A zero
-// MaxImageHeightDots, or one at least c.Height, needs no splitting and
-// produces the same single raster command per segment Encode has always
-// emitted for a Canvas with no Controls.
+// Returns apperr.KindPermanent for: an empty Canvas; a Bits length that
+// doesn't match Width x Height; or profile.DefaultCut (when the automatic
+// cut fires) not being "full" or "partial".
 func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 	if c.Width == 0 || c.Height == 0 {
 		return nil, apperr.Wrap(apperr.KindPermanent, "escpos.Encode", fmt.Errorf("canvas has no content (%dx%d)", c.Width, c.Height))
@@ -113,13 +84,10 @@ func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 	return out, nil
 }
 
-// endsWithExplicitCut reports whether controls' last entry is both
-// Terminal (its Block was the last one in the source Document) and a
-// receipt.Cut — the precise condition docs/ARCHITECTURE.md §4 step 8d
-// means by "the Receipt didn't end with an explicit cut". A receipt.Cut
-// that isn't the very last element (more content follows it) does not
-// suppress the automatic trailing cut, and neither does a trailing
-// receipt.Feed.
+// endsWithExplicitCut reports whether controls ends in a Terminal
+// receipt.Cut — docs/ARCHITECTURE.md §4 step 8d's "the Receipt didn't end
+// with an explicit cut". A Cut that isn't actually last, or a trailing
+// receipt.Feed, doesn't count.
 func endsWithExplicitCut(controls []canvas.Control) bool {
 	if len(controls) == 0 {
 		return false
@@ -132,15 +100,11 @@ func endsWithExplicitCut(controls []canvas.Control) bool {
 	return ok
 }
 
-// controlCommand returns the ESC/POS bytes for el, an explicit
-// receipt.Feed or receipt.Cut carried by a canvas.Control. A receipt.Cut
-// with an empty Mode falls back to profile.DefaultCut — the same
-// "renderer supplies Profile.DefaultCut if absent" rule
-// docs/ARCHITECTURE.md §3 documents for the JSON schema field itself — and
-// is skipped entirely (nil, nil) when profile.SupportsCut is false, per
-// Encode's own doc comment. el is never anything but a receipt.Feed or
-// receipt.Cut: canvas.Control.Element's doc comment guarantees it, and
-// nothing else is ever placed in Canvas.Controls (see canvas.Paint).
+// controlCommand returns the ESC/POS bytes for el (a receipt.Feed or
+// receipt.Cut carried by a canvas.Control — nothing else is ever placed
+// in Canvas.Controls, see canvas.Paint). A Cut with an empty Mode falls
+// back to profile.DefaultCut, and is skipped entirely when
+// profile.SupportsCut is false.
 func controlCommand(el receipt.Element, profile printer.Profile) ([]byte, error) {
 	switch e := el.(type) {
 	case receipt.Feed:
@@ -172,19 +136,12 @@ func bandHeight(canvasHeight, maxImageHeightDots int) int {
 }
 
 // appendRasterBands appends one GS v 0 command per band-tall slice of
-// c's rows within [from, to), top to bottom, until the whole range is
-// covered — the last band shorter than band when the range isn't a whole
-// multiple of it. Each band's data is an unmodified, contiguous slice of
-// c.Bits, so row order and pixel content are preserved exactly across
-// bands. from == to (an empty range — e.g. two canvas.Controls at the
-// same Y, or one at row 0 with nothing above it) appends nothing: there's
-// no content to send, so no band, however small, is emitted for it.
-//
-// Encode always calls this once per gap between consecutive Controls (and
-// once more for whatever remains after the last one), rather than once
-// for the whole Canvas — a canvas.Control forces a band boundary at its Y
-// regardless of band, since a raster command can't have a feed or cut
-// command spliced into the middle of its data.
+// c's rows within [from, to), the last band shorter than band when the
+// range isn't a whole multiple of it. from == to appends nothing. Encode
+// calls this once per gap between consecutive c.Controls (and once more
+// for whatever remains after the last one) rather than once for the whole
+// Canvas, since a raster command can't have a control's bytes spliced
+// into the middle of its data.
 func appendRasterBands(out []byte, c *canvas.Canvas, rowBytes, band, from, to int) []byte {
 	for start := from; start < to; start += band {
 		height := band

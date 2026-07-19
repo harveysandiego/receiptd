@@ -8,32 +8,22 @@ import "github.com/harveysandiego/receiptd/internal/receipt"
 // copy. Row length is (Width+7)/8 bytes, and len(Bits) is Height times
 // that.
 //
-// Controls carries the printer-control elements (receipt.Feed,
-// receipt.Cut) Paint found while painting, in Document order — see
-// Control. It is unrelated to Bits: a Control has no pixels of its own
-// and never affects Width, Height, or what's painted. render/escpos.Encode
-// is Controls' only consumer; EncodePNG ignores it entirely, since a
-// printer-control command has no visual representation to preview.
+// Controls carries any printer-control elements (receipt.Feed,
+// receipt.Cut) Paint found, in Document order — see Control and
+// docs/adr/0010-printer-control-elements-via-canvas-controls.md. It never
+// affects Width, Height, or Bits; render/escpos.Encode is its only
+// consumer, EncodePNG ignores it.
 type Canvas struct {
 	Width, Height int
 	Bits          []byte
 	Controls      []Control
 }
 
-// Control is a printer-control instruction — an explicit receipt.Feed or
-// receipt.Cut element — positioned at Y, the dot row (in Canvas's own
-// coordinate space) everything painted above it must be sent to the
-// printer before Control's own command bytes. Element is always a
-// receipt.Feed or receipt.Cut; render/escpos.Encode is what turns it into
-// actual ESC/POS bytes, per docs/adr/0002-raster-rendering.md's "the only
-// genuine ESC/POS commands used are initialization, feed, and cut."
-//
-// Terminal is true exactly when this Control's Block was the very last
-// Block in the source Document — the fact render/escpos.Encode needs to
-// decide whether an explicit trailing receipt.Cut should suppress the
-// automatic end-of-receipt cut (docs/ARCHITECTURE.md §4 step 8d), without
-// needing the whole Document itself. A receipt.Feed positioned last is
-// still marked Terminal, but Encode only acts on it for a receipt.Cut.
+// Control is a positioned receipt.Feed or receipt.Cut: Y is the dot row
+// (Canvas's own coordinate space) everything above it must be sent to the
+// printer before its command bytes. Terminal is true exactly when this
+// was the last Block in the source Document — see
+// docs/adr/0010-printer-control-elements-via-canvas-controls.md for why.
 type Control struct {
 	Y        int
 	Element  receipt.Element

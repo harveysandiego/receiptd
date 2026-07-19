@@ -53,7 +53,10 @@ internal/
                          separate from canvas/ because it's real,
                          growable protocol complexity with its own
                          golden-byte test suite. Depends on render/canvas/,
-                         printer/ (Profile only), apperr/.
+                         printer/ (Profile only), receipt/ (to distinguish
+                         a positioned Feed from a Cut — see
+                         docs/adr/0010-printer-control-elements-via-canvas-controls.md),
+                         apperr/.
 
   queue/                 Job, JobState, Store interface, Queue/Worker.
                          Both Store implementations (bbolt-backed and
@@ -975,7 +978,7 @@ render/layout   (receipt, printer[Profile], assets)
   ↑
 render/canvas   (render/layout)
   ↑
-render/escpos   (render/canvas, printer[Profile])
+render/escpos   (render/canvas, printer[Profile], receipt)
   ↑
 queue           (receipt)
   ↑

@@ -98,10 +98,9 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
 		case receipt.Feed, receipt.Cut:
-			// Printer-control elements: they participate in Block ordering
-			// (render/escpos.Encode needs their position relative to
-			// everything else) but produce no raster output of their own, so
-			// unlike every other case here, y is deliberately never advanced.
+			// Printer-control elements: positioned but weightless — unlike
+			// every other case here, y is never advanced. See
+			// docs/adr/0010-printer-control-elements-via-canvas-controls.md.
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 		default:
 			return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("unsupported element type %T", el))
@@ -124,26 +123,11 @@ var headingStyle = Style{Bold: true, Size: 2}
 var normalStyle = Style{Size: 1}
 
 // DividerThickness is the fixed height, in dots, every receipt.Divider
-// occupies, and the exact number of rows render/canvas.Paint paints for
-// it (see blockHeight there) — Build and Paint share this single
-// constant rather than each hard-coding the same number, the same
-// reason both already agree on f.LineHeight()*Style.Size for text.
-//
-// docs/ARCHITECTURE.md §3 documents Divider's Style field (solid/dashed)
-// but no numeric thickness, so this is a private implementation detail,
-// the same category of decision docs/adr/0008-embedded-font-legibility.md
-// makes for EmbeddedFont's native glyph size. It was originally one dot —
-// the finest line a 1bpp Canvas can represent — but a physical print on
-// the 203 DPI TM-m30II showed a one-dot rule to be nearly invisible, the
-// same hardware-legibility problem ADR-0008 found for the unscaled font;
-// four dots (about 0.5mm at 203 DPI) is a clearly visible rule without
-// reading as a solid bar. Style is deliberately not read here or in
-// Paint — "dashed" is accepted by receipt.Divider.Validate() as valid
-// input (a schema value shipped ahead of its rendering, the same
-// position Text's Italic/Underline/Strikethrough fields held before
-// their own rendering landed — docs/ARCHITECTURE.md §3 "Text styling")
-// but renders identically to "solid" until a later slice implements the
-// dashed pattern itself.
+// occupies — Build and Paint share this one constant (see blockHeight)
+// so the two stages can't disagree. Raised from an original 1 to 4 for
+// hardware legibility; see docs/adr/0011-divider-thickness-legibility.md.
+// Style ("solid"/"dashed") is not read here or in Paint — a Divider
+// always renders as this one solid line until dashed rendering lands.
 const DividerThickness = 4
 
 // textStyle resolves t's own styling fields into a Style, normalizing
