@@ -11,15 +11,17 @@ import (
 
 // Build turns r into a Document: each receipt.Text or receipt.Heading
 // becomes one Block per wrapped line, each receipt.Spacer becomes one
-// Block, each receipt.Divider becomes one Block, and each receipt.Image
-// or receipt.QRCode becomes one Block, stacked top to bottom in Receipt
-// order. Every Block advances Y by f.LineHeight() times its resolved
-// Style.Size, except a Spacer (which advances Y by its own Height, dots),
-// a Divider (which advances Y by DividerThickness), an Image (which
-// advances Y by its decoded, printable-width-scaled height — see
-// imageDimensions), and a QRCode (which advances Y by its generated,
-// printable-width-scaled size — see qrCodeDimensions), per their
-// documented meaning in docs/ARCHITECTURE.md §3. The returned
+// Block, each receipt.Divider becomes one Block, and each receipt.Image,
+// receipt.QRCode, or receipt.Barcode becomes one Block, stacked top to
+// bottom in Receipt order. Every Block advances Y by f.LineHeight() times
+// its resolved Style.Size, except a Spacer (which advances Y by its own
+// Height, dots), a Divider (which advances Y by DividerThickness), an
+// Image (which advances Y by its decoded, printable-width-scaled height —
+// see imageDimensions), a QRCode (which advances Y by its generated,
+// printable-width-scaled size — see qrCodeDimensions), and a Barcode
+// (which advances Y by its configured or default height, unaffected by
+// any printable-width scaling of its own — see barcodeDimensions), per
+// their documented meaning in docs/ARCHITECTURE.md §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
@@ -42,9 +44,10 @@ import (
 // This is an early, partial implementation of the Build described in
 // docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context or
 // assets.Store, since this slice performs no I/O. Element types other
-// than receipt.Text, receipt.Heading, receipt.Spacer, and receipt.Divider
-// are not yet supported and are reported as an apperr.KindPermanent error
-// rather than skipped or given placeholder positions.
+// than receipt.Text, receipt.Heading, receipt.Spacer, receipt.Divider,
+// receipt.Image, receipt.QRCode, and receipt.Barcode are not yet
+// supported and are reported as an apperr.KindPermanent error rather than
+// skipped or given placeholder positions.
 func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 	var blocks []Block
 	y := 0
@@ -80,6 +83,13 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			_, h, err := qrCodeDimensions(e, p.WidthDots)
 			if err != nil {
 				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("qrcode: %w", err))
+			}
+			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
+			y += h
+		case receipt.Barcode:
+			_, h, err := barcodeDimensions(e, p.WidthDots)
+			if err != nil {
+				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("barcode: %w", err))
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h

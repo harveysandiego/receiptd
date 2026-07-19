@@ -9,16 +9,18 @@ import (
 )
 
 // rasterBitmap resolves el's decoded/generated bitmap if el is a
-// receipt.Image or receipt.QRCode — the two element types Paint treats
-// as "just another image" (docs/ARCHITECTURE.md §4): scaled/generated to
-// fit maxWidth and converted to the same layout.GlyphBitmap
-// representation glyphs already use, so both paint through the exact
-// same paintGlyph primitive with no element-specific drawing logic of
-// their own. ok is false for any other Element, in which case bmp and
-// err are both zero. A receipt.QRCode's bitmap is generated fresh here
-// (render/layout.GenerateQRCodeBitmap), the render-time analogue of
-// decoding a receipt.Image's bytes — Paint never distinguishes a
-// generated bitmap from a decoded one once it has one.
+// receipt.Image, receipt.QRCode, or receipt.Barcode — the element types
+// Paint treats as "just another image" (docs/ARCHITECTURE.md §4):
+// scaled/generated to fit maxWidth and converted to the same
+// layout.GlyphBitmap representation glyphs already use, so all three
+// paint through the exact same paintGlyph primitive with no
+// element-specific drawing logic of their own. ok is false for any other
+// Element, in which case bmp and err are both zero. A receipt.QRCode's or
+// receipt.Barcode's bitmap is generated fresh here
+// (render/layout.GenerateQRCodeBitmap, render/layout.GenerateBarcodeBitmap),
+// the render-time analogue of decoding a receipt.Image's bytes — Paint
+// never distinguishes a generated bitmap from a decoded one once it has
+// one.
 func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok bool, err error) {
 	switch e := el.(type) {
 	case receipt.Image:
@@ -33,6 +35,12 @@ func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok 
 			err = fmt.Errorf("qrcode: %w", err)
 		}
 		return bmp, true, err
+	case receipt.Barcode:
+		bmp, err = layout.GenerateBarcodeBitmap(e, maxWidth)
+		if err != nil {
+			err = fmt.Errorf("barcode: %w", err)
+		}
+		return bmp, true, err
 	default:
 		return layout.GlyphBitmap{}, false, nil
 	}
@@ -42,10 +50,11 @@ func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok 
 // rasterBitmap resolves a bitmap for — used by Paint's painting pass to
 // decide whether a Block's already-resolved bitmap (see rasterBitmap)
 // should be painted via paintGlyph, without re-running the (potentially
-// expensive, in QRCode's case CPU-bound) resolution itself a second time.
+// expensive, in QRCode's and Barcode's case CPU-bound) resolution itself
+// a second time.
 func isRasterElement(el receipt.Element) bool {
 	switch el.(type) {
-	case receipt.Image, receipt.QRCode:
+	case receipt.Image, receipt.QRCode, receipt.Barcode:
 		return true
 	default:
 		return false
@@ -63,16 +72,17 @@ func isRasterElement(el receipt.Element) bool {
 // layout.DividerThickness dots and paints one horizontal line spanning
 // the Canvas's full width (paintHLine, the same primitive underline and
 // strikethrough already reuse) — it is not part of the text-styling
-// pipeline, so b.Style is not read for it. receipt.Image and
-// receipt.QRCode are both resolved to a layout.GlyphBitmap (scaled to
+// pipeline, so b.Style is not read for it. receipt.Image, receipt.QRCode,
+// and receipt.Barcode are all resolved to a layout.GlyphBitmap (scaled to
 // fit doc.WidthDots) by rasterBitmap — decoded via
 // layout.DecodeImageBitmap for Image, generated via
-// layout.GenerateQRCodeBitmap for QRCode — then painted with the same
-// paintGlyph primitive text glyphs use: there is exactly one
-// bitmap-painting path, not a parallel one per raster element type
-// (docs/ARCHITECTURE.md §4); like Divider, b.Style is not read for
-// either. Any other element type returns apperr.KindPermanent rather
-// than being skipped or given placeholder pixels.
+// layout.GenerateQRCodeBitmap for QRCode and layout.GenerateBarcodeBitmap
+// for Barcode — then painted with the same paintGlyph primitive text
+// glyphs use: there is exactly one bitmap-painting path, not a parallel
+// one per raster element type (docs/ARCHITECTURE.md §4); like Divider,
+// b.Style is not read for any of them. Any other element type returns
+// apperr.KindPermanent rather than being skipped or given placeholder
+// pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
