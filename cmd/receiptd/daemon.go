@@ -11,6 +11,7 @@ import (
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/auth"
 	"github.com/harveysandiego/receiptd/internal/config"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 )
 
@@ -64,6 +65,7 @@ func build(cfg *config.Config) (*daemon, error) {
 	svc := &app.Service{}
 	q := queue.New(store, svc)
 	svc.Queue = q
+	svc.Printers, svc.Profiles = buildPrinters(cfg.Printers)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/print", api.NewPrintHandler(svc))
@@ -89,6 +91,24 @@ func buildStore(cfg config.QueueConfig) (queue.Store, error) {
 		return queue.NewMemoryStore(), nil
 	}
 	return queue.NewBoltStore(cfg.Path)
+}
+
+// buildPrinters constructs the printer.Printer and resolves the
+// printer.Profile for every configured entry in cfgs, keyed by
+// PrinterConfig.Name — the same key app.Service.Process looks a Job's
+// PrinterName up under (docs/ARCHITECTURE.md §4 step 8a, 8f). Only
+// "network" transport is implemented, so NewNetworkPrinter is the only
+// constructor called here; config.Validate already rejects any
+// Connection.Transport other than "network" before a Config reaches
+// build, so a second case isn't needed yet (docs/ARCHITECTURE.md §11).
+func buildPrinters(cfgs []config.PrinterConfig) (map[string]printer.Printer, map[string]printer.Profile) {
+	printers := make(map[string]printer.Printer, len(cfgs))
+	profiles := make(map[string]printer.Profile, len(cfgs))
+	for _, c := range cfgs {
+		printers[c.Name] = printer.NewNetworkPrinter(c.Connection)
+		profiles[c.Name] = c.Profile
+	}
+	return printers, profiles
 }
 
 // serve starts the background queue worker and blocks serving HTTP on

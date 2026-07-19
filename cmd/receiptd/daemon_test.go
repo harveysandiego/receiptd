@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/config"
+	"github.com/harveysandiego/receiptd/internal/printer"
 )
 
 // validConfig returns a minimal, valid *config.Config for build/loadAndBuild
@@ -60,6 +62,48 @@ func buildDaemon(t *testing.T, cfg *config.Config) *daemon {
 		t.Fatalf("build() error = %v, want nil", err)
 	}
 	return d
+}
+
+func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *testing.T) {
+	cfgs := []config.PrinterConfig{
+		{
+			Name:       "front-desk",
+			Connection: printer.Connection{Transport: "network", Address: "127.0.0.1:9100"},
+			Profile:    printer.Profile{WidthDots: 576, DPI: 203, SupportsCut: true, DefaultCut: "full"},
+		},
+		{
+			Name:       "kitchen",
+			Connection: printer.Connection{Transport: "network", Address: "127.0.0.1:9101"},
+			Profile:    printer.Profile{WidthDots: 384, DPI: 203, DefaultCut: "partial"},
+		},
+	}
+
+	printers, profiles := buildPrinters(cfgs)
+
+	if len(printers) != len(cfgs) {
+		t.Errorf("len(printers) = %d, want %d", len(printers), len(cfgs))
+	}
+	if len(profiles) != len(cfgs) {
+		t.Errorf("len(profiles) = %d, want %d", len(profiles), len(cfgs))
+	}
+	for _, c := range cfgs {
+		if _, ok := printers[c.Name]; !ok {
+			t.Errorf("printers[%q] missing, want a constructed printer.Printer", c.Name)
+		}
+		if got := profiles[c.Name]; got != c.Profile {
+			t.Errorf("profiles[%q] = %+v, want %+v", c.Name, got, c.Profile)
+		}
+	}
+}
+
+func TestBuildPrinters_NoConfiguredPrinters_ReturnsEmptyMaps(t *testing.T) {
+	printers, profiles := buildPrinters(nil)
+	if len(printers) != 0 {
+		t.Errorf("len(printers) = %d, want 0", len(printers))
+	}
+	if len(profiles) != 0 {
+		t.Errorf("len(profiles) = %d, want 0", len(profiles))
+	}
 }
 
 func TestBuild_ValidConfig_Succeeds(t *testing.T) {
@@ -116,14 +160,74 @@ func TestBuild_PrintAndJobStatusRoutesWired(t *testing.T) {
 	}
 }
 
+func TestBuild_PrintWithConfiguredPrinter_JobSucceeds(t *testing.T) {
+	// This is the wiring TestBuild_PrintWithoutConfiguredPrinter_JobFails
+	// pins the absence of: build() populates Service.Printers/Profiles from
+	// cfg.Printers, so a Job targeting a configured PrinterName reaches a
+	// real network printer.Printer end to end. Per docs/ARCHITECTURE.md §9
+	// ("printer (network): Local net.Listen fake server — no hardware in
+	// CI"), the "printer" here is a local TCP listener, not real hardware.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, conn)
+			_ = conn.Close()
+		}
+	}()
+
+	cfg := validConfig(t)
+	cfg.Printers = []config.PrinterConfig{
+		{
+			Name:       "front-desk",
+			Connection: printer.Connection{Transport: "network", Address: ln.Addr().String()},
+			Profile:    printer.Profile{WidthDots: 576, DPI: 203, DefaultCut: "full"},
+		},
+	}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, printRequest())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /api/v1/print status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+	var printResp struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &printResp); err != nil {
+		t.Fatalf("decode /print response: %v", err)
+	}
+
+	if err := d.queue.ProcessNext(context.Background()); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+printResp.JobID, nil))
+	var statusResp struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &statusResp); err != nil {
+		t.Fatalf("decode job status response: %v", err)
+	}
+	if statusResp.State != "done" {
+		t.Errorf("job state = %q, want %q (front-desk is configured and its fake server accepts the connection)", statusResp.State, "done")
+	}
+}
+
 func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
-	// app.Service.Process resolves a printer.Profile and sends encoded
-	// bytes to a real printer.Printer (docs/ARCHITECTURE.md §4 step 8) —
-	// the only production printing path now that the Milestone 2 LogSink
-	// stand-in is gone. Wiring build()'s Service.Profiles/Printers from
-	// config is a separate, not-yet-landed slice, so a Job processed here
-	// has neither to resolve and is expected to fail — this test pins that
-	// current, honest behavior.
+	// build() wires Service.Printers/Profiles from cfg.Printers, but
+	// validConfig(t) configures no printers at all — so a Job targeting
+	// "front-desk" still has neither a Printer nor a Profile to resolve,
+	// and is expected to fail. This pins the (still honest) failure
+	// behavior for a printer name that simply isn't in cfg.Printers.
 	d := buildDaemon(t, validConfig(t))
 
 	rec := httptest.NewRecorder()
@@ -151,7 +255,7 @@ func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
 		t.Fatalf("decode job status response: %v", err)
 	}
 	if statusResp.State != "failed" {
-		t.Errorf("job state = %q, want %q (no Profile or Printer is configured for %q yet)", statusResp.State, "failed", "front-desk")
+		t.Errorf("job state = %q, want %q (%q is not in cfg.Printers)", statusResp.State, "failed", "front-desk")
 	}
 }
 
