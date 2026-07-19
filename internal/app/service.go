@@ -21,6 +21,12 @@ type Service struct {
 	// zero value) is safe to read from: a PrinterName with no entry is
 	// reported by Process as apperr.KindNotFound, not a panic.
 	Printers map[string]printer.Printer
+	// Profiles maps a Job's PrinterName to the printer.Profile Process
+	// resolves before encoding (docs/ARCHITECTURE.md §4 step 8a) and passes
+	// to escpos.Encode, the same key space as Printers. A nil map is safe
+	// to read from: a PrinterName with no entry is reported by Process as
+	// apperr.KindNotFound, not a panic.
+	Profiles map[string]printer.Profile
 }
 
 // New returns a Service that enqueues print work via queue.

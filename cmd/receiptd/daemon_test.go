@@ -117,12 +117,13 @@ func TestBuild_PrintAndJobStatusRoutesWired(t *testing.T) {
 }
 
 func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
-	// app.Service.Process sends encoded bytes to a real printer.Printer
-	// (docs/ARCHITECTURE.md §4 step 8) — the only production printing path
-	// now that the Milestone 2 LogSink stand-in is gone. Wiring build()'s
-	// Service.Printers from config is a separate, not-yet-landed slice, so
-	// a Job processed here has no Printer to reach and is expected to
-	// fail — this test pins that current, honest behavior.
+	// app.Service.Process resolves a printer.Profile and sends encoded
+	// bytes to a real printer.Printer (docs/ARCHITECTURE.md §4 step 8) —
+	// the only production printing path now that the Milestone 2 LogSink
+	// stand-in is gone. Wiring build()'s Service.Profiles/Printers from
+	// config is a separate, not-yet-landed slice, so a Job processed here
+	// has neither to resolve and is expected to fail — this test pins that
+	// current, honest behavior.
 	d := buildDaemon(t, validConfig(t))
 
 	rec := httptest.NewRecorder()
@@ -150,7 +151,7 @@ func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
 		t.Fatalf("decode job status response: %v", err)
 	}
 	if statusResp.State != "failed" {
-		t.Errorf("job state = %q, want %q (no Printer is configured for %q yet)", statusResp.State, "failed", "front-desk")
+		t.Errorf("job state = %q, want %q (no Profile or Printer is configured for %q yet)", statusResp.State, "failed", "front-desk")
 	}
 }
 

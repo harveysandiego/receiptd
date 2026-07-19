@@ -12,11 +12,12 @@ import (
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// Process renders j.Receipt, encodes it to ESC/POS bytes, and sends those
-// bytes to the Printer configured for j.PrinterName — the complete
-// Receipt -> Layout -> Canvas -> ESC/POS -> Printer pipeline
-// (docs/ARCHITECTURE.md §4 step 8, minus feed/cut/chunking, which stay
-// out of scope until a later slice). It satisfies queue.Processor
+// Process renders j.Receipt, resolves the printer.Profile for
+// j.PrinterName, encodes the rendered Canvas to ESC/POS bytes against that
+// Profile, and sends those bytes to the Printer configured for the same
+// PrinterName — the complete Receipt -> Layout -> Canvas -> ESC/POS ->
+// Printer pipeline (docs/ARCHITECTURE.md §4 step 8, minus chunking, which
+// stays out of scope until a later slice). It satisfies queue.Processor
 // (docs/ARCHITECTURE.md §2) and is invoked by Queue.ProcessNext, which
 // owns every Job state transition — Process itself never reads or writes
 // j.State, j.Attempts, or any other Job field besides Receipt and
@@ -32,7 +33,12 @@ func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 		return err
 	}
 
-	data, err := escpos.Encode(c)
+	profile, ok := s.Profiles[j.PrinterName]
+	if !ok {
+		return apperr.Wrap(apperr.KindNotFound, "app.Process", fmt.Errorf("printer profile %q not configured", j.PrinterName))
+	}
+
+	data, err := escpos.Encode(c, profile)
 	if err != nil {
 		return err
 	}
