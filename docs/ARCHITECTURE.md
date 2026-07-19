@@ -244,6 +244,25 @@ type GlyphBitmap struct {
     Bits          []byte // 1bpp packed rows
 }
 
+// Style is the resolved, element-type-agnostic styling for one Block. It
+// carries no reference back to receipt.Text/receipt.Heading — Build
+// resolves either element's fields into a Style once, so render/canvas
+// never needs to know which element type produced a given Block. See
+// §3 "Text styling" and docs/adr/0007-bitmap-text-styling.md.
+type Style struct {
+    Bold          bool
+    Italic        bool
+    Underline     bool
+    Strikethrough bool
+    Size          int // integer bitmap scale factor, always >= 1 once resolved by Build
+}
+
+type Block struct {
+    Y       int
+    Element receipt.Element
+    Style   Style
+}
+
 type Document struct {
     WidthDots  int
     HeightDots int
@@ -264,7 +283,13 @@ it explicitly as future-proofing and because it's genuinely narrow (three
 methods) and cheap either way: `layout` and `canvas` need a clean boundary
 around "the font" regardless, so the interface costs essentially nothing
 over a concrete struct while keeping a future proportional/TTF font swap
-from touching either package's internals.
+from touching either package's internals. `Style` is deliberately kept
+separate from `Font` rather than added as a parameter to `Measure`/`Glyph`:
+`Font` stays the sole source of a glyph's unscaled, unstyled base pixels,
+and styling — scaling, bold, and later underline/strikethrough/italic — is
+a `render/canvas` concern layered on top of what `Font` returns. See §3
+"Text styling" for the full styling pipeline and
+docs/adr/0007-bitmap-text-styling.md for why.
 
 ```go
 // render/canvas
@@ -393,8 +418,8 @@ unconfigured `Job.PrinterName`.
 
 | Type       | Key fields                                                        |
 |------------|--------------------------------------------------------------------|
-| `text`     | `content`, `align`, `bold`, `size`                                  |
-| `heading`  | `content` (implies bold + large)                                    |
+| `text`     | `content`, `align`, `bold`, `italic`, `underline`, `strikethrough`, `size` |
+| `heading`  | `content` (implies `bold: true, size: 2`, see "Text styling" below) |
 | `divider`  | `style` (solid/dashed, optional)                                    |
 | `spacer`   | `height` (dots)                                                     |
 | `image`    | `data` (inline base64) — always bytes the client already has        |
@@ -405,6 +430,105 @@ unconfigured `Job.PrinterName`.
 | `table`    | `headers: []string`, `rows: [][]string` — flat, no nested Elements  |
 | `feed`     | `lines`                                                              |
 | `cut`      | `mode` (full/partial) — optional; renderer supplies `Profile.DefaultCut` if absent |
+
+### Text styling
+
+`Text`'s styling fields — `Bold`, `Italic`, `Underline`, `Strikethrough`,
+`Size` — are rendering hints for the bitmap renderer described below, not
+a second rendering path per element type. `Size` was previously an
+unconstrained `string` with no defined values; per
+`docs/adr/0007-bitmap-text-styling.md`, it is now:
+
+```go
+type Text struct {
+    Content       string `json:"content"`
+    Align         string `json:"align,omitempty"`
+    Bold          bool   `json:"bold,omitempty"`
+    Italic        bool   `json:"italic,omitempty"`
+    Underline     bool   `json:"underline,omitempty"`
+    Strikethrough bool   `json:"strikethrough,omitempty"`
+    Size          int    `json:"size,omitempty"`
+}
+```
+
+`Size` is an **integer bitmap scaling factor**, not a point size and not
+printer/DPI-dependent — the same embedded 7x13 face is scaled by an exact
+integer multiple, never substituted for a different, larger face:
+
+- `0` (the field omitted) means "unscaled" and is treated identically to
+  `1` — the same zero-as-default convention `printer.Profile.WidthDots`
+  and `MaxImageHeightDots` already use elsewhere in this document.
+- `1` is normal size (no scaling).
+- `2` is double size (every glyph pixel becomes a 2x2 block), `3` is
+  triple size, and so on.
+- Negative values are the only invalid input: `Text.Validate()` rejects a
+  negative `Size` as `apperr.KindValidation`, consistent with every other
+  `Validate()` in this schema. `Validate()` stays fast and local for this
+  check — no rendering or Font access required to reject a negative
+  integer.
+
+`Heading` gains no fields of its own. It remains exactly:
+
+```go
+type Heading struct {
+    Content string `json:"content"`
+}
+```
+
+and is defined as presentation sugar over `Text`'s own styling: rendering
+a `Heading` is equivalent to rendering a `Text` with `Bold: true, Size: 2`
+and every other style field at its zero value. `render/layout.Build`
+resolves this equivalence once, at the same point it resolves a `Text`'s
+own style fields into a `Style` (§2) — there is no second,
+`Heading`-specific styling or painting path anywhere downstream.
+
+`Italic`, `Underline`, and `Strikethrough` are part of this public schema
+now, ahead of their implementation. Only `Bold` is implemented in the
+Milestone 3 bitmap-styling slice; the other three are accepted, validated,
+stored, and round-trip through JSON like any other field, but currently
+render with no visible effect — the same position `Align` has already
+held since Milestone 1. Fixing the schema once, rather than growing it
+field-by-field alongside each rendering milestone, means a client
+integrating today doesn't need to change its request shape when underline
+support lands later — only this document's roadmap (§10) and
+`render/canvas`'s implementation change. See
+`docs/adr/0007-bitmap-text-styling.md` for the full reasoning and
+alternatives considered.
+
+#### Rendering model
+
+The embedded bitmap font (`render/layout.EmbeddedFont`) remains the
+**only** source of a glyph's base pixels — its `Font` interface
+(`Measure`/`LineHeight`/`Glyph`, §2) is unchanged by this decision and
+knows nothing about `Style`. Styling is a separate concern, layered on top
+of the bitmap `Font.Glyph` returns, applied by `render/canvas.Paint` in a
+fixed pipeline:
+
+1. **Scale** — nearest-neighbour integer scaling of the glyph bitmap by
+   `Style.Size` (no interpolation, no anti-aliasing: every source pixel
+   becomes an exact `Size x Size` block of identical pixels, preserving
+   sharp edges). Always first, because every later step is defined in
+   terms of the already-scaled bitmap's dimensions, not the font's native
+   ones.
+2. **Bold** — a deterministic raster technique (e.g. neighbouring-pixel
+   overdraw) applied to the scaled bitmap.
+3. *(future, not yet implemented)* underline, strikethrough, italic — each
+   a further deterministic transformation appended to this same pipeline,
+   operating on the already-scaled bitmap, when their milestone arrives.
+   Nothing about this pipeline's shape needs to change to add them.
+
+`render/canvas.Paint` reads each `Block`'s `Style` (§2) only — never
+`receipt.Text` or `receipt.Heading` fields directly. This is what keeps
+`Heading` from needing a second painting path, and what "exactly one
+rendering pipeline" (`docs/adr/0001-receipt-model.md`) continues to mean
+once styling exists.
+
+Measurement is not duplicated for styled text: `Font.Measure` keeps
+measuring at native size, and because integer nearest-neighbour scaling is
+exact and uniform in both axes, the effective width of a `Size: N` string
+is precisely `Font.Measure(s) * N`. `render/layout`'s wrapping (`Build`'s
+`wrapText`) computes candidate line widths this way, so measurement and
+rendering can never disagree about how wide a scaled string is.
 
 ### Image vs. Asset — restored as separate types
 
@@ -499,14 +623,18 @@ deferred to the stage that already does I/O.
    `app.Service.Process(ctx, job)`:
    a. Resolve `printer.Profile` for `job.PrinterName`.
    b. `layout.Build(ctx, job.Receipt, profile, assetsStore)` — walks
-      Elements, measures text via `Font.Measure`, wraps lines, sizes
-      columns/table cells, resolves any `Image`/`Asset` elements into
-      decoded pixel content, computes vertical positions. Produces a fully
-      resolved `Document` — **after this call, nothing downstream ever
-      touches `receipt.Receipt`, `assets.Store`, or any provider again.**
-      `layout` is the only stage that talks to the outside world.
+      Elements, resolves each `Text`/`Heading`'s styling fields into a
+      `Style` (`Heading` resolving to `Bold: true, Size: 2` — §3 "Text
+      styling"), measures text via `Font.Measure(s) * Style.Size`, wraps
+      lines, sizes columns/table cells, resolves any `Image`/`Asset`
+      elements into decoded pixel content, computes vertical positions.
+      Produces a fully resolved `Document` — **after this call, nothing
+      downstream ever touches `receipt.Receipt`, `assets.Store`, or any
+      provider again.** `layout` is the only stage that talks to the
+      outside world.
    c. `canvas.Paint(document)` — paints every Block onto a monochrome
-      bitmap using `document.Font.Glyph()` for text, `go-qrcode` /
+      bitmap using `document.Font.Glyph()` for text, scaled and bolded per
+      `Block.Style` (§3's rendering model pipeline), `go-qrcode` /
       `boombuler/barcode`-generated bitmaps for QR/barcode Blocks, decoded
       image pixels for Image/Asset Blocks, lines for dividers.
    d. If the Receipt didn't end with an explicit `cut`, `escpos.Encode`
