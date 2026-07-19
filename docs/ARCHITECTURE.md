@@ -452,8 +452,15 @@ type Text struct {
 ```
 
 `Size` is an **integer bitmap scaling factor**, not a point size and not
-printer/DPI-dependent — the same embedded 7x13 face is scaled by an exact
-integer multiple, never substituted for a different, larger face:
+printer/DPI-dependent — the same embedded bitmap face is scaled by an
+exact integer multiple, never substituted for a different, larger face.
+That embedded face's own native resolution is `basicfont.Face7x13`'s
+7x13 glyphs upscaled by a fixed 2x baked into `render/layout.EmbeddedFont`
+itself (14x26 native), not `Size`: real 203 DPI thermal hardware testing
+found the raw 7x13 glyphs too small to read reliably — see
+`docs/adr/0008-embedded-font-legibility.md`. `Size` still means exactly
+what it always has, an integer multiple of whatever `EmbeddedFont`
+reports as its own native glyph:
 
 - `0` (the field omitted) means "unscaled" and is treated identically to
   `1` — the same zero-as-default convention `printer.Profile.WidthDots`
@@ -510,12 +517,27 @@ fixed pipeline:
    sharp edges). Always first, because every later step is defined in
    terms of the already-scaled bitmap's dimensions, not the font's native
    ones.
-2. **Bold** — a deterministic raster technique (e.g. neighbouring-pixel
-   overdraw) applied to the scaled bitmap.
-3. *(future, not yet implemented)* underline, strikethrough, italic — each
-   a further deterministic transformation appended to this same pipeline,
-   operating on the already-scaled bitmap, when their milestone arrives.
-   Nothing about this pipeline's shape needs to change to add them.
+2. **Bold** — a deterministic raster technique (neighbouring-pixel
+   overdraw: every set pixel is also set one pixel to its right) applied
+   to the scaled bitmap.
+3. **Italic** — a deterministic synthetic-italic shear: each row is
+   shifted right by an amount that grows moving up the glyph, dropping
+   any pixel sheared past the right edge rather than growing the
+   bitmap. Applied last. (Reordering this before Bold was tried during a
+   real-hardware print review, on the theory that shearing a narrower,
+   unbolded glyph first would clip less — it didn't change the output at
+   all: both are simple per-row translations under the same final
+   bounds check, and clipped translations compose identically regardless
+   of order.)
+
+Underline and strikethrough are *not* part of this glyph-transform
+pipeline: unlike scale/italic/bold, they don't change a glyph's own
+bitmap at all. They're decorations `render/canvas.Paint` draws directly
+onto the `Canvas` after every glyph on a line is painted — a horizontal
+band positioned and sized (thickness) from the line's own resolved
+height and `Style.Size`, so they stay correctly placed and scale
+naturally as `Style.Size` grows, without `Font` needing to expose a
+baseline or x-height concept it doesn't have.
 
 `render/canvas.Paint` reads each `Block`'s `Style` (§2) only — never
 `receipt.Text` or `receipt.Heading` fields directly. This is what keeps

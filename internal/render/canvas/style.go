@@ -11,6 +11,15 @@ import "github.com/harveysandiego/receiptd/internal/render/layout"
 // strikethrough are not part of this pipeline: they don't transform a
 // glyph's bitmap at all, so they're painted directly onto the Canvas
 // after glyphs are (see paintDecorations in paint.go).
+//
+// Bold before italic, not the reverse: it reads like italic-then-bold
+// should clip less (shearing a narrower, unbolded glyph first, then
+// only adding bold's 1px overdraw after), but both are simple per-row
+// translations under the same final bounds check, and clipped
+// translations compose identically regardless of order — confirmed by
+// literally swapping the order and diffing byte-for-byte identical
+// output. Kept in the originally documented order since reordering
+// bought nothing.
 func styleGlyph(bmp layout.GlyphBitmap, style layout.Style) layout.GlyphBitmap {
 	bmp = scaleGlyph(bmp, style.Size)
 	if style.Bold {
@@ -108,12 +117,25 @@ func italicGlyph(bmp layout.GlyphBitmap) layout.GlyphBitmap {
 	return out
 }
 
-// italicShear returns the rightward pixel shift for row y of a
-// height-tall glyph: 0 at the bottom row, increasing by one pixel every
-// three rows moving up. The exact ratio is a visual tuning choice (the
-// architecture only requires "a deterministic bitmap shear... visually
-// pleasing... sufficient" — docs/ARCHITECTURE.md §3), not a value a
-// caller should depend on.
+// italicShear returns row y's pixel shift for a height-tall glyph,
+// centred on the glyph's vertical midpoint: negative (leftward) below
+// it, positive (rightward) above it, both growing by one pixel every
+// five rows moving away from the middle. Centring — rather than
+// anchoring the bottom row at a fixed 0 and only ever shearing
+// rightward — keeps the same total top-to-bottom slant while roughly
+// halving the largest single-direction displacement, which matters
+// because italicGlyph drops any pixel sheared past either edge: an
+// anchored-at-bottom shear (tried first, divisor 3, then divisor 5 —
+// docs/ARCHITECTURE.md §3) pushed every row's displacement in the same
+// direction, so a wide or rounded glyph near the top ("B", "o", "d",
+// "U") had nothing but the shear's own growing distance from a fixed
+// zero standing between it and the edge; a real-hardware print review
+// found divisor 3 corrupted those letterforms and divisor 5 still
+// visibly clipped them. The exact ratio remains a visual tuning choice
+// (the architecture only requires "a deterministic bitmap shear...
+// visually pleasing... sufficient"), not a value a caller should depend
+// on.
 func italicShear(height, y int) int {
-	return (height - 1 - y) / 3
+	mid := (height - 1) / 2
+	return (mid - y) / 5
 }
