@@ -19,9 +19,13 @@ import (
 // layout.DividerThickness dots and paints one horizontal line spanning
 // the Canvas's full width (paintHLine, the same primitive underline and
 // strikethrough already reuse) — it is not part of the text-styling
-// pipeline, so b.Style is not read for it. Any other element type
-// returns apperr.KindPermanent rather than being skipped or given
-// placeholder pixels.
+// pipeline, so b.Style is not read for it. receipt.Image is decoded via
+// layout.DecodeImageBitmap (scaled to fit doc.WidthDots) into a
+// layout.GlyphBitmap and painted with the same paintGlyph primitive text
+// glyphs use — there is exactly one bitmap-painting path, not a parallel
+// one for images (docs/ARCHITECTURE.md §4); like Divider, b.Style is not
+// read for it. Any other element type returns apperr.KindPermanent rather
+// than being skipped or given placeholder pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
@@ -53,16 +57,34 @@ import (
 func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := doc.WidthDots, 0
-	contentFit := width <= 0 // doc.WidthDots itself never changes; capture this once, before width becomes the running content-fit max below.
-	for _, b := range doc.Blocks {
-		bh, ok := blockHeight(b, f)
-		if !ok {
-			return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
-		}
-		if contentFit {
-			if content, ok := textContent(b.Element); ok {
-				if w := f.Measure(content) * b.Style.Size; w > width {
-					width = w
+	contentFit := width <= 0         // doc.WidthDots itself never changes; capture this once, before width becomes the running content-fit max below.
+	var bitmaps []layout.GlyphBitmap // lazily allocated: most Documents paint no receipt.Image Blocks at all
+	for i, b := range doc.Blocks {
+		var bh int
+		if img, ok := b.Element.(receipt.Image); ok {
+			bmp, err := layout.DecodeImageBitmap(img.Data, doc.WidthDots)
+			if err != nil {
+				return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("image: %w", err))
+			}
+			if bitmaps == nil {
+				bitmaps = make([]layout.GlyphBitmap, len(doc.Blocks))
+			}
+			bitmaps[i] = bmp
+			bh = bmp.Height
+			if contentFit && bmp.Width > width {
+				width = bmp.Width
+			}
+		} else {
+			var ok bool
+			bh, ok = blockHeight(b, f)
+			if !ok {
+				return nil, apperr.Wrap(apperr.KindPermanent, "canvas.Paint", fmt.Errorf("unsupported element type %T", b.Element))
+			}
+			if contentFit {
+				if content, ok := textContent(b.Element); ok {
+					if w := f.Measure(content) * b.Style.Size; w > width {
+						width = w
+					}
 				}
 			}
 		}
@@ -77,9 +99,13 @@ func Paint(doc layout.Document) (*Canvas, error) {
 		Bits:   make([]byte, ((width+7)/8)*height),
 	}
 
-	for _, b := range doc.Blocks {
+	for i, b := range doc.Blocks {
 		if _, ok := b.Element.(receipt.Divider); ok {
 			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness)
+			continue
+		}
+		if _, ok := b.Element.(receipt.Image); ok {
+			c.paintGlyph(0, b.Y, bitmaps[i])
 			continue
 		}
 		content, ok := textContent(b.Element)

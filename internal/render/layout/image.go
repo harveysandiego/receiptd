@@ -1,0 +1,165 @@
+package layout
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	_ "image/gif"  // raster format receipt.Image.Data may decode as — see receipt.IsSupportedImageFormat
+	_ "image/jpeg" // raster format receipt.Image.Data may decode as — see receipt.IsSupportedImageFormat
+	_ "image/png"  // raster format receipt.Image.Data may decode as — see receipt.IsSupportedImageFormat
+
+	_ "golang.org/x/image/bmp"  // raster format receipt.Image.Data may decode as — see receipt.IsSupportedImageFormat
+	_ "golang.org/x/image/webp" // raster format receipt.Image.Data may decode as — see receipt.IsSupportedImageFormat
+
+	"github.com/harveysandiego/receiptd/internal/receipt"
+)
+
+// scaledImageSize returns the dimensions a decoded image of origWidth x
+// origHeight paints at, given the Document's printable width maxWidth:
+// unchanged if it already fits, or maxWidth <= 0 (Build's documented "no
+// printer configured" sentinel — the same convention wrapText's own doc
+// comment describes for text), otherwise scaled down to exactly maxWidth
+// wide, preserving aspect ratio via integer division. Images are only
+// ever shrunk to fit the printable width, mirroring the "content must fit
+// the printable width" principle text wrapping already established for
+// this milestone — never enlarged, since nothing in the frozen
+// architecture calls for an upscale mode and upscaling would only soften
+// a raster image with no corresponding benefit.
+func scaledImageSize(origWidth, origHeight, maxWidth int) (width, height int) {
+	if maxWidth <= 0 || origWidth <= maxWidth {
+		return origWidth, origHeight
+	}
+	return maxWidth, origHeight * maxWidth / origWidth
+}
+
+// checkSupportedFormat returns an error unless format is one
+// receipt.IsSupportedImageFormat accepts — the shared check decodeImage
+// and imageDimensions both apply to whatever image.Decode/
+// image.DecodeConfig reports, rather than trusting that no other decoder
+// happens to be registered elsewhere in the binary: a program that links
+// in another package's image/tiff (or similar) import for unrelated
+// reasons must not silently widen what this accepts. Delegated to
+// receipt.IsSupportedImageFormat, rather than this package keeping its
+// own separate list, so render/layout's decoding and receipt.Image's own
+// Validate() (which independently decodes the same Data, for the same
+// reason) can never accept a different set of formats than each other.
+func checkSupportedFormat(format string) error {
+	if !receipt.IsSupportedImageFormat(format) {
+		return fmt.Errorf("image: unsupported format %q (supported: %s)", format, receipt.SupportedImageFormatsList)
+	}
+	return nil
+}
+
+// decodeImage decodes data as any receipt.IsSupportedImageFormat raster
+// format (checkSupportedFormat) into the same image.Image representation
+// regardless of source format — everything downstream of this call
+// (scaledImageSize, rasterizeImage, darkOverWhite) is entirely
+// format-agnostic, so a new supported format only ever needs a decoder
+// registered (see this file's blank imports) and an entry in
+// receipt.supportedImageFormats, never a change here or below.
+func decodeImage(data []byte) (image.Image, error) {
+	img, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if err := checkSupportedFormat(format); err != nil {
+		return nil, err
+	}
+	return img, nil
+}
+
+// imageDimensions returns the dimensions a receipt.Image's Data will
+// occupy once painted, scaled to fit maxWidth per scaledImageSize. It
+// reads only data's header via image.DecodeConfig rather than decoding
+// full pixel data, since Build needs just these dimensions to advance Y —
+// the pixels themselves are decoded once, later, by DecodeImageBitmap
+// when render/canvas.Paint actually paints the Block. Animated GIFs
+// report their first frame's dimensions like any other GIF: an animated
+// GIF's frames may in principle differ in size, but image.DecodeConfig
+// (like image/gif.Decode — see receipt.Image.Validate's doc comment)
+// only ever reports the first frame's, keeping this in agreement with
+// what DecodeImageBitmap actually paints.
+func imageDimensions(data []byte, maxWidth int) (width, height int, err error) {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := checkSupportedFormat(format); err != nil {
+		return 0, 0, err
+	}
+	w, h := scaledImageSize(cfg.Width, cfg.Height, maxWidth)
+	return w, h, nil
+}
+
+// DecodeImageBitmap decodes data as any supported raster format (see
+// decodeImage), scales it to fit maxWidth (see scaledImageSize), and
+// converts it to a GlyphBitmap — the same 1bpp pixel representation
+// glyphs already use (Font.Glyph), so render/canvas.Paint paints an Image
+// Block with the exact same paintGlyph primitive it already paints text
+// with: there is exactly one bitmap-painting path, not a parallel one for
+// images (docs/ARCHITECTURE.md §4), and exactly one image-decoding path,
+// not one per format. Exported because render/canvas.Paint calls it
+// directly against the receipt.Image.Data its Block carries — Build only
+// needs imageDimensions (dimensions, not pixels) to advance Y, so the two
+// stages never redundantly decode full pixel data in the same place, but
+// Build and Paint still independently decode Data once each: deferring
+// pixel decoding to Paint, rather than resolving it once in Build and
+// threading a decoded bitmap through Block, keeps Block exactly the
+// {Y, Element, Style} shape docs/ARCHITECTURE.md §2 already documents,
+// and — since a GlyphBitmap holds a []byte — avoids making Block itself
+// uncomparable, which several existing tests rely on (e.g.
+// TestBuild_Deterministic's Blocks[i] != Blocks[i] check).
+func DecodeImageBitmap(data []byte, maxWidth int) (GlyphBitmap, error) {
+	img, err := decodeImage(data)
+	if err != nil {
+		return GlyphBitmap{}, err
+	}
+	bounds := img.Bounds()
+	width, height := scaledImageSize(bounds.Dx(), bounds.Dy(), maxWidth)
+	return rasterizeImage(img, width, height), nil
+}
+
+// rasterizeImage converts img into a GlyphBitmap sized targetWidth x
+// targetHeight, sampling img via nearest-neighbour (the same
+// integer-ratio sampling convention render/layout/embedded_font.go's
+// upscale already uses for glyphs, applied here in the opposite direction
+// — downscaling rather than upscaling) and thresholding each sampled
+// pixel exactly as packMask there already thresholds glyph alpha:
+// composited over an opaque white background (the receipt paper's own
+// colour) and set only if the result is darker than half white — the
+// same "half of fully covered" convention packMask established for glyph
+// masks, generalised here from alpha-only to full RGBA (see darkOverWhite).
+func rasterizeImage(img image.Image, targetWidth, targetHeight int) GlyphBitmap {
+	bounds := img.Bounds()
+	srcWidth, srcHeight := bounds.Dx(), bounds.Dy()
+	rowBytes := (targetWidth + 7) / 8
+	bits := make([]byte, rowBytes*targetHeight)
+	for y := 0; y < targetHeight; y++ {
+		sy := bounds.Min.Y + y*srcHeight/targetHeight
+		for x := 0; x < targetWidth; x++ {
+			sx := bounds.Min.X + x*srcWidth/targetWidth
+			if darkOverWhite(img.At(sx, sy)) {
+				bits[y*rowBytes+x/8] |= 0x80 >> uint(x%8)
+			}
+		}
+	}
+	return GlyphBitmap{Width: targetWidth, Height: targetHeight, Bits: bits}
+}
+
+// darkOverWhite reports whether c, composited over an opaque white
+// background, is darker than half white — the same threshold
+// render/layout/embedded_font.go's packMask already applies to glyph
+// alpha, generalised here to full colour. c's components are
+// alpha-premultiplied (the color.Color contract), so compositing over
+// white is c + (0xffff - a) per channel: a fully transparent pixel
+// (a == 0) composites to pure white regardless of its nominal colour and
+// is therefore never set, the same as unprinted paper — this is how
+// transparency is handled, since docs/ARCHITECTURE.md does not define it
+// explicitly.
+func darkOverWhite(c color.Color) bool {
+	r, g, b, a := c.RGBA()
+	white := 0xffff - a
+	lum := (r+white)*299/1000 + (g+white)*587/1000 + (b+white)*114/1000
+	return lum < 0x8000
+}
