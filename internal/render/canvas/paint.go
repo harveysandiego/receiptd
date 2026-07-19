@@ -62,9 +62,11 @@ func isRasterElement(el receipt.Element) bool {
 }
 
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
-// order. receipt.Text and receipt.Heading each occupy one line of height
-// f.LineHeight() * b.Style.Size, starting at their Y, and paint their
-// Content as glyphs styled per b.Style (see styleGlyph), followed by any
+// order. receipt.Text, receipt.Heading, and layout.TableLine (one already
+// wrapped, column-aligned line of a receipt.Table's output — see
+// render/layout.Build) each occupy one line of height f.LineHeight() *
+// b.Style.Size, starting at their Y, and paint their Content as glyphs
+// styled per b.Style (see styleGlyph), followed by any
 // underline/strikethrough decoration (see paintDecorations) — decorations
 // are drawn onto the Canvas after glyph painting, never folded into a
 // glyph's own bitmap. receipt.Spacer occupies its own Height (dots) of
@@ -89,12 +91,13 @@ func isRasterElement(el receipt.Element) bool {
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
 // render/layout.Build (docs/ARCHITECTURE.md §3 "Text styling"). This is
-// what makes a receipt.Heading Block render identically to a receipt.Text
-// Block given the same Style: there is exactly one rendering pipeline,
-// not a Heading-specific one. The type switches below (textContent,
-// blockHeight) exist only to read structural data the frozen
-// receipt.Element interface doesn't expose generically — a Text/Heading's
-// Content, a Spacer's own Height — never to branch on styling.
+// what makes a receipt.Heading or layout.TableLine Block render
+// identically to a receipt.Text Block given the same Style: there is
+// exactly one rendering pipeline, not a per-type one. The type switches
+// below (textContent, blockHeight) exist only to read structural data the
+// frozen receipt.Element interface doesn't expose generically — a
+// Text/Heading/TableLine's Content, a Spacer's own Height — never to
+// branch on styling.
 //
 // The Canvas is sized to doc.WidthDots when it's positive (the printer
 // width render/layout.Build resolved the Document against) — content
@@ -187,13 +190,20 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	return c, nil
 }
 
-// textContent returns el's text content if el is a receipt.Text or
-// receipt.Heading, the only two element types Paint paints glyphs for.
+// textContent returns el's text content if el is a receipt.Text,
+// receipt.Heading, or layout.TableLine — the element types Paint paints
+// glyphs for via the same code path (see Paint's painting loop). A
+// TableLine is a receipt.Table's already-composed, already-wrapped output
+// line (see render/layout.Build and layout.TableLine's own doc comment):
+// Paint reads its Content exactly like any other line of text, never
+// anything Table-specific.
 func textContent(el receipt.Element) (string, bool) {
 	switch e := el.(type) {
 	case receipt.Text:
 		return e.Content, true
 	case receipt.Heading:
+		return e.Content, true
+	case layout.TableLine:
 		return e.Content, true
 	default:
 		return "", false
@@ -201,16 +211,17 @@ func textContent(el receipt.Element) (string, bool) {
 }
 
 // blockHeight returns b's vertical extent in dots if its Element is a
-// supported type: f.LineHeight() * b.Style.Size for receipt.Text and
-// receipt.Heading (the same Style.Size used to scale their glyphs — see
-// Paint), the Spacer's own Height (unaffected by Style),
-// layout.DividerThickness for a receipt.Divider — the same constant
-// layout.Build already advanced Y by, so the two stages can never
+// supported type: f.LineHeight() * b.Style.Size for receipt.Text,
+// receipt.Heading, and layout.TableLine alike (the same Style.Size used to
+// scale their glyphs — see Paint; a TableLine's Style is always
+// layout.Build's normalStyle, Size 1), the Spacer's own Height (unaffected
+// by Style), layout.DividerThickness for a receipt.Divider — the same
+// constant layout.Build already advanced Y by, so the two stages can never
 // disagree about how tall a Divider Block is — or 0 for a receipt.Feed or
 // receipt.Cut, which layout.Build never advances Y for either.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
-	case receipt.Text, receipt.Heading:
+	case receipt.Text, receipt.Heading, layout.TableLine:
 		return f.LineHeight() * b.Style.Size, true
 	case receipt.Spacer:
 		return e.Height, true

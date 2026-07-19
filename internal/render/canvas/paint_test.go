@@ -1202,6 +1202,86 @@ func TestPaint_HeadingWithUnderline_RendersSameAsTextWithSameStyle(t *testing.T)
 	}
 }
 
+func TestPaint_TableLineAndTextWithSameContent_RenderIdentically(t *testing.T) {
+	// layout.TableLine exists so a Table-derived Block keeps its own
+	// identity through layout (see layout.TableLine's doc comment), not so
+	// canvas.Paint gains a second way to draw text: given the same Content
+	// and Style, a TableLine Block must paint pixel-for-pixel identically
+	// to a receipt.Text Block — the same guarantee
+	// TestPaint_HeadingAndTextWithSameStyle_RenderIdentically already
+	// proves for receipt.Heading.
+	f := layout.EmbeddedFont{}
+	style := layout.Style{Bold: true, Size: 2}
+	tableDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: layout.TableLine{Content: "Item Qty"}, Style: style},
+	}}
+	textDoc := layout.Document{Font: f, Blocks: []layout.Block{
+		{Y: 0, Element: receipt.Text{Content: "Item Qty"}, Style: style},
+	}}
+
+	ctable, err := canvas.Paint(tableDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	ctext, err := canvas.Paint(textDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if ctable.Width != ctext.Width || ctable.Height != ctext.Height {
+		t.Fatalf("TableLine dimensions = %dx%d, Text = %dx%d, want equal", ctable.Width, ctable.Height, ctext.Width, ctext.Height)
+	}
+	if string(ctable.Bits) != string(ctext.Bits) {
+		t.Errorf("TableLine and Text Bits differ given the same Content and Style, want identical")
+	}
+}
+
+func TestPaint_TableFromBuild_ProducesSameBitmapAsEquivalentHandWrittenText(t *testing.T) {
+	// End-to-end version of the test above: a real receipt.Table run
+	// through layout.Build and canvas.Paint must produce exactly the same
+	// bitmap a caller would get by writing the same composed lines as
+	// plain receipt.Text elements directly — proving the identity fix
+	// (Build now producing layout.TableLine instead of lowering to
+	// receipt.Text) changed nothing about what gets painted.
+	f := layout.EmbeddedFont{}
+	widthDots := 154 // see layout.TestBuild_Table_ColumnsStayAlignedAcrossRows
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Table{
+			Headers: []string{"Item", "Qty"},
+			Rows:    [][]string{{"A", "1"}, {"Bread", "144"}},
+		},
+	}}
+	tableDoc, err := layout.Build(r, printer.Profile{WidthDots: widthDots}, f)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	ctable, err := canvas.Paint(tableDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	var textBlocks []layout.Block
+	for i, b := range tableDoc.Blocks {
+		line, ok := b.Element.(layout.TableLine)
+		if !ok {
+			t.Fatalf("tableDoc.Blocks[%d].Element = %T, want layout.TableLine", i, b.Element)
+		}
+		textBlocks = append(textBlocks, layout.Block{Y: b.Y, Element: receipt.Text{Content: line.Content}, Style: b.Style})
+	}
+	textDoc := layout.Document{WidthDots: widthDots, Font: f, Blocks: textBlocks}
+	ctext, err := canvas.Paint(textDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	if ctable.Width != ctext.Width || ctable.Height != ctext.Height {
+		t.Fatalf("Table dimensions = %dx%d, equivalent Text = %dx%d, want equal", ctable.Width, ctable.Height, ctext.Width, ctext.Height)
+	}
+	if string(ctable.Bits) != string(ctext.Bits) {
+		t.Errorf("Table and equivalent hand-written Text Bits differ, want identical")
+	}
+}
+
 func TestPaint_UnsupportedElementAmongSupportedOnes(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc := layout.Document{

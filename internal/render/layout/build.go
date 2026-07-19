@@ -23,8 +23,15 @@ import (
 // printable-width scaling of its own — see barcodeDimensions), and a Feed
 // or Cut (which advance Y by nothing at all: they are printer-control
 // elements with no raster footprint — see render/escpos.Encode, the stage
-// that turns their Document position into actual command bytes), per
-// their documented meaning in docs/ARCHITECTURE.md §3. The returned
+// that turns their Document position into actual command bytes). A
+// receipt.Table becomes one TableLine Block per composed output line
+// (header row, then each data row, wrapped and column-aligned to
+// p.WidthDots — see tableLines and TableLine), keeping its own identity
+// through layout the same as every other element type — render/canvas.Paint
+// paints a TableLine's Content through the exact same glyph-painting path
+// a receipt.Text Block already uses, but still knows a Block came from a
+// Table, not ordinary Text. Every element advances Y per its documented
+// meaning in docs/ARCHITECTURE.md §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
@@ -48,8 +55,8 @@ import (
 // docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context or
 // assets.Store, since this slice performs no I/O. Element types other
 // than receipt.Text, receipt.Heading, receipt.Spacer, receipt.Divider,
-// receipt.Image, receipt.QRCode, receipt.Barcode, receipt.Feed, and
-// receipt.Cut are not yet supported and are reported as an
+// receipt.Image, receipt.QRCode, receipt.Barcode, receipt.Table,
+// receipt.Feed, and receipt.Cut are not yet supported and are reported as an
 // apperr.KindPermanent error rather than skipped or given placeholder
 // positions.
 func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
@@ -97,6 +104,11 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
+		case receipt.Table:
+			for _, line := range tableLines(e, p.WidthDots, f) {
+				blocks = append(blocks, Block{Y: y, Element: TableLine{Content: line}, Style: normalStyle})
+				y += f.LineHeight() * normalStyle.Size
+			}
 		case receipt.Feed, receipt.Cut:
 			// Printer-control elements: positioned but weightless — unlike
 			// every other case here, y is never advanced. See
