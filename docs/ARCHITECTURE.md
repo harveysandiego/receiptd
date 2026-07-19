@@ -499,9 +499,9 @@ deferred to the stage that already does I/O.
    d. If the Receipt didn't end with an explicit `cut`, `escpos.Encode`
       appends `profile.DefaultCut` behavior.
    e. `escpos.Encode(canvas, profile)` — init bytes, raster commands
-      (chunked only if `profile.MaxImageHeightDots` requires it — see §11
-      on not building chunking logic before it's known to be needed),
-      feed, cut.
+      (split into bands of at most `profile.MaxImageHeightDots` rows; a
+      Profile with no limit set produces a single raster command — see
+      §11), feed, cut.
    f. `printer.Send(ctx, bytes)` on the already-constructed `Printer`
       instance for `job.PrinterName` (built once at startup from its
       `Connection` by `cmd/receiptd` — `app.Service` never sees the
@@ -693,9 +693,9 @@ printer. CLI switches to calling the API.
 **Milestone 3 — Real printer**
 `render/escpos`, `printer.Profile`/`Connection`/network transport. Remaining
 Element types: Image, Asset, QRCode, Barcode, Columns, Table, Feed, Cut.
-First receipt physically prints on the TM-m30II. Chunking logic in
-`escpos.Encode` starts as a no-op and only gets built out if hardware
-testing here actually shows the printer needs it (§11).
+First receipt physically prints on the TM-m30II. `escpos.Encode` splits a
+tall Canvas into raster bands no taller than `profile.MaxImageHeightDots`
+(§11); a Profile with no limit set still produces a single raster command.
 
 **Milestone 4 — Web UI**
 `webui`, asset management endpoints. Auth already exists from Milestone 2;
@@ -819,14 +819,17 @@ accidental cycle to introduce later (e.g. if someone reaches for a
 
 ### Premature optimization
 
-`Profile.MaxImageHeightDots` stays a config knob, but the chunking logic in
-`escpos.Encode` should ship in Milestone 3 as a no-op (single raster block)
-until testing against the real TM-m30II shows chunking is actually
-necessary — building that logic speculatively before you know the hardware
-needs it would be optimizing against a guess. Same reasoning applies to the
-`printer.Transport` dispatch in `cmd/receiptd`: a single `case "network"` is
-fine through Milestone 5; don't build a general transport-registry
-mechanism before a second transport actually exists to justify it.
+`escpos.Encode` splits a Canvas into raster bands of at most
+`profile.MaxImageHeightDots` rows — a real printer-compatibility need, not
+a speculative one, since some ESC/POS printers reject a single raster
+command above a certain height. The chunking logic itself does no more
+than that split: no retry, no backoff, no adaptive band sizing based on
+observed printer behavior — those would be optimizing against a guess
+until real hardware testing shows they're needed. Same reasoning applies
+to the `printer.Transport` dispatch in `cmd/receiptd`: a single `case
+"network"` is fine through Milestone 5; don't build a general
+transport-registry mechanism before a second transport actually exists to
+justify it.
 
 ### Future maintenance concerns (accepted, not blocking)
 

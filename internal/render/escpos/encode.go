@@ -26,7 +26,7 @@ var rasterCommandFixed = []byte{0x1D, 0x76, 0x30, 0x00}
 const defaultFeedLines = 4
 
 // Encode turns c into the ESC/POS byte stream needed to print it:
-// initialization, c painted as a single GS v 0 raster image (see
+// initialization, c painted as one or more GS v 0 raster bands (see
 // docs/adr/0002-raster-rendering.md), then — when profile.SupportsCut —
 // a feed and a cut command, per docs/ARCHITECTURE.md §4 step 8e ("init
 // bytes, raster commands ... feed, cut") and ADR-0002 ("`escpos.Encode
@@ -39,10 +39,7 @@ const defaultFeedLines = 4
 // selects "full" or "partial"; any other value (including "") is a
 // misconfigured Profile and Encode returns apperr.KindPermanent. Resolving
 // *which* Profile applies to a given Job is a decision made above Encode,
-// not inside it (docs/ARCHITECTURE.md §4 step 8a) — that resolution isn't
-// wired up yet, so today's only caller passes the zero-value Profile,
-// which is exactly "no cut support" and keeps Encode's behavior unchanged
-// until it is.
+// not inside it (docs/ARCHITECTURE.md §4 step 8a).
 //
 // Encode is agnostic to what c contains — text, an image, a QR code — it
 // only ever sees painted pixels, per ADR-0002. A Canvas with zero Width or
@@ -51,9 +48,14 @@ const defaultFeedLines = 4
 // rejects a Canvas whose Bits length doesn't match Width x Height — a
 // package-boundary check, since a malformed Bits slice would otherwise
 // silently produce a raster command whose declared dimensions don't match
-// the data that follows it. Encode never chunks the image
-// (docs/ARCHITECTURE.md §11: Profile-driven chunking ships as a no-op
-// until real hardware testing proves it necessary).
+// the data that follows it.
+//
+// c is split into consecutive raster bands, each at most
+// profile.MaxImageHeightDots rows tall (docs/ARCHITECTURE.md §4 step 8e,
+// §11) — a printer-compatibility concern only: chunking changes how the
+// image is transmitted, never what it depicts. A zero MaxImageHeightDots,
+// or one at least c.Height, needs no splitting and produces the same
+// single raster command Encode has always emitted.
 func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 	if c.Width == 0 || c.Height == 0 {
 		return nil, apperr.Wrap(apperr.KindPermanent, "escpos.Encode", fmt.Errorf("canvas has no content (%dx%d)", c.Width, c.Height))
@@ -74,16 +76,46 @@ func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 		feed = feedCommand(defaultFeedLines)
 	}
 
-	out := make([]byte, 0, len(initSequence)+len(rasterCommandFixed)+4+len(c.Bits)+len(feed)+len(cut))
+	band := bandHeight(c.Height, profile.MaxImageHeightDots)
+	numBands := (c.Height + band - 1) / band
+	out := make([]byte, 0, len(initSequence)+numBands*(len(rasterCommandFixed)+4)+len(c.Bits)+len(feed)+len(cut))
 	out = append(out, initSequence...)
-	out = append(out, rasterCommandFixed...)
-	out = append(out, loHi(rowBytes)...)
-	out = append(out, loHi(c.Height)...)
-	out = append(out, c.Bits...)
+	out = appendRasterBands(out, c, rowBytes, band)
 	out = append(out, feed...)
 	out = append(out, cut...)
 
 	return out, nil
+}
+
+// bandHeight returns how many rows each raster command emitted for a
+// canvasHeight-tall Canvas should carry. maxImageHeightDots <= 0 means the
+// printer needs no chunking at all (printer.Profile's documented "0 = no
+// chunking"); a value at least canvasHeight needs no splitting either —
+// both cases return canvasHeight, so the whole image fits in one band.
+func bandHeight(canvasHeight, maxImageHeightDots int) int {
+	if maxImageHeightDots <= 0 || maxImageHeightDots >= canvasHeight {
+		return canvasHeight
+	}
+	return maxImageHeightDots
+}
+
+// appendRasterBands appends one GS v 0 command per band-tall slice of
+// c's rows, top to bottom, until all of c.Height is covered — the last
+// band shorter than band when c.Height isn't a whole multiple of it. Each
+// band's data is an unmodified, contiguous slice of c.Bits, so row order
+// and pixel content are preserved exactly across bands.
+func appendRasterBands(out []byte, c *canvas.Canvas, rowBytes, band int) []byte {
+	for start := 0; start < c.Height; start += band {
+		height := band
+		if start+height > c.Height {
+			height = c.Height - start
+		}
+		out = append(out, rasterCommandFixed...)
+		out = append(out, loHi(rowBytes)...)
+		out = append(out, loHi(height)...)
+		out = append(out, c.Bits[start*rowBytes:(start+height)*rowBytes]...)
+	}
+	return out
 }
 
 // feedCommand returns the ESC d n bytes requesting lines be fed.

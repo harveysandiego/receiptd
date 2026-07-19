@@ -282,6 +282,126 @@ func TestEncode_ProfileSupportsCutWithEmptyDefaultCut_ReturnsPermanentError(t *t
 	}
 }
 
+func TestEncode_HeightWithinMaxImageHeightDots_EmitsSingleRasterCommand(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 2, Bits: []byte{0xAA, 0x55}}
+	profile := printer.Profile{MaxImageHeightDots: 5}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	rasterHeader := []byte{0x1D, 0x76, 0x30, 0x00}
+	if n := bytes.Count(got, rasterHeader); n != 1 {
+		t.Errorf("raster command count = %d, want 1 (canvas height fits within MaxImageHeightDots)", n)
+	}
+}
+
+func TestEncode_HeightExceedsMaxImageHeightDots_EmitsMultipleRasterCommands(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 5, Bits: []byte{0x01, 0x02, 0x03, 0x04, 0x05}}
+	profile := printer.Profile{MaxImageHeightDots: 2}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40, // ESC @: initialize
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x02, 0x00, 0x01, 0x02, // band 1: rows 0-1
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x04, // band 2: rows 2-3
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0x05, // band 3: row 4 (remainder)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (three raster bands of heights 2, 2, 1, in row order)", got, want)
+	}
+}
+
+func TestEncode_HeightExactMultipleOfMaxImageHeightDots_NoEmptyTrailingBand(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 4, Bits: []byte{0x01, 0x02, 0x03, 0x04}}
+	profile := printer.Profile{MaxImageHeightDots: 2}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	rasterHeader := []byte{0x1D, 0x76, 0x30, 0x00}
+	if n := bytes.Count(got, rasterHeader); n != 2 {
+		t.Errorf("raster command count = %d, want 2 (4 rows / 2-row chunks divides evenly, no empty trailing band)", n)
+	}
+}
+
+func TestEncode_ChunkedRasterPayload_ConcatenatesToOriginalCanvasBits(t *testing.T) {
+	// A height (7) that doesn't divide evenly by the chunk size (3) exercises
+	// a different remainder than the exact-byte test above (5/2), and
+	// reassembles every band's data to confirm chunking never drops, reorders,
+	// or duplicates a single row of the original Canvas.
+	bits := []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77}
+	c := &canvas.Canvas{Width: 8, Height: 7, Bits: bits}
+	profile := printer.Profile{MaxImageHeightDots: 3}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+
+	rasterHeader := []byte{0x1D, 0x76, 0x30, 0x00}
+	body := got[2:] // strip ESC @
+	var reassembled []byte
+	for len(body) > 0 {
+		if !bytes.HasPrefix(body, rasterHeader) {
+			t.Fatalf("expected raster header % x at % x", rasterHeader, body)
+		}
+		body = body[len(rasterHeader):]
+		rowBytes := int(body[0]) | int(body[1])<<8
+		height := int(body[2]) | int(body[3])<<8
+		body = body[4:]
+		dataLen := rowBytes * height
+		reassembled = append(reassembled, body[:dataLen]...)
+		body = body[dataLen:]
+	}
+
+	if !bytes.Equal(reassembled, bits) {
+		t.Errorf("reassembled raster payload = % x, want % x (original canvas bits, unmodified and in row order)", reassembled, bits)
+	}
+}
+
+func TestEncode_ChunkedImage_FeedAndCutStillEmittedOnceAtEnd(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 5, Bits: []byte{0x01, 0x02, 0x03, 0x04, 0x05}}
+	profile := printer.Profile{MaxImageHeightDots: 2, SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	wantSuffix := []byte{0x1B, 0x64, 0x04, 0x1D, 0x56, 0x01} // feed 4 lines, then partial cut
+	if !bytes.HasSuffix(got, wantSuffix) {
+		t.Errorf("Encode() = % x, want suffix % x (feed+cut once, after every raster band)", got, wantSuffix)
+	}
+	if n := bytes.Count(got, wantSuffix); n != 1 {
+		t.Errorf("feed+cut sequence count = %d, want exactly 1", n)
+	}
+	rasterHeader := []byte{0x1D, 0x76, 0x30, 0x00}
+	if n := bytes.Count(got, rasterHeader); n != 3 {
+		t.Errorf("raster command count = %d, want 3", n)
+	}
+}
+
+func TestEncode_ChunkedImage_Deterministic(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 5, Bits: []byte{0x01, 0x02, 0x03, 0x04, 0x05}}
+	profile := printer.Profile{MaxImageHeightDots: 2}
+
+	first, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	second, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("Encode() output differs between calls, want identical")
+	}
+}
+
 func TestEncode_Pipeline_TextReceiptProducesRasterOutput(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
