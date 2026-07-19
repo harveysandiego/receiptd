@@ -3,18 +3,14 @@ package layout
 import "github.com/harveysandiego/receiptd/internal/receipt"
 
 // Block is a single receipt.Element positioned within a Document. Y is
-// its vertical offset in dots from the top of the document; Build (not
-// yet implemented) is what computes it — a zero-value Block simply has
-// no position assigned yet.
+// its vertical offset in dots from the top of the document, computed by
+// Build.
 //
-// Wrapping receipt.Element as-is is deliberately provisional: once Build
-// exists, a single long Text may need to become several Blocks (one per
-// wrapped line), which this shape cannot express, since a Block's
-// Element still carries the whole original content. That transformation
-// depends on text measurement (Font), which this slice excludes on
-// purpose — reshaping Block to anticipate it now would mean guessing at
-// Build's output before Build exists. This is expected to change in the
-// slice that implements Build, not a defect to fix here.
+// A single receipt.Text or receipt.Heading may become several Blocks, one
+// per wrapped line (see Build's wrapText): each such Block's Element is a
+// copy of the original with Content replaced by just that line, so a
+// Block's Element always carries exactly what should be painted on its
+// own line — render/canvas.Paint never needs to know wrapping happened.
 type Block struct {
 	Y       int
 	Element receipt.Element

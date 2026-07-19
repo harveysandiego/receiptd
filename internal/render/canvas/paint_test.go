@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
@@ -357,6 +358,28 @@ func TestPaint_DocumentWidthDots_Deterministic(t *testing.T) {
 	}
 	if string(first.Bits) != string(second.Bits) {
 		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_WrappedTextFromBuild_ProducesTallerCanvas(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	width := f.Measure("Hello World") // "Foo" wraps to a second line
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Hello World Foo"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{WidthDots: width}, f)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if want := 2 * f.LineHeight(); c.Height != want {
+		t.Errorf("c.Height = %d, want %d (two wrapped lines)", c.Height, want)
+	}
+	if c.Width != width {
+		t.Errorf("c.Width = %d, want %d (doc.WidthDots)", c.Width, width)
 	}
 }
 
