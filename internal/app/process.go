@@ -2,42 +2,47 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
+	"github.com/harveysandiego/receiptd/internal/render/escpos"
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// Process renders j.Receipt via the existing rendering pipeline and writes
-// the result to LogSink. It satisfies queue.Processor (docs/ARCHITECTURE.md
-// §2) and is invoked by Queue.ProcessNext, which owns every Job state
-// transition — Process itself never reads or writes j.State, j.Attempts,
-// or any other Job field besides Receipt.
+// Process renders j.Receipt, encodes it to ESC/POS bytes, and sends those
+// bytes to the Printer configured for j.PrinterName — the complete
+// Receipt -> Layout -> Canvas -> ESC/POS -> Printer pipeline
+// (docs/ARCHITECTURE.md §4 step 8, minus feed/cut/chunking, which stay
+// out of scope until a later slice). It satisfies queue.Processor
+// (docs/ARCHITECTURE.md §2) and is invoked by Queue.ProcessNext, which
+// owns every Job state transition — Process itself never reads or writes
+// j.State, j.Attempts, or any other Job field besides Receipt and
+// PrinterName.
 //
-// This slice ends at LogSink, not a real printer: no printer.Profile
-// lookup, escpos encoding, or printer.Printer exists yet to carry the
-// result further (docs/ARCHITECTURE.md §10 — that's Milestone 3). LogSink
-// is Milestone 2's stand-in, written as PNG bytes via the same
-// canvas.EncodePNG call Preview uses, so there is exactly one encoding
-// path from a Canvas to bytes as well as one rendering path from a
-// Receipt to a Canvas.
+// Process is orchestration only: rendering lives in render, encoding in
+// escpos.Encode, delivery in the resolved Printer's Send. Each stage's
+// error is returned exactly as received, so a caller can still branch on
+// its original apperr.Kind.
 func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 	c, err := s.render(j.Receipt)
 	if err != nil {
 		return err
 	}
 
-	out, err := c.EncodePNG()
+	data, err := escpos.Encode(c)
 	if err != nil {
 		return err
 	}
 
-	if _, err := s.LogSink.Write(out); err != nil {
-		return apperr.Wrap(apperr.KindPermanent, "app.Process", err)
+	p, ok := s.Printers[j.PrinterName]
+	if !ok {
+		return apperr.Wrap(apperr.KindNotFound, "app.Process", fmt.Errorf("printer %q not configured", j.PrinterName))
 	}
-	return nil
+
+	return p.Send(ctx, data)
 }
 
 // render turns r into a rendered Canvas by composing the existing

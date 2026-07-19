@@ -2,8 +2,8 @@ package app
 
 import (
 	"context"
-	"io"
 
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
@@ -14,20 +14,18 @@ import (
 // grows into as later slices land.
 type Service struct {
 	Queue *queue.Queue
-	// LogSink is where Process writes each Job's rendered output, standing
-	// in for a real printer until Milestone 3 wires up printer.Printer and
-	// render/escpos (docs/ARCHITECTURE.md §10: "Process writes to a log
-	// file instead of a real printer"). New defaults it to io.Discard; the
-	// composition root is expected to replace it with the configured fake
-	// printer log file.
-	LogSink io.Writer
+	// Printers maps a Job's PrinterName to the already-constructed Printer
+	// instance Process sends encoded bytes to. cmd/receiptd builds each
+	// entry once at startup from its Connection (docs/ARCHITECTURE.md §4
+	// step 8f) — Service never sees a Connection itself. A nil map (the
+	// zero value) is safe to read from: a PrinterName with no entry is
+	// reported by Process as apperr.KindNotFound, not a panic.
+	Printers map[string]printer.Printer
 }
 
-// New returns a Service that enqueues print work via queue. LogSink
-// defaults to io.Discard, so Process is safe to call before the
-// composition root configures a real log destination.
+// New returns a Service that enqueues print work via queue.
 func New(q *queue.Queue) *Service {
-	return &Service{Queue: q, LogSink: io.Discard}
+	return &Service{Queue: q}
 }
 
 // Print validates r, constructs a Job for it targeting printerName, and

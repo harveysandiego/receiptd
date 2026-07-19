@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/harveysandiego/receiptd/internal/api"
 	"github.com/harveysandiego/receiptd/internal/app"
-	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/auth"
 	"github.com/harveysandiego/receiptd/internal/config"
 	"github.com/harveysandiego/receiptd/internal/queue"
@@ -30,11 +28,6 @@ const pollInterval = 1 * time.Second
 type daemon struct {
 	srv   *http.Server
 	queue *queue.Queue
-	// logSink is the open file backing Service.LogSink. It's kept here
-	// (rather than only handed to app.Service) so a *daemon can eventually
-	// close it on shutdown; nothing does so yet, since graceful shutdown
-	// isn't part of this slice.
-	logSink *os.File
 }
 
 // loadAndBuild loads Receiptd's configuration from configPath and wires it
@@ -47,10 +40,9 @@ func loadAndBuild(configPath string) (*daemon, error) {
 	return build(cfg)
 }
 
-// build wires together the existing components Milestone 2 needs: the
-// configured queue Store, app.Service (with its LogSink pointed at the
-// fake-printer log file), the versioned API routes, and — when
-// cfg.Auth.Enabled — Bearer middleware in front of them. Every step
+// build wires together the existing components Receiptd needs: the
+// configured queue Store, app.Service, the versioned API routes, and —
+// when cfg.Auth.Enabled — Bearer middleware in front of them. Every step
 // delegates to an existing constructor; this introduces no new business
 // logic of its own.
 func build(cfg *config.Config) (*daemon, error) {
@@ -64,20 +56,12 @@ func build(cfg *config.Config) (*daemon, error) {
 		return nil, err
 	}
 
-	// Opened last, after every other fallible step: once this succeeds,
-	// build no longer returns an error, so there's no path where the open
-	// file handle would leak without a *daemon around to close it.
-	logSink, err := os.OpenFile(printerLogPath(cfg.Queue), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, apperr.Wrap(apperr.KindPermanent, "main.build", err)
-	}
-
 	// Service and Queue are mutually referential — Service implements
 	// queue.Processor structurally, and Queue needs that Processor at
 	// construction — so Service is built first with its Queue field filled
 	// in one line later, exactly as service.go's own doc comment expects
 	// of a composition root.
-	svc := &app.Service{LogSink: logSink}
+	svc := &app.Service{}
 	q := queue.New(store, svc)
 	svc.Queue = q
 
@@ -92,9 +76,8 @@ func build(cfg *config.Config) (*daemon, error) {
 	}
 
 	return &daemon{
-		srv:     &http.Server{Addr: cfg.Server.Address, Handler: handler},
-		queue:   q,
-		logSink: logSink,
+		srv:   &http.Server{Addr: cfg.Server.Address, Handler: handler},
+		queue: q,
 	}, nil
 }
 
@@ -108,29 +91,12 @@ func buildStore(cfg config.QueueConfig) (queue.Store, error) {
 	return queue.NewBoltStore(cfg.Path)
 }
 
-// printerLogPath is where Process's rendered output goes in Milestone 2,
-// standing in for a real printer until Milestone 3 (docs/ARCHITECTURE.md
-// §10). No dedicated config field exists for it yet, so it lives
-// alongside the queue database — the one existing field that already
-// names a directory for Receiptd's local state.
-func printerLogPath(cfg config.QueueConfig) string {
-	return filepath.Join(filepath.Dir(cfg.Path), "printer.log")
-}
-
 // serve starts the background queue worker and blocks serving HTTP on
 // d.srv.Addr until the server stops, returning its error — always
-// non-nil, per http.Server.ListenAndServe's contract. build opened
-// d.logSink, so serve — the daemon's other lifecycle method — is
-// responsible for closing it once ListenAndServe returns; a failure to
-// close it is reported but doesn't override the ListenAndServe error,
-// which is what actually determines main's exit status.
+// non-nil, per http.Server.ListenAndServe's contract.
 func (d *daemon) serve() error {
 	go runWorker(context.Background(), d.queue)
-	err := d.srv.ListenAndServe()
-	if closeErr := d.logSink.Close(); closeErr != nil {
-		fmt.Fprintf(os.Stderr, "receiptd: closing printer log file: %v\n", closeErr)
-	}
-	return err
+	return d.srv.ListenAndServe()
 }
 
 // runWorker calls q.ProcessNext on a loop until ctx is cancelled, sleeping

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -53,16 +52,13 @@ func writeTokenFile(t *testing.T, contents string) string {
 	return path
 }
 
-// buildDaemon calls build and registers cleanup for the printer-log file
-// handle it opens, so t.TempDir() can remove it afterward — Windows
-// refuses to delete a file that's still open.
+// buildDaemon calls build and fails the test if it errors.
 func buildDaemon(t *testing.T, cfg *config.Config) *daemon {
 	t.Helper()
 	d, err := build(cfg)
 	if err != nil {
 		t.Fatalf("build() error = %v, want nil", err)
 	}
-	t.Cleanup(func() { _ = d.logSink.Close() })
 	return d
 }
 
@@ -120,27 +116,41 @@ func TestBuild_PrintAndJobStatusRoutesWired(t *testing.T) {
 	}
 }
 
-func TestBuild_LogSinkIsPrinterLogFile(t *testing.T) {
-	cfg := validConfig(t)
-	d := buildDaemon(t, cfg)
+func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
+	// app.Service.Process sends encoded bytes to a real printer.Printer
+	// (docs/ARCHITECTURE.md §4 step 8) — the only production printing path
+	// now that the Milestone 2 LogSink stand-in is gone. Wiring build()'s
+	// Service.Printers from config is a separate, not-yet-landed slice, so
+	// a Job processed here has no Printer to reach and is expected to
+	// fail — this test pins that current, honest behavior.
+	d := buildDaemon(t, validConfig(t))
 
 	rec := httptest.NewRecorder()
 	d.srv.Handler.ServeHTTP(rec, printRequest())
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("POST /api/v1/print status = %d, want %d", rec.Code, http.StatusAccepted)
 	}
+	var printResp struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &printResp); err != nil {
+		t.Fatalf("decode /print response: %v", err)
+	}
 
 	if err := d.queue.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
 	}
 
-	data, err := os.ReadFile(printerLogPath(cfg.Queue))
-	if err != nil {
-		t.Fatalf("reading printer log file: %v", err)
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+printResp.JobID, nil))
+	var statusResp struct {
+		State string `json:"state"`
 	}
-	pngSignature := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
-	if !bytes.HasPrefix(data, pngSignature) {
-		t.Errorf("printer log file did not start with the PNG signature: %x", data)
+	if err := json.Unmarshal(rec.Body.Bytes(), &statusResp); err != nil {
+		t.Fatalf("decode job status response: %v", err)
+	}
+	if statusResp.State != "failed" {
+		t.Errorf("job state = %q, want %q (no Printer is configured for %q yet)", statusResp.State, "failed", "front-desk")
 	}
 }
 
@@ -216,35 +226,5 @@ func TestDaemon_Serve_ListenFailure_ReturnsError(t *testing.T) {
 	// leak past the end of the test.
 	if err := d.srv.ListenAndServe(); err == nil {
 		t.Fatal("ListenAndServe: expected error for an address already in use, got nil")
-	}
-}
-
-func TestDaemon_Serve_ClosesLogSinkOnReturn(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("net.Listen: %v", err)
-	}
-	defer func() { _ = ln.Close() }()
-
-	cfg := validConfig(t)
-	cfg.Server.Address = ln.Addr().String()
-
-	d, err := build(cfg)
-	if err != nil {
-		t.Fatalf("build() error = %v, want nil", err)
-	}
-
-	// serve() starts the background queue worker before ListenAndServe
-	// fails on the already-bound address, so this test (unlike
-	// TestDaemon_Serve_ListenFailure_ReturnsError above) does leak that
-	// worker goroutine for the rest of the test binary's run — accepted
-	// here specifically to exercise serve()'s own close-on-return
-	// behaviour end to end, rather than build()'s or the raw *http.Server's.
-	if err := d.serve(); err == nil {
-		t.Fatal("serve(): expected error for an address already in use, got nil")
-	}
-
-	if closeErr := d.logSink.Close(); !errors.Is(closeErr, os.ErrClosed) {
-		t.Errorf("logSink.Close() after serve() returned = %v, want os.ErrClosed (serve should already have closed it)", closeErr)
 	}
 }

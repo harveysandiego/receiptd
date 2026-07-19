@@ -1,7 +1,6 @@
 package app_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"reflect"
@@ -10,29 +9,40 @@ import (
 
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
 
-// countingWriter is an io.Writer test double that records how many times
-// Write was called and everything written to it, or returns writeErr
-// (without recording anything) if set.
-type countingWriter struct {
-	bytes.Buffer
-	calls    int
-	writeErr error
+// fakePrinter is a printer.Printer test double that records every Send call
+// and either succeeds (copying data into sent) or returns sendErr, letting
+// tests observe how Process orchestrates the printer stage without needing
+// a real transport. Status/Close are never exercised through Process, so
+// they return fixed, uninteresting values.
+type fakePrinter struct {
+	sendErr error
+	sent    []byte
+	calls   int
 }
 
-func (w *countingWriter) Write(p []byte) (int, error) {
-	w.calls++
-	if w.writeErr != nil {
-		return 0, w.writeErr
+func (p *fakePrinter) Send(_ context.Context, data []byte) error {
+	p.calls++
+	if p.sendErr != nil {
+		return p.sendErr
 	}
-	return w.Buffer.Write(p)
+	p.sent = append([]byte(nil), data...)
+	return nil
 }
+
+func (p *fakePrinter) Status(_ context.Context) (printer.Status, error) {
+	return printer.Status{Online: true}, nil
+}
+
+func (p *fakePrinter) Close() error { return nil }
 
 func TestService_Process_Success_ReturnsNilError(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	s.Printers = map[string]printer.Printer{"front-desk": &fakePrinter{}}
 	j := &queue.Job{PrinterName: "front-desk", Receipt: validReceipt()}
 
 	if err := s.Process(context.Background(), j); err != nil {
@@ -40,22 +50,24 @@ func TestService_Process_Success_ReturnsNilError(t *testing.T) {
 	}
 }
 
-func TestService_Process_UnconfiguredLogSink_DoesNotPanic(t *testing.T) {
-	// A freshly constructed Service (app.New, with LogSink never assigned)
-	// must behave exactly as before LogSink existed: Process succeeds
-	// without a caller having to know to configure a sink first.
+func TestService_Process_UnconfiguredPrinter_ReturnsNotFoundError(t *testing.T) {
+	// A freshly constructed Service (app.New, Printers never assigned) must
+	// not panic — a nil map lookup is safe in Go — and must report the
+	// missing configuration as apperr.KindNotFound rather than silently
+	// succeeding.
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	j := &queue.Job{PrinterName: "front-desk", Receipt: validReceipt()}
+	j := &queue.Job{PrinterName: "does-not-exist", Receipt: validReceipt()}
 
-	if err := s.Process(context.Background(), j); err != nil {
-		t.Fatalf("Process() error = %v, want nil", err)
+	err := s.Process(context.Background(), j)
+	if !apperr.Is(err, apperr.KindNotFound) {
+		t.Fatalf("Process() error = %v, want apperr.KindNotFound", err)
 	}
 }
 
 func TestService_Process_RenderingError_Propagates(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	sink := &countingWriter{}
-	s.LogSink = sink
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
 	// receipt.Divider is a valid Element (passes Validate) but is not yet
 	// supported by render/layout.Build, which only handles receipt.Text and
 	// receipt.Heading — this is the current pipeline's real error path, not
@@ -69,25 +81,14 @@ func TestService_Process_RenderingError_Propagates(t *testing.T) {
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Process() error = %v, want apperr.KindPermanent", err)
 	}
-	if sink.calls != 0 {
-		t.Errorf("LogSink.Write was called %d times, want 0 (a rendering failure must never reach the sink)", sink.calls)
-	}
-}
-
-func TestService_Process_UnknownPrinterName_StillSucceeds(t *testing.T) {
-	// Process performs no printer resolution or communication in this
-	// slice: a PrinterName with no configured printer behind it must
-	// still render successfully, since nothing looks it up yet.
-	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	j := &queue.Job{PrinterName: "does-not-exist", Receipt: validReceipt()}
-
-	if err := s.Process(context.Background(), j); err != nil {
-		t.Fatalf("Process() error = %v, want nil (no printer should ever be contacted)", err)
+	if fp.calls != 0 {
+		t.Errorf("printer.Send was called %d times, want 0 (a rendering failure must never reach the printer)", fp.calls)
 	}
 }
 
 func TestService_Process_DoesNotMutateJob(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	s.Printers = map[string]printer.Printer{"front-desk": &fakePrinter{}}
 	created := time.Now().Add(-time.Hour)
 	j := &queue.Job{
 		ID:          "fixed-id",
@@ -109,77 +110,81 @@ func TestService_Process_DoesNotMutateJob(t *testing.T) {
 	}
 }
 
-func TestService_Process_WritesRenderedOutputToLogSink(t *testing.T) {
+func TestService_Process_SendsEscposEncodedBytesToPrinter(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	sink := &countingWriter{}
-	s.LogSink = sink
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
 	j := &queue.Job{PrinterName: "front-desk", Receipt: validReceipt()}
 
 	if err := s.Process(context.Background(), j); err != nil {
 		t.Fatalf("Process() error = %v, want nil", err)
 	}
 
-	pngSignature := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
-	if got := sink.Bytes(); !bytes.HasPrefix(got, pngSignature) {
-		t.Errorf("LogSink received %d bytes not starting with the PNG signature: %x", len(got), got)
+	escInit := []byte{0x1B, 0x40} // ESC @: the init sequence every escpos.Encode output starts with
+	if len(fp.sent) == 0 {
+		t.Fatal("printer received no data")
+	}
+	if fp.sent[0] != escInit[0] || fp.sent[1] != escInit[1] {
+		t.Errorf("printer received % x, want it to start with % x (ESC/POS init sequence)", fp.sent, escInit)
 	}
 }
 
-func TestService_Process_WritesDistinctOutputPerReceipt(t *testing.T) {
+func TestService_Process_SendsDistinctBytesPerReceipt(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
 
-	shortSink := &countingWriter{}
-	s.LogSink = shortSink
+	shortPrinter := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": shortPrinter}
 	short := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}}
 	if err := s.Process(context.Background(), short); err != nil {
 		t.Fatalf("Process() error = %v, want nil", err)
 	}
 
-	longSink := &countingWriter{}
-	s.LogSink = longSink
+	longPrinter := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": longPrinter}
 	long := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello world"}}}}
 	if err := s.Process(context.Background(), long); err != nil {
 		t.Fatalf("Process() error = %v, want nil", err)
 	}
 
-	if bytes.Equal(shortSink.Bytes(), longSink.Bytes()) {
-		t.Error("Process() wrote identical output for different Receipts, want each Job's own rendered content to reach the sink")
+	if len(shortPrinter.sent) == len(longPrinter.sent) {
+		t.Error("Process() sent identically-sized output for different Receipts, want each Job's own rendered content to reach the printer")
 	}
 }
 
-func TestService_Process_InvokesLogSinkExactlyOnce(t *testing.T) {
+func TestService_Process_InvokesPrinterSendExactlyOnce(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	sink := &countingWriter{}
-	s.LogSink = sink
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
 	j := &queue.Job{PrinterName: "front-desk", Receipt: validReceipt()}
 
 	if err := s.Process(context.Background(), j); err != nil {
 		t.Fatalf("Process() error = %v, want nil", err)
 	}
 
-	if sink.calls != 1 {
-		t.Errorf("LogSink.Write was called %d times, want exactly 1", sink.calls)
+	if fp.calls != 1 {
+		t.Errorf("printer.Send was called %d times, want exactly 1", fp.calls)
 	}
 }
 
-func TestService_Process_LogSinkWriteError_Propagates(t *testing.T) {
+func TestService_Process_PrinterSendError_Propagates(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	writeErr := errors.New("disk full")
-	s.LogSink = &countingWriter{writeErr: writeErr}
+	sendErr := apperr.Wrap(apperr.KindTransient, "printer.Send", errors.New("connection refused"))
+	s.Printers = map[string]printer.Printer{"front-desk": &fakePrinter{sendErr: sendErr}}
 	j := &queue.Job{PrinterName: "front-desk", Receipt: validReceipt()}
 
 	err := s.Process(context.Background(), j)
-	if !apperr.Is(err, apperr.KindPermanent) {
-		t.Fatalf("Process() error = %v, want apperr.KindPermanent", err)
+	if !apperr.Is(err, apperr.KindTransient) {
+		t.Fatalf("Process() error = %v, want apperr.KindTransient", err)
 	}
-	if !errors.Is(err, writeErr) {
-		t.Errorf("Process() error = %v, want it to wrap %v", err, writeErr)
+	if !errors.Is(err, sendErr) {
+		t.Errorf("Process() error = %v, want it to be sendErr unmodified", err)
 	}
 }
 
-func TestService_Process_LogSinkWriteError_DoesNotMutateJob(t *testing.T) {
+func TestService_Process_PrinterSendError_DoesNotMutateJob(t *testing.T) {
 	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
-	s.LogSink = &countingWriter{writeErr: errors.New("disk full")}
+	sendErr := apperr.Wrap(apperr.KindTransient, "printer.Send", errors.New("connection refused"))
+	s.Printers = map[string]printer.Printer{"front-desk": &fakePrinter{sendErr: sendErr}}
 	created := time.Now().Add(-time.Hour)
 	j := &queue.Job{
 		ID:          "fixed-id",
@@ -195,6 +200,6 @@ func TestService_Process_LogSinkWriteError_DoesNotMutateJob(t *testing.T) {
 	_ = s.Process(context.Background(), j)
 
 	if !reflect.DeepEqual(*j, before) {
-		t.Errorf("Process() mutated the Job on a sink error: got %+v, want unchanged %+v", *j, before)
+		t.Errorf("Process() mutated the Job on a send error: got %+v, want unchanged %+v", *j, before)
 	}
 }
