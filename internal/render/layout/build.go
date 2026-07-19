@@ -18,9 +18,12 @@ import (
 // Height, dots), a Divider (which advances Y by DividerThickness), an
 // Image (which advances Y by its decoded, printable-width-scaled height —
 // see imageDimensions), a QRCode (which advances Y by its generated,
-// printable-width-scaled size — see qrCodeDimensions), and a Barcode
-// (which advances Y by its configured or default height, unaffected by
-// any printable-width scaling of its own — see barcodeDimensions), per
+// printable-width-scaled size — see qrCodeDimensions), a Barcode (which
+// advances Y by its configured or default height, unaffected by any
+// printable-width scaling of its own — see barcodeDimensions), and a Feed
+// or Cut (which advance Y by nothing at all: they are printer-control
+// elements with no raster footprint — see render/escpos.Encode, the stage
+// that turns their Document position into actual command bytes), per
 // their documented meaning in docs/ARCHITECTURE.md §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
@@ -45,9 +48,10 @@ import (
 // docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context or
 // assets.Store, since this slice performs no I/O. Element types other
 // than receipt.Text, receipt.Heading, receipt.Spacer, receipt.Divider,
-// receipt.Image, receipt.QRCode, and receipt.Barcode are not yet
-// supported and are reported as an apperr.KindPermanent error rather than
-// skipped or given placeholder positions.
+// receipt.Image, receipt.QRCode, receipt.Barcode, receipt.Feed, and
+// receipt.Cut are not yet supported and are reported as an
+// apperr.KindPermanent error rather than skipped or given placeholder
+// positions.
 func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 	var blocks []Block
 	y := 0
@@ -93,6 +97,12 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
+		case receipt.Feed, receipt.Cut:
+			// Printer-control elements: they participate in Block ordering
+			// (render/escpos.Encode needs their position relative to
+			// everything else) but produce no raster output of their own, so
+			// unlike every other case here, y is deliberately never advanced.
+			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 		default:
 			return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("unsupported element type %T", el))
 		}

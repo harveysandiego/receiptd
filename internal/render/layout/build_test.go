@@ -844,3 +844,131 @@ func TestBuild_WrappedOutput_Deterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestBuild_OneFeed(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Feed{Lines: 4},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Feed{Lines: 4}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Feed{Lines: 4}", doc.Blocks[0].Element)
+	}
+}
+
+func TestBuild_FeedDoesNotAdvanceY(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Feed{Lines: 4},
+		receipt.Text{Content: "Eggs"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3", len(doc.Blocks))
+	}
+	if wantY := f.LineHeight(); doc.Blocks[1].Y != wantY {
+		t.Errorf("doc.Blocks[1].Y (Feed) = %d, want %d", doc.Blocks[1].Y, wantY)
+	}
+	if doc.Blocks[2].Y != doc.Blocks[1].Y {
+		t.Errorf("doc.Blocks[2].Y (Eggs) = %d, want %d (unchanged by Feed)", doc.Blocks[2].Y, doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_OneCut(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Cut{Mode: "full"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
+	}
+	if doc.Blocks[0].Y != 0 {
+		t.Errorf("doc.Blocks[0].Y = %d, want 0", doc.Blocks[0].Y)
+	}
+	if doc.Blocks[0].Element != (receipt.Cut{Mode: "full"}) {
+		t.Errorf("doc.Blocks[0].Element = %v, want Cut{Mode: \"full\"}", doc.Blocks[0].Element)
+	}
+}
+
+func TestBuild_CutDoesNotAdvanceY(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "Milk"},
+		receipt.Cut{},
+		receipt.Text{Content: "Eggs"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3", len(doc.Blocks))
+	}
+	if wantY := f.LineHeight(); doc.Blocks[1].Y != wantY {
+		t.Errorf("doc.Blocks[1].Y (Cut) = %d, want %d", doc.Blocks[1].Y, wantY)
+	}
+	if doc.Blocks[2].Y != doc.Blocks[1].Y {
+		t.Errorf("doc.Blocks[2].Y (Eggs) = %d, want %d (unchanged by Cut)", doc.Blocks[2].Y, doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_FeedAndCut_ResolveToNormalizedStyle(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Feed{Lines: 1},
+		receipt.Cut{},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	for i, want := range []layout.Style{{Size: 1}, {Size: 1}} {
+		if doc.Blocks[i].Style != want {
+			t.Errorf("doc.Blocks[%d].Style = %+v, want %+v", i, doc.Blocks[i].Style, want)
+		}
+	}
+}
+
+func TestBuild_MultipleFeedAndCut_PreserveOrder(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Feed{Lines: 1},
+		receipt.Feed{Lines: 2},
+		receipt.Cut{Mode: "partial"},
+		receipt.Cut{Mode: "full"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	want := []receipt.Element{
+		receipt.Feed{Lines: 1},
+		receipt.Feed{Lines: 2},
+		receipt.Cut{Mode: "partial"},
+		receipt.Cut{Mode: "full"},
+	}
+	if len(doc.Blocks) != len(want) {
+		t.Fatalf("len(doc.Blocks) = %d, want %d", len(doc.Blocks), len(want))
+	}
+	for i, el := range want {
+		if doc.Blocks[i].Element != el {
+			t.Errorf("doc.Blocks[%d].Element = %v, want %v", i, doc.Blocks[i].Element, el)
+		}
+		if doc.Blocks[i].Y != 0 {
+			t.Errorf("doc.Blocks[%d].Y = %d, want 0 (none of them advance Y)", i, doc.Blocks[i].Y)
+		}
+	}
+}

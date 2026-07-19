@@ -80,9 +80,14 @@ func isRasterElement(el receipt.Element) bool {
 // for Barcode — then painted with the same paintGlyph primitive text
 // glyphs use: there is exactly one bitmap-painting path, not a parallel
 // one per raster element type (docs/ARCHITECTURE.md §4); like Divider,
-// b.Style is not read for any of them. Any other element type returns
-// apperr.KindPermanent rather than being skipped or given placeholder
-// pixels.
+// b.Style is not read for any of them. receipt.Feed and receipt.Cut
+// occupy zero height and paint no pixels at all — they are
+// printer-control elements, not bitmap content (ADR-0002) — but each
+// still becomes one entry in Canvas.Controls, in Block order, recording
+// where in the Document it fell; render/escpos.Encode is what later turns
+// each into ESC/POS bytes at that position. Any other element type
+// returns apperr.KindPermanent rather than being skipped or given
+// placeholder pixels.
 //
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
@@ -156,6 +161,11 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	}
 
 	for i, b := range doc.Blocks {
+		switch b.Element.(type) {
+		case receipt.Feed, receipt.Cut:
+			c.Controls = append(c.Controls, Control{Y: b.Y, Element: b.Element, Terminal: i == len(doc.Blocks)-1})
+			continue
+		}
 		if _, ok := b.Element.(receipt.Divider); ok {
 			c.paintHLine(0, c.Width, b.Y, layout.DividerThickness)
 			continue
@@ -196,10 +206,11 @@ func textContent(el receipt.Element) (string, bool) {
 // blockHeight returns b's vertical extent in dots if its Element is a
 // supported type: f.LineHeight() * b.Style.Size for receipt.Text and
 // receipt.Heading (the same Style.Size used to scale their glyphs — see
-// Paint), the Spacer's own Height (unaffected by Style), or
+// Paint), the Spacer's own Height (unaffected by Style),
 // layout.DividerThickness for a receipt.Divider — the same constant
 // layout.Build already advanced Y by, so the two stages can never
-// disagree about how tall a Divider Block is.
+// disagree about how tall a Divider Block is — or 0 for a receipt.Feed or
+// receipt.Cut, which layout.Build never advances Y for either.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
 	case receipt.Text, receipt.Heading:
@@ -208,6 +219,8 @@ func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 		return e.Height, true
 	case receipt.Divider:
 		return layout.DividerThickness, true
+	case receipt.Feed, receipt.Cut:
+		return 0, true
 	default:
 		return 0, false
 	}

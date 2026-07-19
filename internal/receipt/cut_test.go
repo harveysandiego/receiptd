@@ -1,0 +1,54 @@
+package receipt_test
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/harveysandiego/receiptd/internal/receipt"
+)
+
+func TestCutValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cut     receipt.Cut
+		wantErr bool
+	}{
+		{"zero value, mode omitted", receipt.Cut{}, false},
+		{"full", receipt.Cut{Mode: "full"}, false},
+		{"partial", receipt.Cut{Mode: "partial"}, false},
+		{"invalid mode", receipt.Cut{Mode: "sideways"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cut.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCut_JSONRoundTrip(t *testing.T) {
+	original := receipt.Cut{Mode: "partial"}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v, want nil", err)
+	}
+
+	var wire map[string]any
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatalf("json.Unmarshal() into map error = %v, want nil", err)
+	}
+	if wire["type"] != "cut" {
+		t.Errorf(`wire["type"] = %v, want "cut"`, wire["type"])
+	}
+
+	var decoded receipt.Cut
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v, want nil", err)
+	}
+	if decoded != original {
+		t.Errorf("decoded = %+v, want %+v", decoded, original)
+	}
+}

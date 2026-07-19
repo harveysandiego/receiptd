@@ -402,6 +402,274 @@ func TestEncode_ChunkedImage_Deterministic(t *testing.T) {
 	}
 }
 
+func TestEncode_ExplicitFeed_EmitsFeedBytesAtControlPosition(t *testing.T) {
+	// Height 2: row 0 is "before" the Feed, row 1 is "after" it.
+	c := &canvas.Canvas{
+		Width: 8, Height: 2, Bits: []byte{0xAA, 0x55},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Feed{Lines: 6}},
+		},
+	}
+
+	got, err := escpos.Encode(c, noCut)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40, // ESC @: initialize
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xAA, // raster band: row 0, up to the Feed
+		0x1B, 0x64, 0x06, // ESC d 6: explicit feed
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0x55, // raster band: row 1, after the Feed
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (raster split around the explicit Feed)", got, want)
+	}
+}
+
+func TestEncode_ExplicitCut_EmitsCutBytesAtControlPosition(t *testing.T) {
+	// Not Terminal: row 1 (0x55) still follows the Cut, so the automatic
+	// trailing feed+cut still applies too — see
+	// TestEncode_NonTerminalExplicitCut_DoesNotSuppressAutomaticTrailingCut
+	// for that behavior in isolation.
+	c := &canvas.Canvas{
+		Width: 8, Height: 2, Bits: []byte{0xAA, 0x55},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{Mode: "full"}},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xAA,
+		0x1D, 0x56, 0x00, // GS V 0: explicit full cut (overrides Profile.DefaultCut's "partial")
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0x55,
+		0x1B, 0x64, 0x04, 0x1D, 0x56, 0x01, // automatic trailing feed + cut, still applied
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (explicit Cut mode wins over Profile.DefaultCut)", got, want)
+	}
+}
+
+func TestEncode_ExplicitCut_EmptyModeUsesProfileDefaultCut(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{}, Terminal: true},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+		0x1D, 0x56, 0x01, // GS V 1: Cut.Mode empty, falls back to Profile.DefaultCut ("partial")
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x", got, want)
+	}
+}
+
+func TestEncode_ExplicitCut_SkippedWhenProfileDoesNotSupportCut(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{Mode: "full"}, Terminal: true},
+		},
+	}
+
+	got, err := escpos.Encode(c, noCut)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (no cut bytes at all: Profile has no cutter)", got, want)
+	}
+}
+
+func TestEncode_ExplicitFeed_EmittedRegardlessOfCutSupport(t *testing.T) {
+	// Feed is not gated by Profile.SupportsCut — feeding paper needs no cutter.
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Feed{Lines: 3}, Terminal: true},
+		},
+	}
+
+	got, err := escpos.Encode(c, noCut)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+		0x1B, 0x64, 0x03,
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x", got, want)
+	}
+}
+
+func TestEncode_MultipleFeedControls_EachEmitsItsOwnBytes(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 0, Element: receipt.Feed{Lines: 1}},
+			{Y: 0, Element: receipt.Feed{Lines: 2}, Terminal: false},
+		},
+	}
+
+	got, err := escpos.Encode(c, noCut)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1B, 0x64, 0x01,
+		0x1B, 0x64, 0x02,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (both explicit feeds, in order, before the raster content)", got, want)
+	}
+}
+
+func TestEncode_MultipleCutControls_EachEmitsItsOwnBytes(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{Mode: "partial"}},
+			{Y: 1, Element: receipt.Cut{Mode: "full"}, Terminal: true},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+		0x1D, 0x56, 0x01,
+		0x1D, 0x56, 0x00,
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (two explicit cuts, no automatic third)", got, want)
+	}
+	if n := bytes.Count(got, []byte{0x1D, 0x56}); n != 2 {
+		t.Errorf("cut command count = %d, want 2 (no automatic trailing cut duplicated)", n)
+	}
+}
+
+func TestEncode_TerminalExplicitCut_SuppressesAutomaticTrailingCut(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{Mode: "full"}, Terminal: true},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+		0x1D, 0x56, 0x00, // the one explicit cut
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (no automatic feed/cut appended after an explicit trailing Cut)", got, want)
+	}
+	if n := bytes.Count(got, []byte{0x1D, 0x56}); n != 1 {
+		t.Errorf("cut command count = %d, want 1", n)
+	}
+}
+
+func TestEncode_NonTerminalExplicitCut_DoesNotSuppressAutomaticTrailingCut(t *testing.T) {
+	// The Cut is followed by more raster content (row 1), so the Receipt
+	// does not end with an explicit cut — docs/ARCHITECTURE.md §4 step 8d's
+	// automatic trailing cut must still apply.
+	c := &canvas.Canvas{
+		Width: 8, Height: 2, Bits: []byte{0xAA, 0x55},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Cut{Mode: "full"}, Terminal: false},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xAA,
+		0x1D, 0x56, 0x00, // explicit full cut, mid-document
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0x55,
+		0x1B, 0x64, 0x04, 0x1D, 0x56, 0x01, // automatic trailing feed + partial cut, still applied
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x", got, want)
+	}
+}
+
+func TestEncode_TerminalExplicitFeed_DoesNotSuppressAutomaticTrailingCut(t *testing.T) {
+	c := &canvas.Canvas{
+		Width: 8, Height: 1, Bits: []byte{0xFF},
+		Controls: []canvas.Control{
+			{Y: 1, Element: receipt.Feed{Lines: 2}, Terminal: true},
+		},
+	}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "full"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF,
+		0x1B, 0x64, 0x02, // explicit feed
+		0x1B, 0x64, 0x04, 0x1D, 0x56, 0x00, // automatic trailing feed + cut, still applied
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (a terminal Feed, not Cut, never suppresses the automatic cut)", got, want)
+	}
+}
+
+func TestEncode_NoControls_MatchesPreviousBehaviour(t *testing.T) {
+	c := &canvas.Canvas{Width: 8, Height: 2, Bits: []byte{0xAA, 0x55}}
+	profile := printer.Profile{SupportsCut: true, DefaultCut: "partial"}
+
+	got, err := escpos.Encode(c, profile)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	want := []byte{
+		0x1B, 0x40,
+		0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x02, 0x00, 0xAA, 0x55,
+		0x1B, 0x64, 0x04, 0x1D, 0x56, 0x01,
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Encode() = % x, want % x (a Canvas with no Controls behaves exactly as before)", got, want)
+	}
+}
+
 func TestEncode_Pipeline_TextReceiptProducesRasterOutput(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
@@ -428,5 +696,60 @@ func TestEncode_Pipeline_TextReceiptProducesRasterOutput(t *testing.T) {
 	}
 	if !bytes.Equal(got[len(got)-len(c.Bits):], c.Bits) {
 		t.Error("Encode() raster data doesn't match painted canvas bits — encoder must not reinterpret text itself")
+	}
+}
+
+func TestEncode_Pipeline_ExplicitTrailingCutSuppressesAutomaticCut(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Text{Content: "A"},
+		receipt.Cut{Mode: "full"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	got, err := escpos.Encode(c, printer.Profile{SupportsCut: true, DefaultCut: "partial"})
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	if n := bytes.Count(got, []byte{0x1D, 0x56}); n != 1 {
+		t.Errorf("cut command count = %d, want 1 (explicit trailing Cut, no automatic duplicate)", n)
+	}
+	if !bytes.HasSuffix(got, []byte{0x1D, 0x56, 0x00}) {
+		t.Errorf("Encode() = % x, want suffix % x (the explicit full cut, not Profile.DefaultCut's partial)", got, []byte{0x1D, 0x56, 0x00})
+	}
+}
+
+func TestEncode_Pipeline_ExplicitFeedThenText_FeedsBeforePrinting(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Feed{Lines: 8},
+		receipt.Text{Content: "A"},
+	}}
+	doc, err := layout.Build(r, printer.Profile{}, f)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+
+	got, err := escpos.Encode(c, noCut)
+	if err != nil {
+		t.Fatalf("Encode() error = %v, want nil", err)
+	}
+	feedBytes := []byte{0x1B, 0x64, 0x08}
+	rasterHeader := []byte{0x1D, 0x76, 0x30, 0x00}
+	feedIdx := bytes.Index(got, feedBytes)
+	rasterIdx := bytes.Index(got, rasterHeader)
+	if feedIdx == -1 || rasterIdx == -1 || feedIdx > rasterIdx {
+		t.Errorf("Encode() = % x, want explicit feed bytes before the raster command", got)
 	}
 }
