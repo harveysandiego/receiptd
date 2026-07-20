@@ -10,10 +10,9 @@ import (
 // maxRequestBodyBytes caps how much of a request body PreviewHandler and
 // PrintHandler will read before giving up, so a client can't exhaust
 // server memory with an oversized body (json.Decode has no size limit of
-// its own). 10 MiB is far beyond any Milestone 2 Receipt (text-only
-// elements) while leaving headroom; it's a sanity cap, not a considered
-// per-element-type budget — Milestone 3's Image/Asset elements may need
-// this revisited.
+// its own). Receipt.Elements can include Image, whose Data field embeds
+// base64-encoded image bytes directly in the body; 10 MiB is a generous
+// sanity cap rather than a considered per-element-type budget.
 const maxRequestBodyBytes = 10 << 20
 
 // isBodyTooLarge reports whether err is the error http.MaxBytesReader

@@ -1,13 +1,12 @@
-// Command receiptd is Receiptd's composition root. As of Milestone 2 it
-// loads configuration, constructs the configured queue Store, wires up
-// app.Service (with a log-file stand-in for a real printer), registers
-// the versioned API routes, applies Bearer-token middleware when
-// configured, and starts the background queue worker alongside the HTTP
-// server.
+// Command receiptd is Receiptd's composition root. It loads
+// configuration, constructs the configured queue Store, wires up
+// app.Service — including a printer.Printer and printer.Profile per
+// configured printer.Connection — registers the versioned API routes,
+// applies Bearer-token middleware when configured, and starts the
+// background queue worker alongside the HTTP server.
 //
-// It will also become the only place in the codebase that ever
-// constructs a printer.Connection, once Milestone 3 adds a real printer
-// transport — see docs/ARCHITECTURE.md §1.
+// It is the only place in the codebase that ever constructs a
+// printer.Connection — see docs/ARCHITECTURE.md §1.
 package main
 
 import (

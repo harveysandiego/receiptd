@@ -20,7 +20,7 @@ import (
 // pending Job when idle. The frozen config schema (docs/ARCHITECTURE.md
 // §7) has no field for this yet; queue.ProcessNext already returns
 // immediately once nothing is pending, so a short fixed interval is
-// enough for Milestone 2's fake-printer worker.
+// enough.
 const pollInterval = 1 * time.Second
 
 // daemon is every component serve needs once wiring is complete: an HTTP

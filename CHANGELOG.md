@@ -9,6 +9,17 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-20
+
+### Fixed
+
+- Stale godoc comments in `cmd/receiptd` and `internal/api` that still
+  described Milestone 2/3 as in-progress or future work (a fake-printer
+  worker, a "will become" printer.Connection claim, a pending Image/Asset
+  body-size consideration) — all of that shipped in
+  [0.1.0](#010---2026-07-20), so the comments now describe current
+  behavior instead of an outdated plan. No behavior change.
+
 ## [0.1.0] - 2026-07-20
 
 First tagged release. Covers
@@ -42,5 +53,6 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/harveysandiego/receiptd/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/harveysandiego/receiptd/releases/tag/v0.1.0
