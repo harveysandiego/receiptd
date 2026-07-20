@@ -19,10 +19,11 @@ appliance on your home network.
 > **Status:** pre-alpha. Milestones 1–3 (local render, REST API + queue +
 > auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
 > multi-arch image publishing, release pipeline) are implemented and
-> tested — Receiptd has printed to real hardware — but no tag has been
-> pushed yet, so nothing is actually published to the Releases page or
-> GHCR as of this writing. See [Current status](#current-status) before
-> trying to run this.
+> tested — Receiptd has printed to real hardware, and
+> [v0.1.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.1.0)
+> is tagged and published, including multi-arch images at
+> `ghcr.io/harveysandiego/receiptd`. See [Current status](#current-status)
+> before trying to run this.
 
 ---
 
@@ -147,12 +148,6 @@ GitHub. See [VERSIONING.md](VERSIONING.md) and
 
 ## Installation
 
-> No tagged release has been cut yet, so the Releases page and the GHCR
-> package below are both still empty — the instructions in this section
-> describe what becomes available once the first tag (e.g. `v0.1.0`) is
-> pushed and `.github/workflows/release.yml` runs. Until then, build from
-> source or build the [Dockerfile](Dockerfile) locally.
-
 ### From source
 
 ```sh
@@ -164,9 +159,9 @@ make build
 
 ### Pre-built binaries
 
-Once releases begin, binaries for Linux/macOS/Windows (amd64/arm64) will
-be published on the [Releases](https://github.com/harveysandiego/receiptd/releases)
-page — see `.goreleaser.yml`.
+Binaries for Linux/macOS/Windows (amd64/arm64) are published on the
+[Releases](https://github.com/harveysandiego/receiptd/releases) page —
+see `.goreleaser.yml`.
 
 ### Docker
 
@@ -184,7 +179,7 @@ docker pull ghcr.io/harveysandiego/receiptd:latest
 ```
 
 Available tags mirror the Git tag: `latest` (the newest stable release),
-a full version (`0.2.0`), a minor (`0.2`), and a major (`0`) — pick
+a full version (`0.1.0`), a minor (`0.1`), and a major (`0`) — pick
 whichever gives the stability guarantee you want, per
 [VERSIONING.md](VERSIONING.md). Pre-release tags (`0.2.0-rc1`) only get
 the full-version tag, never `latest`/minor/major, so they can't be pulled
@@ -195,13 +190,13 @@ via the same [reusable workflow](.github/workflows/docker-image.yml), so
 a change that breaks the arm64 build is caught before it merges, not at
 release time.
 
-> **Maintainer note:** a package published to GHCR via the default
-> `GITHUB_TOKEN` is **private** until its visibility is changed by hand
-> (Package settings → Change visibility, or link it to this repository)
-> — GitHub doesn't expose a workflow-file setting for this. Do that once
-> after the first tagged release publishes the package, otherwise
-> `docker pull` above fails with "unauthorized" for anyone who isn't a
-> repo collaborator.
+> **Maintainer note:** GHCR packages published via the default
+> `GITHUB_TOKEN` from a public repository inherit that repository's
+> public visibility automatically — verified for this package by pulling
+> its manifest anonymously (no login) right after the first publish.
+> There's no dedicated workflow-file setting for this either way, so if a
+> package ever comes up private unexpectedly, check Package settings →
+> Change visibility rather than assuming a workflow change is needed.
 
 `receiptd` needs a config file and a writable data directory (see
 [Configuration](#configuration-required-for-docker) below). Given a
