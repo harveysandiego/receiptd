@@ -9,18 +9,22 @@ import (
 )
 
 // rasterBitmap resolves el's decoded/generated bitmap if el is a
-// receipt.Image, receipt.QRCode, or receipt.Barcode — the element types
-// Paint treats as "just another image" (docs/ARCHITECTURE.md §4):
-// scaled/generated to fit maxWidth and converted to the same
-// layout.GlyphBitmap representation glyphs already use, so all three
-// paint through the exact same paintGlyph primitive with no
-// element-specific drawing logic of their own. ok is false for any other
-// Element, in which case bmp and err are both zero. A receipt.QRCode's or
-// receipt.Barcode's bitmap is generated fresh here
+// receipt.Image, receipt.QRCode, receipt.Barcode, or layout.AlignedAsset —
+// the element types Paint treats as "just another image"
+// (docs/ARCHITECTURE.md §4): scaled/generated to fit maxWidth and
+// converted to the same layout.GlyphBitmap representation glyphs already
+// use, so all four paint through the exact same paintGlyph primitive with
+// no element-specific drawing logic of their own. ok is false for any
+// other Element, in which case bmp and err are both zero. A
+// receipt.QRCode's or receipt.Barcode's bitmap is generated fresh here
 // (render/layout.GenerateQRCodeBitmap, render/layout.GenerateBarcodeBitmap),
 // the render-time analogue of decoding a receipt.Image's bytes — Paint
 // never distinguishes a generated bitmap from a decoded one once it has
-// one.
+// one. A layout.AlignedAsset's bitmap (render/layout.DecodeAlignedAssetBitmap)
+// already has its own Width/Align resolved and, for "center"/"right",
+// left-padded with blank pixel columns before it reaches here — Paint
+// still blits it at x=0 like any other raster Block, unaware alignment
+// happened at all (docs/adr/0013-text-and-asset-alignment.md).
 func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok bool, err error) {
 	switch e := el.(type) {
 	case receipt.Image:
@@ -41,6 +45,12 @@ func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok 
 			err = fmt.Errorf("barcode: %w", err)
 		}
 		return bmp, true, err
+	case layout.AlignedAsset:
+		bmp, err = layout.DecodeAlignedAssetBitmap(e, maxWidth)
+		if err != nil {
+			err = fmt.Errorf("asset: %w", err)
+		}
+		return bmp, true, err
 	default:
 		return layout.GlyphBitmap{}, false, nil
 	}
@@ -54,7 +64,7 @@ func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok 
 // a second time.
 func isRasterElement(el receipt.Element) bool {
 	switch el.(type) {
-	case receipt.Image, receipt.QRCode, receipt.Barcode:
+	case receipt.Image, receipt.QRCode, receipt.Barcode, layout.AlignedAsset:
 		return true
 	default:
 		return false
@@ -68,7 +78,7 @@ func isRasterElement(el receipt.Element) bool {
 // layout.BarcodeCaption (a receipt.Barcode's caption line, already
 // space-padded to sit roughly centered under the barcode's own rendered
 // width, when its ShowText is set — see render/layout.Build and
-// layout.centerBarcodeCaption) each occupy one line of height f.LineHeight() *
+// layout.alignPad) each occupy one line of height f.LineHeight() *
 // b.Style.Size, starting at their Y, and paint their Content as glyphs
 // styled per b.Style (see styleGlyph), followed by any
 // underline/strikethrough decoration (see paintDecorations) — decorations
@@ -84,11 +94,14 @@ func isRasterElement(el receipt.Element) bool {
 // its own Size and Style fields are read directly instead, the same way
 // Spacer's own Height already is.
 // receipt.Image, receipt.QRCode,
-// and receipt.Barcode are all resolved to a layout.GlyphBitmap (scaled to
-// fit doc.WidthDots) by rasterBitmap — decoded via
-// layout.DecodeImageBitmap for Image, generated via
+// receipt.Barcode, and layout.AlignedAsset (a resolved receipt.Asset,
+// see render/layout.Build's own doc comment and
+// docs/adr/0013-text-and-asset-alignment.md) are all resolved to a
+// layout.GlyphBitmap (scaled to fit doc.WidthDots) by rasterBitmap —
+// decoded via layout.DecodeImageBitmap for Image, generated via
 // layout.GenerateQRCodeBitmap for QRCode and layout.GenerateBarcodeBitmap
-// for Barcode — then painted with the same paintGlyph primitive text
+// for Barcode, decoded via layout.DecodeAlignedAssetBitmap for
+// AlignedAsset — then painted with the same paintGlyph primitive text
 // glyphs use: there is exactly one bitmap-painting path, not a parallel
 // one per raster element type (docs/ARCHITECTURE.md §4); like Divider,
 // b.Style is not read for any of them. receipt.Feed and receipt.Cut paint

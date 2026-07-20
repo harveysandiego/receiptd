@@ -15,20 +15,24 @@ import (
 // becomes one Block per wrapped line, each receipt.Spacer becomes one
 // Block, each receipt.Divider becomes one Block, and each receipt.Image,
 // receipt.Asset, receipt.QRCode, or receipt.Barcode becomes one Block,
-// stacked top to bottom in Receipt order. Every Block advances Y by
+// stacked top to bottom in Receipt order. A receipt.Text's own Align is
+// applied per wrapped line via alignPad before the Block is emitted (see
+// alignPad's own doc comment and docs/adr/0013-text-and-asset-alignment.md);
+// receipt.Heading has no Align field of its own (docs/adr/0007-bitmap-text-styling.md).
+// Every Block advances Y by
 // f.LineHeight() times its resolved Style.Size, except a Spacer (which
 // advances Y by its own Height, dots), a Divider (which advances Y by
 // DividerThickness times its own resolved Size — see ResolveSize), an
 // Image (which advances Y by its decoded, printable-width-scaled height —
-// see imageHeight), an Asset (resolved via a.Get to the same raw
-// bytes an Image carries inline, then advanced by exactly the same rule —
-// see the receipt.Asset case below), a QRCode (which advances Y by its
+// see imageHeight), an Asset (resolved via a.Get to raw bytes, then
+// advanced by its own resolved width and height — see assetHeight and
+// the receipt.Asset case below), a QRCode (which advances Y by its
 // generated, printable-width-scaled size — see qrCodeDimensions), a
 // Barcode (which advances Y by its configured or default height,
 // unaffected by any printable-width scaling of its own — see
 // barcodeDimensions — plus one further line if its ShowText is set, for a
 // BarcodeCaption Block space-padded to sit roughly centered under the
-// barcode's own rendered width — see centerBarcodeCaption's doc comment
+// barcode's own rendered width — see alignPad's own doc comment
 // for why this is font-relative space-padding, not geometric centering),
 // and a Feed or Cut (which advance Y by nothing at
 // all: they are printer-control elements with no raster footprint — see
@@ -50,20 +54,22 @@ import (
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
 //
-// receipt.Asset is the one element type Build deliberately does not
-// preserve the identity of: a.Get(ctx, e.Name) resolves it to raw bytes,
-// which become the Data of a receipt.Image Block — the same type an
-// ordinary receipt.Image element already produces — rather than a
-// TableLine-style layout-local type that would keep Asset distinguishable
-// downstream. This is the documented exception, not an oversight: an
-// Asset and an Image "render identically today... the resolution step is
-// exactly where future flexibility belongs" (docs/ARCHITECTURE.md §3
-// "Image vs. Asset"), and canvas.Paint is specifically documented to
-// never distinguish between them, only layout does. A missing asset
-// surfaces whatever apperr.Kind a.Get itself chose (apperr.KindNotFound
-// for assets.Store's own implementations) unchanged; invalid resolved
-// image data is reported as apperr.KindPermanent, the same Kind an
-// Image's own decode failure already uses.
+// receipt.Asset resolves via a.Get(ctx, e.Name) to raw pixel bytes, which
+// Build carries forward as an AlignedAsset Block — a small,
+// layout-local type distinct from receipt.Image, required specifically
+// because assets.Store.Get is I/O and docs/ARCHITECTURE.md §4 reserves
+// that resolution step to Build alone ("layout is the only stage that
+// talks to the outside world"): receipt.Asset itself has no field to hold
+// resolved bytes and must not gain one (see "Image vs. Asset",
+// docs/ARCHITECTURE.md §3), so some Build-produced carrier is required
+// regardless of where Width/Align end up living — see
+// docs/adr/0013-text-and-asset-alignment.md's "Why a new type" for the
+// full argument. An AlignedAsset with Width 0 and Align "" renders
+// pixel-identically to the receipt.Image lowering this replaced. A
+// missing asset surfaces whatever apperr.Kind a.Get itself chose
+// (apperr.KindNotFound for assets.Store's own implementations) unchanged;
+// invalid resolved image data is reported as apperr.KindPermanent, the
+// same Kind an Image's own decode failure already uses.
 //
 // a may be nil: most callers know in advance their Receipt carries no
 // receipt.Asset and have no assets.Store to construct, the same "a nil
@@ -108,7 +114,7 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 		case receipt.Text:
 			style := textStyle(e)
 			for _, line := range wrapText(e.Content, p.WidthDots, f, style.Size) {
-				e.Content = line
+				e.Content = alignPad(line, e.Align, p.WidthDots, f, style.Size)
 				blocks = append(blocks, Block{Y: y, Element: e, Style: style})
 				y += f.LineHeight() * style.Size
 			}
@@ -139,11 +145,11 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 			if err != nil {
 				return Document{}, err
 			}
-			h, err := imageHeight(data, p.WidthDots)
+			h, err := assetHeight(data, e.Width, p.WidthDots)
 			if err != nil {
 				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("asset: %w", err))
 			}
-			blocks = append(blocks, Block{Y: y, Element: receipt.Image{Data: data}, Style: normalStyle})
+			blocks = append(blocks, Block{Y: y, Element: AlignedAsset{Data: data, Width: e.Width, Align: e.Align}, Style: normalStyle})
 			y += h
 		case receipt.QRCode:
 			_, h, err := qrCodeDimensions(e, p.WidthDots)
@@ -160,7 +166,7 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
 			if e.ShowText {
-				caption := centerBarcodeCaption(e.Content, w, f)
+				caption := alignPad(e.Content, alignCenter, w, f, normalStyle.Size)
 				blocks = append(blocks, Block{Y: y, Element: BarcodeCaption{Content: caption}, Style: normalStyle})
 				y += f.LineHeight() * normalStyle.Size
 			}

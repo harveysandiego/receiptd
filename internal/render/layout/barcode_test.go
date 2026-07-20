@@ -235,12 +235,12 @@ func TestBuild_BarcodeShowTextTrue_AdvancesYByCaptionLineHeight(t *testing.T) {
 
 func TestBuild_BarcodeShowTextTrue_CaptionCenteredUnderBarcodeWidth(t *testing.T) {
 	// A caption narrower than the barcode's own rendered width must gain
-	// leading space padding (centerBarcodeCaption's technique, the same
+	// leading space padding (alignPad's technique, the same
 	// leading-space-padding idea tableRowLines/columnsLines already use for
 	// trailing padding) so it paints roughly centered, once the ordinary
 	// text-glyph path (starting at x=0) paints it, against the embedded
 	// font's fixed glyph advance — not a font-independent geometric
-	// centering (see centerBarcodeCaption's own doc comment).
+	// centering (see alignPad's own doc comment).
 	f := layout.EmbeddedFont{}
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Barcode{Content: "1", Symbology: "code39", ShowText: true},

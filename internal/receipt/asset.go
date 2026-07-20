@@ -13,10 +13,10 @@ import (
 // (docs/ARCHITECTURE.md §3 "Image vs. Asset"). Name is resolved via
 // assets.Store.Get at layout time, not here: Validate stays fast and
 // local, so it cannot tell whether an asset actually exists (that's I/O,
-// deferred to render/layout.Build). Width and Align are accepted,
-// validated, and round-trip through JSON like any other field, but
-// currently render with no visible effect — the same position Text.Align
-// has held since Milestone 1 (see Text's own doc comment).
+// deferred to render/layout.Build). Align is the same closed enum
+// Text.Align uses; Width is the requested rendered width in dots, clamped
+// to the printable page width by render/layout.Build (see
+// docs/adr/0013-text-and-asset-alignment.md).
 type Asset struct {
 	Name  string `json:"name"`
 	Width int    `json:"width,omitempty"`
@@ -29,9 +29,10 @@ type Asset struct {
 // to build a filesystem path (see assets.FilesystemStore), so rejecting a
 // name that could traverse outside the store's root is a local,
 // no-I/O-required invariant of Asset itself, the same way Table.Validate()
-// already rejects malformed header/cell content. Width, if set, must not
-// be negative, the same convention Text.Size and Divider.Size already
-// use.
+// already rejects malformed header/cell content. Align must be "", "left",
+// "center", or "right" (docs/adr/0013-text-and-asset-alignment.md). Width,
+// if set, must not be negative, the same convention Text.Size and
+// Divider.Size already use.
 func (a Asset) Validate() error {
 	if a.Name == "" {
 		return errors.New("asset: name is required")
@@ -41,6 +42,11 @@ func (a Asset) Validate() error {
 	}
 	if strings.ContainsAny(a.Name, `/\`) || a.Name == "." || a.Name == ".." {
 		return fmt.Errorf("asset: invalid name %q", a.Name)
+	}
+	switch a.Align {
+	case "", "left", "center", "right":
+	default:
+		return fmt.Errorf("asset: invalid align %q", a.Align)
 	}
 	if a.Width < 0 {
 		return errors.New("asset: width must not be negative")

@@ -98,29 +98,40 @@ func decodeImage(data []byte) (image.Image, error) {
 	return img, nil
 }
 
-// imageHeight returns the height, in dots, a receipt.Image's or resolved
-// receipt.Asset's Data will occupy once painted, scaled to fit maxWidth
-// per scaledImageSize — the only dimension Build itself needs, to advance
-// Y (the scaled width matters only to render/canvas.Paint, which
-// recomputes both via DecodeImageBitmap when it actually paints the
-// Block, so returning width here as well would be a result no caller
-// uses). It reads only data's header via image.DecodeConfig rather than
-// decoding full pixel data, since Build needs just this to advance Y —
-// the pixels themselves are decoded once, later, by DecodeImageBitmap.
-// Animated GIFs report their first frame's dimensions like any other GIF:
-// an animated GIF's frames may in principle differ in size, but
+// decodeImageConfig reads data's header via image.DecodeConfig — width,
+// height, and format, with no pixel data decoded — and applies the same
+// checkSupportedFormat/checkImageDimensions checks decodeImage applies
+// before its own full image.Decode. Shared by imageHeight and assetHeight,
+// the two Build-side callers that need only a dimension, not pixels, to
+// advance Y. Animated GIFs report their first frame's dimensions like any
+// other GIF: an animated GIF's frames may in principle differ in size, but
 // image.DecodeConfig (like image/gif.Decode — see receipt.Image.Validate's
 // doc comment) only ever reports the first frame's, keeping this in
-// agreement with what DecodeImageBitmap actually paints.
-func imageHeight(data []byte, maxWidth int) (height int, err error) {
+// agreement with what DecodeImageBitmap/DecodeAlignedAssetBitmap actually
+// paint.
+func decodeImageConfig(data []byte) (image.Config, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return 0, err
+		return image.Config{}, err
 	}
 	if err := checkSupportedFormat(format); err != nil {
-		return 0, err
+		return image.Config{}, err
 	}
 	if err := checkImageDimensions(cfg); err != nil {
+		return image.Config{}, err
+	}
+	return cfg, nil
+}
+
+// imageHeight returns the height, in dots, a receipt.Image's Data will
+// occupy once painted, scaled to fit maxWidth per scaledImageSize — the
+// only dimension Build itself needs, to advance Y (the scaled width
+// matters only to render/canvas.Paint, which recomputes both via
+// DecodeImageBitmap when it actually paints the Block, so returning width
+// here as well would be a result no caller uses).
+func imageHeight(data []byte, maxWidth int) (height int, err error) {
+	cfg, err := decodeImageConfig(data)
+	if err != nil {
 		return 0, err
 	}
 	_, h := scaledImageSize(cfg.Width, cfg.Height, maxWidth)
@@ -151,8 +162,65 @@ func DecodeImageBitmap(data []byte, maxWidth int) (GlyphBitmap, error) {
 		return GlyphBitmap{}, err
 	}
 	bounds := img.Bounds()
-	width, height := scaledImageSize(bounds.Dx(), bounds.Dy(), maxWidth)
+	width, height := targetImageSize(bounds.Dx(), bounds.Dy(), 0, maxWidth)
 	return rasterizeImage(img, width, height), nil
+}
+
+// DecodeAlignedAssetBitmap is the AlignedAsset analogue of
+// DecodeImageBitmap: decodes a.Data, scales it to a.Width (clamped to
+// maxWidth) or, if a.Width is 0, to maxWidth per scaledImageSize's
+// existing shrink-only cap (both via targetImageSize, the same function
+// assetHeight used to advance Y, so the two stages can never disagree),
+// then — if a.Align is "center" or "right" — left-pads the rasterized
+// bitmap with blank pixel columns via alignBitmap so it paints at the
+// correct horizontal offset once render/canvas.Paint blits it starting at
+// x=0. An AlignedAsset with a.Width == 0 and a.Align == "" produces
+// exactly the bitmap DecodeImageBitmap already would for the same Data —
+// see docs/adr/0013-text-and-asset-alignment.md.
+func DecodeAlignedAssetBitmap(a AlignedAsset, maxWidth int) (GlyphBitmap, error) {
+	img, err := decodeImage(a.Data)
+	if err != nil {
+		return GlyphBitmap{}, err
+	}
+	bounds := img.Bounds()
+	width, height := targetImageSize(bounds.Dx(), bounds.Dy(), a.Width, maxWidth)
+	bmp := rasterizeImage(img, width, height)
+	return alignBitmap(bmp, a.Align, maxWidth), nil
+}
+
+// alignBitmap is alignPad's pixel-domain sibling: for a.Align "center" or
+// "right", it left-pads bmp with blank (unset) pixel columns so it sits
+// at the correct horizontal offset once painted at x=0 — maxWidth minus
+// bmp.Width of them for "right", half that for "center" — by allocating a
+// maxWidth-wide GlyphBitmap and copying bmp's set bits in at the computed
+// column offset, leaving every other bit unset (blank/white). align ""
+// or "left", or maxWidth <= 0 or bmp already as wide as or wider than
+// maxWidth (no room to move it), returns bmp unchanged — the same
+// fallback alignPad itself applies.
+func alignBitmap(bmp GlyphBitmap, align string, maxWidth int) GlyphBitmap {
+	if align != alignCenter && align != alignRight {
+		return bmp
+	}
+	if maxWidth <= 0 || bmp.Width >= maxWidth {
+		return bmp
+	}
+	offset := maxWidth - bmp.Width
+	if align == alignCenter {
+		offset /= 2
+	}
+	rowBytes := (maxWidth + 7) / 8
+	srcRowBytes := (bmp.Width + 7) / 8
+	bits := make([]byte, rowBytes*bmp.Height)
+	for y := 0; y < bmp.Height; y++ {
+		for x := 0; x < bmp.Width; x++ {
+			if bmp.Bits[y*srcRowBytes+x/8]&(0x80>>uint(x%8)) == 0 {
+				continue
+			}
+			px := x + offset
+			bits[y*rowBytes+px/8] |= 0x80 >> uint(px%8)
+		}
+	}
+	return GlyphBitmap{Width: maxWidth, Height: bmp.Height, Bits: bits}
 }
 
 // rasterizeImage converts img into a GlyphBitmap sized targetWidth x

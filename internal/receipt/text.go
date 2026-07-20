@@ -3,18 +3,16 @@ package receipt
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // Text is a line, or paragraph, of plain content. Align, Bold, Italic,
 // Underline, Strikethrough, and Size are rendering hints interpreted by
 // the bitmap renderer (docs/ARCHITECTURE.md §3 "Text styling",
-// docs/adr/0007-bitmap-text-styling.md). Align does not have a fixed set
-// of valid values, so Validate does not restrict it. Bold, Italic,
-// Underline, Strikethrough, and Size all affect rendering; Align is the
-// one field still ahead of its implementation — accepted, validated, and
-// round-tripped through JSON like any other field, but not yet
-// interpreted by render/layout.Build, the same position Asset.Align
-// currently holds (see its own doc comment).
+// docs/adr/0007-bitmap-text-styling.md, docs/adr/0013-text-and-asset-alignment.md).
+// Align is a closed enum — "" (omitted, left), "left", "center", or
+// "right" — the same closed-vocabulary pattern Barcode.Symbology and
+// QRCode.ErrorCorrection already establish, applied here per ADR-0013.
 type Text struct {
 	Content       string `json:"content"`
 	Align         string `json:"align,omitempty"`
@@ -26,6 +24,7 @@ type Text struct {
 }
 
 // Validate reports whether t is well-formed: Content must be non-empty,
+// Align must be "", "left", "center", or "right" (docs/adr/0013-text-and-asset-alignment.md),
 // and Size, if set, must not be negative. Size is an integer bitmap scale
 // factor (docs/adr/0007-bitmap-text-styling.md); 0 (omitted) means
 // "unscaled" and is normalized to 1 by render/layout.Build, not rejected
@@ -33,6 +32,11 @@ type Text struct {
 func (t Text) Validate() error {
 	if t.Content == "" {
 		return errors.New("text: content is required")
+	}
+	switch t.Align {
+	case "", "left", "center", "right":
+	default:
+		return fmt.Errorf("text: invalid align %q", t.Align)
 	}
 	if t.Size < 0 {
 		return errors.New("text: size must not be negative")

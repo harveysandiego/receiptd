@@ -39,7 +39,7 @@ type Barcode struct {
 	// beneath the bars: render/layout.Build adds one extra
 	// render/layout.BarcodeCaption Block, Content space-padded to sit
 	// roughly centered under the barcode's own rendered width
-	// (render/layout.centerBarcodeCaption — leading spaces sized to the
+	// (render/layout.alignPad — leading spaces sized to the
 	// embedded font's fixed glyph advance, not a geometric/font-independent
 	// centering), which render/canvas.Paint paints through the same
 	// glyph-by-glyph path any other text Block uses.

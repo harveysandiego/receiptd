@@ -25,12 +25,14 @@ func storeWith(t *testing.T, data []byte) assets.Store {
 	return s
 }
 
-func TestBuild_Asset_ResolvesToImageBlock(t *testing.T) {
-	// docs/ARCHITECTURE.md §3 "Image vs. Asset": by the time Build returns,
-	// an Asset and an Image are the same kind of already-decoded pixel
-	// content on a Block — canvas.Paint never distinguishes them, only
-	// layout does. Build itself proves that by producing a receipt.Image
-	// Block, the exact type an ordinary Image element already produces.
+func TestBuild_Asset_ResolvesToAlignedAssetBlock(t *testing.T) {
+	// docs/adr/0013-text-and-asset-alignment.md: Build resolves a
+	// receipt.Asset's Name to pixel bytes via assets.Store.Get (the one
+	// I/O resolution step docs/ARCHITECTURE.md §4 reserves to Build) and
+	// carries those bytes, plus the Asset's own already-declared
+	// Width/Align, forward as a layout.AlignedAsset — not a plain
+	// receipt.Image, so render/canvas.Paint can still resolve Width/Align
+	// once it actually rasterizes the Block.
 	data := solidPNG(t, 4, 2, color.Black)
 	store := storeWith(t, data)
 	r := receipt.Receipt{Elements: []receipt.Element{
@@ -43,12 +45,34 @@ func TestBuild_Asset_ResolvesToImageBlock(t *testing.T) {
 	if len(doc.Blocks) != 1 {
 		t.Fatalf("len(doc.Blocks) = %d, want 1", len(doc.Blocks))
 	}
-	got, ok := doc.Blocks[0].Element.(receipt.Image)
+	got, ok := doc.Blocks[0].Element.(layout.AlignedAsset)
 	if !ok {
-		t.Fatalf("doc.Blocks[0].Element = %T, want receipt.Image", doc.Blocks[0].Element)
+		t.Fatalf("doc.Blocks[0].Element = %T, want layout.AlignedAsset", doc.Blocks[0].Element)
 	}
 	if !bytes.Equal(got.Data, data) {
 		t.Errorf("doc.Blocks[0].Element.Data changed, want the resolved asset's bytes unchanged")
+	}
+	if got.Width != 0 || got.Align != "" {
+		t.Errorf("doc.Blocks[0].Element = %+v, want Width: 0, Align: \"\" (Asset carried none)", got)
+	}
+}
+
+func TestBuild_Asset_CarriesWidthAndAlignOntoAlignedAssetBlock(t *testing.T) {
+	data := solidPNG(t, 4, 2, color.Black)
+	store := storeWith(t, data)
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png", Width: 50, Align: "center"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 200}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	got, ok := doc.Blocks[0].Element.(layout.AlignedAsset)
+	if !ok {
+		t.Fatalf("doc.Blocks[0].Element = %T, want layout.AlignedAsset", doc.Blocks[0].Element)
+	}
+	if got.Width != 50 || got.Align != "center" {
+		t.Errorf("doc.Blocks[0].Element = %+v, want Width: 50, Align: \"center\"", got)
 	}
 }
 
@@ -79,6 +103,89 @@ func TestBuild_Asset_WiderThanPrintableWidth_ScalesDownPreservingAspectRatio(t *
 	}
 	if doc.Blocks[1].Y != 5 {
 		t.Errorf("doc.Blocks[1].Y = %d, want 5 (scaled height, same rule as receipt.Image)", doc.Blocks[1].Y)
+	}
+}
+
+// --- receipt.Asset.Width: Build's height calculation ---
+
+func TestBuild_Asset_ExplicitWidthSmallerThanSource_ScalesDownPreservingAspectRatio(t *testing.T) {
+	store := storeWith(t, solidPNG(t, 20, 10, color.Black))
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png", Width: 10},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Blocks[1].Y != 5 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 5 (height scaled to the explicit Width, aspect ratio preserved)", doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_Asset_ExplicitWidthLargerThanSource_ScalesUpPreservingAspectRatio(t *testing.T) {
+	// Unlike the implicit maxWidth cap (scaledImageSize), an explicit
+	// Width is a deliberate request and may upscale — mirroring
+	// Barcode.Height's own explicit-dimension behavior.
+	store := storeWith(t, solidPNG(t, 4, 2, color.Black))
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png", Width: 40},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Blocks[1].Y != 20 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 20 (4x2 upscaled to Width 40, aspect ratio preserved)", doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_Asset_ExplicitWidthLargerThanPrintableWidth_ClampedToPrintableWidth(t *testing.T) {
+	store := storeWith(t, solidPNG(t, 4, 2, color.Black))
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png", Width: 1000},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 40}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Blocks[1].Y != 20 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 20 (Width clamped to the 40-dot printable width, never wider than the page)", doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_Asset_ExplicitWidthEqualToPrintableWidth(t *testing.T) {
+	store := storeWith(t, solidPNG(t, 4, 2, color.Black))
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png", Width: 40},
+		receipt.Text{Content: "Milk"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 40}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Blocks[1].Y != 20 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 20", doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_Asset_ZeroWidth_SameAsOmitted(t *testing.T) {
+	store := storeWith(t, solidPNG(t, 20, 10, color.Black))
+	explicit := receipt.Receipt{Elements: []receipt.Element{receipt.Asset{Name: "logo.png", Width: 0}, receipt.Text{Content: "A"}}}
+	omitted := receipt.Receipt{Elements: []receipt.Element{receipt.Asset{Name: "logo.png"}, receipt.Text{Content: "A"}}}
+
+	docExplicit, err := layout.Build(context.Background(), explicit, printer.Profile{WidthDots: 10}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	docOmitted, err := layout.Build(context.Background(), omitted, printer.Profile{WidthDots: 10}, layout.EmbeddedFont{}, store)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if docExplicit.Blocks[1].Y != docOmitted.Blocks[1].Y {
+		t.Errorf("Y with Width: 0 = %d, Y with Width omitted = %d, want equal", docExplicit.Blocks[1].Y, docOmitted.Blocks[1].Y)
 	}
 }
 
@@ -178,8 +285,8 @@ func TestBuild_AssetBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
 	if wantY := f.LineHeight(); doc.Blocks[1].Y != wantY {
 		t.Errorf("doc.Blocks[1].Y = %d, want %d", doc.Blocks[1].Y, wantY)
 	}
-	if _, ok := doc.Blocks[1].Element.(receipt.Image); !ok {
-		t.Fatalf("doc.Blocks[1].Element = %T, want receipt.Image", doc.Blocks[1].Element)
+	if _, ok := doc.Blocks[1].Element.(layout.AlignedAsset); !ok {
+		t.Fatalf("doc.Blocks[1].Element = %T, want layout.AlignedAsset", doc.Blocks[1].Element)
 	}
 	if wantY := f.LineHeight() + 6; doc.Blocks[2].Y != wantY {
 		t.Errorf("doc.Blocks[2].Y = %d, want %d", doc.Blocks[2].Y, wantY)
@@ -264,8 +371,8 @@ func TestBuild_AssetDeterministic(t *testing.T) {
 		if a.Y != b.Y || a.Style != b.Style {
 			t.Errorf("Blocks[%d] = {Y:%d, Style:%+v}, then {Y:%d, Style:%+v}, want equal", i, a.Y, a.Style, b.Y, b.Style)
 		}
-		imgA, okA := a.Element.(receipt.Image)
-		imgB, okB := b.Element.(receipt.Image)
+		imgA, okA := a.Element.(layout.AlignedAsset)
+		imgB, okB := b.Element.(layout.AlignedAsset)
 		if okA != okB {
 			t.Fatalf("Blocks[%d].Element types differ between calls", i)
 		}

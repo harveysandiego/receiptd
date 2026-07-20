@@ -1,6 +1,6 @@
 # 0013. Closing the `Text.Align`/`Asset.Align`/`Asset.Width` gap with pixel- and space-padding
 
-Status: Accepted (design only — implementation is a separate, future slice)
+Status: Accepted
 
 ## Context
 

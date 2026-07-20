@@ -8,9 +8,7 @@ import (
 
 // Divider is a horizontal rule. Style selects "solid" (the default, a
 // continuous line) or "dashed" (a repeating on/off pattern — see
-// render/canvas.paintDivider); both render distinctly, unlike
-// Text.Align and Asset.Align, which are still ahead of their own
-// implementation (see each type's own doc comment). Size is
+// render/canvas.paintDivider); both render distinctly. Size is
 // an integer thickness scale factor, the same "0 or omitted means
 // unscaled" convention Text.Size uses (docs/adr/0007-bitmap-text-styling.md):
 // the rendered line is render/layout.DividerThickness dots at Size 1, or
