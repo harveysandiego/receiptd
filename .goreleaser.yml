@@ -98,5 +98,7 @@ release:
 
     Checksums are published in `checksums.txt` alongside each release.
 
-    Docker images are not yet published (planned for Milestone 5) — see
-    docs/ARCHITECTURE.md for the roadmap.
+    Multi-arch (linux/amd64, linux/arm64) container images for this
+    release are published separately to
+    `ghcr.io/harveysandiego/receiptd` by `.github/workflows/release.yml`
+    — see the Docker section of README.md.

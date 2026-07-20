@@ -1,0 +1,89 @@
+# Reusable workflow: builds the image described by ./Dockerfile for
+# linux/amd64 + linux/arm64 via Buildx. Called twice — once from ci.yml
+# with push=false (PR/branch validation: build only, discard the result),
+# and once from release.yml with push=true (tagged releases: build and
+# publish to GHCR). Keeping the Buildx steps in one place means both
+# callers exercise the exact same build, not two hand-maintained copies
+# that can silently drift apart.
+name: Docker image
+
+on:
+  workflow_call:
+    inputs:
+      push:
+        description: Push the built image to GHCR. False just validates that both platforms build.
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # amd64 GitHub-hosted runners can't natively execute arm64
+      # binaries, including the arm64 half of a multi-platform build —
+      # QEMU is what makes that cross-build possible.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Derives tags (semver full/major.minor/major, "latest" for the
+      # highest stable — i.e. non-prerelease — semver tag) and OCI labels
+      # (source, revision, created, version, and licence/description read
+      # from the repository itself) purely from the triggering git ref, so
+      # neither caller workflow has to compute any of this by hand.
+      - name: Derive image tags and OCI labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # latest=auto is metadata-action's default, spelled out here so
+          # the "no latest tag for pre-releases" behavior documented in
+          # README.md is a deliberate choice, not an unread default.
+          flavor: latest=auto
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      - name: Build timestamp
+        id: date
+        run: echo "value=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
+      # Mirrors .goreleaser.yml's ldflags exactly, so `receiptd --version`
+      # reports the same version/commit/date whether the binary came from
+      # a GoReleaser archive or this image. VERSION intentionally uses
+      # metadata-action's parsed version (e.g. "1.2.3", no "v" prefix) to
+      # match GoReleaser's `{{.Version}}` template variable.
+      - name: Build${{ inputs.push && ' and push' || '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ inputs.push }}
+          # push=false runs (PR/branch validation) have no image to export —
+          # branch pushes and pull_request events don't match a semver tag,
+          # so steps.meta.outputs.tags is empty here too. Explicit
+          # `type=cacheonly` validates both platforms build without
+          # exporting anywhere, same as Buildx's own unset-output default,
+          # but without its "no output specified" warning on every PR.
+          outputs: ${{ inputs.push && '' || 'type=cacheonly' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.date.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

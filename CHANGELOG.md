@@ -19,6 +19,14 @@ the 0.x series.
   a `CGO_ENABLED=0` static build layered onto a distroless, non-root
   runtime image. No application code changes — see the Docker section of
   [README.md](README.md#docker) for build/run instructions.
+- Automated multi-architecture (linux/amd64, linux/arm64) container image
+  publishing: a reusable Buildx workflow
+  ([.github/workflows/docker-image.yml](.github/workflows/docker-image.yml))
+  validates both platforms build on every pull request, and publishes a
+  multi-arch manifest to `ghcr.io/harveysandiego/receiptd` with semantic
+  version and `latest` tags whenever `.github/workflows/release.yml` runs
+  on a tagged release. Completes Milestone 5 — see the Docker section of
+  [README.md](README.md#docker).
 
 ## [0.1.0] - (planned, not yet released)
 

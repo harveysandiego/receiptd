@@ -17,9 +17,12 @@ appliance on your home network.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Status:** pre-alpha. Milestones 1–3 (local render, REST API + queue +
-> auth, real ESC/POS printer support) are implemented and tested — Receiptd
-> has printed to real hardware — but there is no packaged release yet.
-> See [Current status](#current-status) before trying to run this.
+> auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
+> multi-arch image publishing, release pipeline) are implemented and
+> tested — Receiptd has printed to real hardware — but no tag has been
+> pushed yet, so nothing is actually published to the Releases page or
+> GHCR as of this writing. See [Current status](#current-status) before
+> trying to run this.
 
 ---
 
@@ -128,14 +131,15 @@ philosophy, and the reasoning behind each decision, lives in
 Receiptd's architecture is frozen (see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11) and implementation is
 proceeding milestone by milestone, using test-driven development.
-Milestones 1 through 3 are done: the `receipt`/`render` pipeline, the REST
-API (`preview`, `print`, job status), the persistent job queue,
+Milestones 1, 2, 3, and 5 are done: the `receipt`/`render` pipeline, the
+REST API (`preview`, `print`, job status), the persistent job queue,
 Bearer-token auth (on by default; Basic auth exists in `auth` too, ready
 for Milestone 4's Web UI), a CLI that talks to the API, ESC/POS encoding,
-network printer transport, and every Milestone 3 Element type (Image,
-Asset, QRCode, Barcode, Columns, Table, Feed, Cut). Receiptd has printed
-successfully to real hardware (an Epson TM-m30II). There is no working
-release yet — that's Milestone 5 (Packaging). Track progress via the
+network printer transport, every Milestone 3 Element type (Image, Asset,
+QRCode, Barcode, Columns, Table, Feed, Cut), and multi-architecture
+container images published automatically on tagged releases. Receiptd
+has printed successfully to real hardware (an Epson TM-m30II). Milestone
+4 (Web UI) is still outstanding. Track progress via the
 [roadmap](#roadmap) below and the
 [milestones](https://github.com/harveysandiego/receiptd/milestones) on
 GitHub. See [VERSIONING.md](VERSIONING.md) and
@@ -143,9 +147,11 @@ GitHub. See [VERSIONING.md](VERSIONING.md) and
 
 ## Installation
 
-> Not yet published. The instructions below describe the intended
-> installation paths once Milestone 5 (Packaging) lands; until then, build
-> from source.
+> No tagged release has been cut yet, so the Releases page and the GHCR
+> package below are both still empty — the instructions in this section
+> describe what becomes available once the first tag (e.g. `v0.1.0`) is
+> pushed and `.github/workflows/release.yml` runs. Until then, build from
+> source or build the [Dockerfile](Dockerfile) locally.
 
 ### From source
 
@@ -164,17 +170,38 @@ page — see `.goreleaser.yml`.
 
 ### Docker
 
-A multi-stage [Dockerfile](Dockerfile) is available now (the rest of
-Milestone 5 — multi-arch CI and a published `ghcr.io` image — is not yet
-done; build the image locally in the meantime). It produces a static
-`CGO_ENABLED=0` binary layered onto a distroless, non-root runtime image
-with no shell and no package manager.
+A multi-stage [Dockerfile](Dockerfile) produces a static `CGO_ENABLED=0`
+binary layered onto a distroless, non-root runtime image with no shell
+and no package manager. On every tagged release,
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds
+and publishes it for **linux/amd64** and **linux/arm64** to the GitHub
+Container Registry as a single multi-arch manifest — `docker pull` and
+`docker run` transparently get the right architecture, no `--platform`
+flag needed:
 
 ```sh
-git clone https://github.com/harveysandiego/receiptd.git
-cd receiptd
-docker build -t receiptd:local .
+docker pull ghcr.io/harveysandiego/receiptd:latest
 ```
+
+Available tags mirror the Git tag: `latest` (the newest stable release),
+a full version (`0.2.0`), a minor (`0.2`), and a major (`0`) — pick
+whichever gives the stability guarantee you want, per
+[VERSIONING.md](VERSIONING.md). Pre-release tags (`0.2.0-rc1`) only get
+the full-version tag, never `latest`/minor/major, so they can't be pulled
+accidentally by a floating tag.
+
+Every pull request also builds both architectures (without publishing)
+via the same [reusable workflow](.github/workflows/docker-image.yml), so
+a change that breaks the arm64 build is caught before it merges, not at
+release time.
+
+> **Maintainer note:** a package published to GHCR via the default
+> `GITHUB_TOKEN` is **private** until its visibility is changed by hand
+> (Package settings → Change visibility, or link it to this repository)
+> — GitHub doesn't expose a workflow-file setting for this. Do that once
+> after the first tagged release publishes the package, otherwise
+> `docker pull` above fails with "unauthorized" for anyone who isn't a
+> repo collaborator.
 
 `receiptd` needs a config file and a writable data directory (see
 [Configuration](#configuration-required-for-docker) below). Given a
@@ -187,7 +214,7 @@ docker run -d \
   -v "$(pwd)/config.yaml:/etc/receiptd/config.yaml:ro" \
   -v receiptd-data:/var/lib/receiptd \
   -e RECEIPTD_AUTH_TOKEN=changeme \
-  receiptd:local
+  ghcr.io/harveysandiego/receiptd:latest
 ```
 
 - `-v .../config.yaml:/etc/receiptd/config.yaml:ro` — mounts your config
@@ -204,6 +231,17 @@ docker run -d \
   defaults to `true` (see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
   §7); pick a real secret, not the literal word above. Omit only if your
   config has an explicit `auth: { enabled: false }`.
+
+To build the image locally instead (e.g. before the first tag exists, or
+while iterating on the Dockerfile itself), swap the last line above for
+an image built from a clone of this repo:
+
+```sh
+git clone https://github.com/harveysandiego/receiptd.git
+cd receiptd
+docker build -t receiptd:local .
+# then substitute receiptd:local for the ghcr.io image above
+```
 
 #### Configuration required for Docker
 
@@ -247,8 +285,12 @@ Receiptd is designed with Raspberry Pi in mind from day one: a single
 CGO-free ARM64 static binary with no runtime dependencies, low memory
 footprint, and no GPU/desktop requirement. Run it directly as a `systemd`
 service or via Docker exactly as above — either works well on a Pi 3/4/5.
-The [`Dockerfile`](Dockerfile) has no architecture-specific assumptions,
-so `docker buildx build --platform linux/arm64 .` cross-builds an ARM64
+`docker pull ghcr.io/harveysandiego/receiptd:latest` on a Pi pulls the
+`linux/arm64` image directly out of the published manifest, no
+`--platform` flag or local cross-build needed. Building locally works
+the same way in the other direction: the [`Dockerfile`](Dockerfile) has
+no architecture-specific assumptions, so
+`docker buildx build --platform linux/arm64 .` cross-builds an ARM64
 image from an amd64 machine without changes.
 
 ## CLI examples
@@ -314,7 +356,7 @@ detail on each milestone's scope.
 - [x] **Milestone 3** — Real printer support (ESC/POS encoding, network
       transport, remaining Element types) — first physical print
 - [ ] **Milestone 4** — Web UI
-- [ ] **Milestone 5** — Packaging (Docker, multi-arch, release pipeline)
+- [x] **Milestone 5** — Packaging (Docker, multi-arch, release pipeline)
 - [ ] **Milestone 6** — First real template + provider (weather)
 
 ## Contributing
