@@ -9,33 +9,38 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-20
+
+First tagged release. Covers
+[Milestones 1, 2, 3, and 5](docs/ARCHITECTURE.md#10-roadmap) — Milestone 4
+(Web UI) and Milestone 6 (first template + provider) remain outstanding.
+
 ### Added
 
-- Repository scaffolding: architecture documentation, ADRs, CI/CD,
-  contribution guidelines, and the initial Go package skeleton. No
-  Receiptd functionality yet — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-  for the roadmap.
-- Multi-stage `Dockerfile` and `.dockerignore` for local container builds:
-  a `CGO_ENABLED=0` static build layered onto a distroless, non-root
-  runtime image. No application code changes — see the Docker section of
-  [README.md](README.md#docker) for build/run instructions.
-- Automated multi-architecture (linux/amd64, linux/arm64) container image
-  publishing: a reusable Buildx workflow
-  ([.github/workflows/docker-image.yml](.github/workflows/docker-image.yml))
-  validates both platforms build on every pull request, and publishes a
-  multi-arch manifest to `ghcr.io/harveysandiego/receiptd` with semantic
-  version and `latest` tags whenever `.github/workflows/release.yml` runs
-  on a tagged release. Completes Milestone 5 — see the Docker section of
-  [README.md](README.md#docker).
-
-## [0.1.0] - (planned, not yet released)
-
-Placeholder for the first tagged release, corresponding to
-[Milestone 1](docs/ARCHITECTURE.md#10-roadmap) (local render, no server):
-`receipt` model + `Validate()`, `apperr`, `render/layout`, `render/canvas`,
-and the offline `receipt render receipt.json --out preview.png` CLI path.
-This entry will gain a real date and a filled-in list of changes — moved
-out of Unreleased above — once that milestone actually ships.
+- `receipt`: the Receipt model, JSON polymorphism, and every Element type
+  — Text, Heading, Divider, Spacer, Image, Asset, QRCode, Barcode,
+  Columns, Table, Feed, Cut — each with a fast, local `Validate()`.
+- `render/layout` and `render/canvas`: Receipt + printer `Profile` →
+  `Document` → `Canvas` (bitmap), including text wrapping/alignment,
+  image/QR/barcode rasterization, and table/column layout.
+- `render/escpos`: Canvas → ESC/POS byte encoding, and `printer`'s
+  `Profile`/`Connection` model and network transport for real hardware —
+  Receiptd has printed successfully to a physical Epson TM-m30II.
+- A REST API (`/api/v1/preview`, `/api/v1/print`,
+  `GET /api/v1/jobs/{id}`) backed by a persistent, bbolt-backed job
+  `queue` with retry/backoff, and `auth` (Bearer-token by default, Basic
+  also available).
+- `assets`: named asset storage (filesystem and in-memory) for images
+  referenced by receipts.
+- The `receipt` CLI (`render`, `preview`, `print`, `jobs`) and the
+  `receiptd` daemon (`cmd/receiptd`).
+- A multi-stage `Dockerfile` producing a static, non-root, distroless
+  runtime image, and automated multi-architecture (linux/amd64,
+  linux/arm64) publishing to `ghcr.io/harveysandiego/receiptd` on tagged
+  releases via a reusable Buildx workflow that also validates PRs — see
+  the Docker section of [README.md](README.md#docker).
+- Repository scaffolding: architecture documentation, ADRs, CI/CD, and
+  contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 [Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/harveysandiego/receiptd/releases/tag/v0.1.0
