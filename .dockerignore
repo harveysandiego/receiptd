@@ -1,0 +1,42 @@
+# Explicit block-list rather than "exclude everything, allow-list the
+# rest" — Docker's ignore-pattern matcher doesn't reliably re-include
+# files whose parent directory was already excluded by an earlier
+# pattern, so an allow-list approach is a common source of silently
+# empty COPYs. This only ever needs cmd/, internal/, go.mod, and go.sum
+# anyway, so keeping the exclude list explicit is no real extra cost.
+
+.git/
+.github/
+.devcontainer/
+.vscode/
+docs/
+web/
+
+# go test fixtures aren't needed to `go build`.
+**/testdata/
+
+# Build artifacts / local state (mirrors .gitignore).
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.txt
+coverage.html
+*.db
+*.bolt
+/data/
+
+# Top-level docs and project metadata the build doesn't touch.
+*.md
+LICENSE
+.editorconfig
+.gitattributes
+.gitignore
+.golangci.yml
+.goreleaser.yml
+.pre-commit-config.yaml

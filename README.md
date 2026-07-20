@@ -164,16 +164,82 @@ page — see `.goreleaser.yml`.
 
 ### Docker
 
-Planned for Milestone 5. Once available:
+A multi-stage [Dockerfile](Dockerfile) is available now (the rest of
+Milestone 5 — multi-arch CI and a published `ghcr.io` image — is not yet
+done; build the image locally in the meantime). It produces a static
+`CGO_ENABLED=0` binary layered onto a distroless, non-root runtime image
+with no shell and no package manager.
+
+```sh
+git clone https://github.com/harveysandiego/receiptd.git
+cd receiptd
+docker build -t receiptd:local .
+```
+
+`receiptd` needs a config file and a writable data directory (see
+[Configuration](#configuration-required-for-docker) below). Given a
+`config.yaml` in the current directory:
 
 ```sh
 docker run -d \
   --name receiptd \
   -p 8080:8080 \
+  -v "$(pwd)/config.yaml:/etc/receiptd/config.yaml:ro" \
   -v receiptd-data:/var/lib/receiptd \
   -e RECEIPTD_AUTH_TOKEN=changeme \
-  ghcr.io/harveysandiego/receiptd:latest
+  receiptd:local
 ```
+
+- `-v .../config.yaml:/etc/receiptd/config.yaml:ro` — mounts your config
+  read-only at the path `receiptd`'s `--config` flag defaults to inside
+  the image (see [`Dockerfile`](Dockerfile)'s `CMD`).
+- `-v receiptd-data:/var/lib/receiptd` — persists the bbolt job queue and
+  stored assets across container restarts; without this, both reset
+  every time the container is recreated. The image runs as uid/gid
+  `65532` (distroless's `nonroot`), which already owns this path inside
+  the image — a named volume like this one adopts that ownership
+  automatically, but a bind-mounted host directory won't unless you
+  `chown` it to `65532:65532` first.
+- `-e RECEIPTD_AUTH_TOKEN=changeme` — required because `auth.enabled`
+  defaults to `true` (see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+  §7); pick a real secret, not the literal word above. Omit only if your
+  config has an explicit `auth: { enabled: false }`.
+
+#### Configuration required for Docker
+
+`server.address` must bind `0.0.0.0`, not `127.0.0.1` or `localhost` —
+otherwise the port mapped with `-p` above can't reach the process inside
+the container's network namespace. `assets.path` and `queue.path` must
+live under `/var/lib/receiptd` (the volume mount point above) or their
+state won't survive a container restart:
+
+```yaml
+server:
+  address: "0.0.0.0:8080"
+auth:
+  enabled: true # token comes from RECEIPTD_AUTH_TOKEN, set above
+logging:
+  level: info
+  format: auto
+assets:
+  path: /var/lib/receiptd/assets
+queue:
+  store: bbolt
+  path: /var/lib/receiptd/queue.db
+  max_attempts: 3
+  retry_backoff: 5s
+printers:
+  - name: front-desk
+    transport: network
+    address: 192.168.1.50:9100 # your printer's IP:port
+    width_mm: 80
+    dpi: 203
+web:
+  enabled: false
+```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §7 for the full
+config schema.
 
 ### Raspberry Pi
 
@@ -181,6 +247,9 @@ Receiptd is designed with Raspberry Pi in mind from day one: a single
 CGO-free ARM64 static binary with no runtime dependencies, low memory
 footprint, and no GPU/desktop requirement. Run it directly as a `systemd`
 service or via Docker exactly as above — either works well on a Pi 3/4/5.
+The [`Dockerfile`](Dockerfile) has no architecture-specific assumptions,
+so `docker buildx build --platform linux/arm64 .` cross-builds an ARM64
+image from an amd64 machine without changes.
 
 ## CLI examples
 

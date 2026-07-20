@@ -15,6 +15,10 @@ the 0.x series.
   contribution guidelines, and the initial Go package skeleton. No
   Receiptd functionality yet — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
   for the roadmap.
+- Multi-stage `Dockerfile` and `.dockerignore` for local container builds:
+  a `CGO_ENABLED=0` static build layered onto a distroless, non-root
+  runtime image. No application code changes — see the Docker section of
+  [README.md](README.md#docker) for build/run instructions.
 
 ## [0.1.0] - (planned, not yet released)
 
