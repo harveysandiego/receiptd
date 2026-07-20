@@ -83,6 +83,18 @@ jobs:
           path: coverage.txt
           if-no-files-found: ignore
 
+      # Only the "stable" leg uploads to Codecov — the matrix runs the same
+      # tests against two Go versions, and uploading both would just merge
+      # two near-identical reports for no benefit. fail_ci_if_error is
+      # false so a Codecov outage can't fail this repo's own CI.
+      - name: Upload coverage to Codecov
+        if: matrix.go == 'stable'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.txt
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest

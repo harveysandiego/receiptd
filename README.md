@@ -10,19 +10,24 @@ appliance on your home network.
      together in one commit — see the note at the top of go.mod. -->
 
 [![CI](https://github.com/harveysandiego/receiptd/actions/workflows/ci.yml/badge.svg)](https://github.com/harveysandiego/receiptd/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/harveysandiego/receiptd/actions/workflows/codeql.yml/badge.svg)](https://github.com/harveysandiego/receiptd/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/harveysandiego/receiptd/graph/badge.svg)](https://codecov.io/gh/harveysandiego/receiptd)
 [![Go Reference](https://pkg.go.dev/badge/github.com/harveysandiego/receiptd.svg)](https://pkg.go.dev/github.com/harveysandiego/receiptd)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/harveysandiego/receiptd)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status:** pre-alpha. Milestones 1–2 (local render, REST API + queue +
-> auth) are implemented and tested; there is no real printer support yet.
+> **Status:** pre-alpha. Milestones 1–3 (local render, REST API + queue +
+> auth, real ESC/POS printer support) are implemented and tested — Receiptd
+> has printed to real hardware — but there is no packaged release yet.
 > See [Current status](#current-status) before trying to run this.
 
 ---
 
 ## Screenshots
 
-_Coming soon — Web UI and printed receipt examples will be added as
-Milestone 4 (Web UI) lands. See the [roadmap](#roadmap)._
+_Coming soon — a printed receipt example (Receiptd already prints to real
+hardware) and a Web UI dashboard screenshot once Milestone 4 (Web UI)
+lands. See the [roadmap](#roadmap)._
 
 <!--
 ![Web UI dashboard](docs/img/webui-dashboard.png)
