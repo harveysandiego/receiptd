@@ -451,12 +451,12 @@ unconfigured `Job.PrinterName`.
 
 | Type       | Key fields                                                        |
 |------------|--------------------------------------------------------------------|
-| `text`     | `content`, `align` (accepted but not yet rendered), `bold`, `italic`, `underline`, `strikethrough`, `size` |
+| `text`     | `content`, `align` (`""`/`left`/`center`/`right` — design specified, not yet rendered, see "Text styling" below), `bold`, `italic`, `underline`, `strikethrough`, `size` |
 | `heading`  | `content` (implies `bold: true, size: 2`, see "Text styling" below) |
 | `divider`  | `style` (solid/dashed, optional, default solid), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
 | `spacer`   | `height` (dots)                                                     |
 | `image`    | `data` (inline base64) — always bytes the client already has        |
-| `asset`    | `name`, `width`, `align` (`width`/`align` accepted but not yet rendered) — resolved by name via `assets.Store` at layout time |
+| `asset`    | `name`, `width` (dots), `align` (`""`/`left`/`center`/`right` — `width`/`align` design specified, not yet rendered, see "Image vs. Asset" below) — resolved by name via `assets.Store` at layout time |
 | `qrcode`   | `content`, `size`, `error_correction`                                |
 | `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` (prints `content` as a caption beneath the bars, space-padded to sit roughly centered — see `render/layout.centerBarcodeCaption`) |
 | `columns`  | `columns: []{ weight int, elements: []Element }` — recursive        |
@@ -527,14 +527,24 @@ own style fields into a `Style` (§2) — there is no second,
 together, ahead of `Italic`/`Underline`/`Strikethrough` actually
 rendering, and that gap has since closed (see "Rendering model" below for
 the pipeline that paints all four). `Align` is the one `Text` field still
-ahead of its implementation: accepted, validated, and round-tripped
-through JSON like any other field, but not yet interpreted by
-`render/layout.Build` — the same position `Asset.Align` currently holds
-(§3's element table). Fixing the schema once, rather than growing it
-field-by-field alongside each rendering milestone, means a client
-integrating today doesn't need to change its request shape when alignment
-support lands later — only this document's roadmap (§10) and
-`render/layout`/`render/canvas`'s implementation change.
+ahead of its implementation: it now has a closed, validated set of values
+(`""`/`"left"`/`"center"`/`"right"`, `Validate()` rejects anything else)
+and a fully specified rendering mechanism —
+`docs/adr/0013-text-and-asset-alignment.md` — but that mechanism is not
+yet wired into `render/layout.Build`, the same not-yet-implemented
+position `Asset.Align` currently holds (§3's element table, "Image vs.
+Asset" below). Per ADR-0013, alignment is expressed as leading-space
+padding applied to each wrapped line, generalizing the same technique
+`Table`/`Columns`/`Barcode`'s caption already use — not a new
+horizontal-position primitive on `Block` (see "Columns" below). `Heading`
+gains no `Align` field, by the same "no fields of its own" design ADR-0007
+already fixed; an aligned heading-like line is composed from `Text`
+directly (`Bold: true, Size: 2, Align: "center"`, for example). Fixing
+the schema once, rather than growing it field-by-field alongside each
+rendering milestone, means a client integrating today doesn't need to
+change its request shape when alignment support lands later — only this
+document's roadmap (§10) and `render/layout`/`render/canvas`'s
+implementation change.
 
 #### Rendering model
 
@@ -617,8 +627,26 @@ Concretely: `render/layout.Build` resolves `Image.Data` by decoding it
 directly (no I/O), and resolves `Asset.Name` via `assets.Store.Get` (I/O,
 can fail with `apperr.KindNotFound`). Both end up as the same kind of
 already-decoded pixel content on a `Block` by the time `layout.Build`
-returns — `canvas.Paint` never distinguishes between them, only `layout`
-does.
+returns — `canvas.Paint` never distinguishes between them for the actual
+pixels, only `layout` does.
+
+`Asset.Width` and `Asset.Align` are design-specified but not yet
+implemented — see `docs/adr/0013-text-and-asset-alignment.md`. Once
+implemented, `Build` will lower a `receipt.Asset` into a new
+`layout.AlignedAsset` Block rather than a plain `receipt.Image`, so
+`render/canvas.Paint` gains one more `rasterBitmap` case to resolve
+`Width` and pad for `Align`. `AlignedAsset` is *not* the same kind of
+type as `TableLine`/`ColumnsLine`/`BarcodeCaption` — those synthesize new
+composed content with no 1:1 element counterpart, while `AlignedAsset`
+just carries one resolved `Asset`'s own already-declared fields past the
+one I/O resolution step (`assets.Store.Get`) only `Build` may perform
+(§4) — see ADR-0013's "Why a new type" section for the full reasoning,
+including why this does not generalize into a wrapper type for every
+element. An `AlignedAsset` with no explicit `Width` or `Align` set
+renders pixel-identically to today's `receipt.Image` lowering — this is
+an additive change, not a behavior change for any Receipt that doesn't
+use those two fields. An ordinary `receipt.Image` element is untouched by
+this: it has no `Width`/`Align` fields in the schema and gains none.
 
 ### Barcode symbologies
 
@@ -681,12 +709,18 @@ reports any other element type nested in a column (an `Image`, `Divider`,
 `QRCode`, `Barcode`, a nested `Table`/`Columns`, or a `Heading`) as
 `apperr.KindPermanent`. This is a different flavor of "accepted by the
 schema, not yet renderable" than `Text.Align` and `Asset.Width`/`Align`
-hold elsewhere in §3's element table: those fields render as if unset,
-while an unsupported element type nested in a column is rejected outright
-rather than silently ignored. Supporting arbitrary nested content side by
-side would require a real horizontal-positioning primitive on
-`Block`/`Canvas`, which is a materially bigger
-change than this slice's scope — see §11's "Future maintenance concerns".
+hold elsewhere in §3's element table (both now design-specified but
+unimplemented, per `docs/adr/0013-text-and-asset-alignment.md`): those
+fields render as if unset, while an unsupported element type nested in a
+column is rejected outright rather than silently ignored. Supporting
+arbitrary nested content side by side would require a real
+horizontal-positioning primitive on `Block`/`Canvas`, which is a
+materially bigger change than this slice's scope — see §11's "Future
+maintenance concerns". ADR-0013 deliberately does not introduce that
+primitive either: `Text.Align`/`Asset.Align` are designed as padding
+baked into already-positioned content, the same technique this section's
+own `Table`/`Columns` column alignment already uses, not a new
+coordinate on `Block`.
 
 `receipt.Heading` is called out specifically because it is a case that
 might look supportable at first glance — `Build` already knows how to lay
