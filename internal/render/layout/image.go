@@ -35,7 +35,7 @@ func scaledImageSize(origWidth, origHeight, maxWidth int) (width, height int) {
 
 // checkSupportedFormat returns an error unless format is one
 // receipt.IsSupportedImageFormat accepts — the shared check decodeImage
-// and imageDimensions both apply to whatever image.Decode/
+// and imageHeight both apply to whatever image.Decode/
 // image.DecodeConfig reports, rather than trusting that no other decoder
 // happens to be registered elsewhere in the binary: a program that links
 // in another package's image/tiff (or similar) import for unrelated
@@ -69,27 +69,30 @@ func decodeImage(data []byte) (image.Image, error) {
 	return img, nil
 }
 
-// imageDimensions returns the dimensions a receipt.Image's Data will
-// occupy once painted, scaled to fit maxWidth per scaledImageSize. It
-// reads only data's header via image.DecodeConfig rather than decoding
-// full pixel data, since Build needs just these dimensions to advance Y —
-// the pixels themselves are decoded once, later, by DecodeImageBitmap
-// when render/canvas.Paint actually paints the Block. Animated GIFs
-// report their first frame's dimensions like any other GIF: an animated
-// GIF's frames may in principle differ in size, but image.DecodeConfig
-// (like image/gif.Decode — see receipt.Image.Validate's doc comment)
-// only ever reports the first frame's, keeping this in agreement with
-// what DecodeImageBitmap actually paints.
-func imageDimensions(data []byte, maxWidth int) (width, height int, err error) {
+// imageHeight returns the height, in dots, a receipt.Image's or resolved
+// receipt.Asset's Data will occupy once painted, scaled to fit maxWidth
+// per scaledImageSize — the only dimension Build itself needs, to advance
+// Y (the scaled width matters only to render/canvas.Paint, which
+// recomputes both via DecodeImageBitmap when it actually paints the
+// Block, so returning width here as well would be a result no caller
+// uses). It reads only data's header via image.DecodeConfig rather than
+// decoding full pixel data, since Build needs just this to advance Y —
+// the pixels themselves are decoded once, later, by DecodeImageBitmap.
+// Animated GIFs report their first frame's dimensions like any other GIF:
+// an animated GIF's frames may in principle differ in size, but
+// image.DecodeConfig (like image/gif.Decode — see receipt.Image.Validate's
+// doc comment) only ever reports the first frame's, keeping this in
+// agreement with what DecodeImageBitmap actually paints.
+func imageHeight(data []byte, maxWidth int) (height int, err error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	if err := checkSupportedFormat(format); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	w, h := scaledImageSize(cfg.Width, cfg.Height, maxWidth)
-	return w, h, nil
+	_, h := scaledImageSize(cfg.Width, cfg.Height, maxWidth)
+	return h, nil
 }
 
 // DecodeImageBitmap decodes data as any supported raster format (see
@@ -101,7 +104,7 @@ func imageDimensions(data []byte, maxWidth int) (width, height int, err error) {
 // images (docs/ARCHITECTURE.md §4), and exactly one image-decoding path,
 // not one per format. Exported because render/canvas.Paint calls it
 // directly against the receipt.Image.Data its Block carries — Build only
-// needs imageDimensions (dimensions, not pixels) to advance Y, so the two
+// needs imageHeight (a dimension, not pixels) to advance Y, so the two
 // stages never redundantly decode full pixel data in the same place, but
 // Build and Paint still independently decode Data once each: deferring
 // pixel decoding to Paint, rather than resolving it once in Build and

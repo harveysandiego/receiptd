@@ -39,7 +39,7 @@ func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 		return apperr.Wrap(apperr.KindNotFound, "app.Process", fmt.Errorf("printer profile %q not configured", j.PrinterName))
 	}
 
-	c, err := s.render(j.Receipt, profile)
+	c, err := s.render(ctx, j.Receipt, profile)
 	if err != nil {
 		return err
 	}
@@ -62,10 +62,11 @@ func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 // see printer.Profile.WidthDots's doc comment for what a zero-value
 // profile means for the resulting Canvas's width. It uses
 // layout.EmbeddedFont, the only Font implementation that exists, and
-// performs no I/O — consistent with layout.Build and canvas.Paint
-// themselves not yet accepting a context.Context.
-func (s *Service) render(r receipt.Receipt, profile printer.Profile) (*canvas.Canvas, error) {
-	doc, err := layout.Build(r, profile, layout.EmbeddedFont{})
+// passes ctx and s.Assets straight through to layout.Build — the only
+// stage in this pipeline that performs I/O, to resolve any receipt.Asset
+// r contains (docs/ARCHITECTURE.md §3 "Image vs. Asset").
+func (s *Service) render(ctx context.Context, r receipt.Receipt, profile printer.Profile) (*canvas.Canvas, error) {
+	doc, err := layout.Build(ctx, r, profile, layout.EmbeddedFont{}, s.Assets)
 	if err != nil {
 		return nil, err
 	}

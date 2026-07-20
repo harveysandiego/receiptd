@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
@@ -27,6 +28,14 @@ type Service struct {
 	// to read from: a PrinterName with no entry is reported by Process as
 	// apperr.KindNotFound, not a panic.
 	Profiles map[string]printer.Profile
+	// Assets resolves a receipt.Asset's Name to its bytes (docs/ARCHITECTURE.md
+	// §3 "Image vs. Asset"), passed straight through to layout.Build by
+	// render. A nil Assets is safe unless a Receipt actually contains an
+	// Asset element — cmd/receiptd's composition root always supplies one
+	// (assets.NewFilesystemStore(cfg.Assets.Path)); only a Service built
+	// directly by a test, the same way Printers/Profiles are already left
+	// unset in tests that don't need them, may leave this nil.
+	Assets assets.Store
 }
 
 // New returns a Service that enqueues print work via queue.

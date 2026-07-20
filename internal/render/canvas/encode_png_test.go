@@ -2,6 +2,7 @@ package canvas_test
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/png"
 	"testing"
@@ -60,9 +61,10 @@ func TestEncodePNG_PixelValuesPreserved(t *testing.T) {
 
 func TestEncodePNG_Pipeline_PixelValuesMatchPaintedGlyph(t *testing.T) {
 	f := layout.EmbeddedFont{}
-	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
+	doc, err := layout.Build(context.Background(), receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "A"},
-	}}, printer.Profile{}, f)
+	}}, printer.Profile{}, f, nil)
+
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}

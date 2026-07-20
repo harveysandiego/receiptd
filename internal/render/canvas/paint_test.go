@@ -1,6 +1,7 @@
 package canvas_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
@@ -353,7 +354,7 @@ func TestPaint_DividerBetweenTextBlocks(t *testing.T) {
 		receipt.Divider{},
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A")}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A")}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -416,7 +417,7 @@ func TestPaint_DividerAsLastBlock(t *testing.T) {
 		receipt.Text{Content: "A"},
 		receipt.Divider{},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A")}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A")}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -768,7 +769,7 @@ func TestPaint_WrappedTextFromBuild_ProducesTallerCanvas(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Hello World Foo"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: width}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: width}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -883,7 +884,7 @@ func TestPaint_WrappedScaledTextFromBuild_HeightAccountsForScale(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "Hello World Foo", Size: 2},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: width}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: width}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -1291,7 +1292,7 @@ func TestPaint_TableFromBuild_ProducesSameBitmapAsEquivalentHandWrittenText(t *t
 			Rows:    [][]string{{"A", "1"}, {"Bread", "144"}},
 		},
 	}}
-	tableDoc, err := layout.Build(r, printer.Profile{WidthDots: widthDots}, f)
+	tableDoc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: widthDots}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}

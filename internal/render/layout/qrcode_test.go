@@ -1,6 +1,7 @@
 package layout_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -14,7 +15,7 @@ func TestBuild_OneQRCode(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.QRCode{Content: "https://example.com"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -42,7 +43,7 @@ func TestBuild_QRCodeAdvancesYByDefaultSize_NoPrinterProfile(t *testing.T) {
 		receipt.QRCode{Content: "https://example.com"},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -59,7 +60,7 @@ func TestBuild_QRCodeWiderThanPrintableWidth_ScalesDown(t *testing.T) {
 		receipt.QRCode{Content: "https://example.com", Size: 400},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: 100}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -73,7 +74,7 @@ func TestBuild_QRCodeNarrowerThanPrintableWidth_NeverUpscaled(t *testing.T) {
 		receipt.QRCode{Content: "https://example.com", Size: 50},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -89,7 +90,7 @@ func TestBuild_QRCodeBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
 		receipt.QRCode{Content: "https://example.com", Size: 60},
 		receipt.Text{Content: "After"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -112,7 +113,7 @@ func TestBuild_QRCodeAfterDivider(t *testing.T) {
 		receipt.Divider{},
 		receipt.QRCode{Content: "https://example.com", Size: 40},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -132,11 +133,11 @@ func TestBuild_QRCodeDeterministic(t *testing.T) {
 	}}
 	f := layout.EmbeddedFont{}
 
-	first, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	first, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
-	second, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	second, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -275,7 +276,7 @@ func TestBuild_QRCodeContentTooLargeForCapacity_ReturnsPermanentError(t *testing
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.QRCode{Content: strings.Repeat("A", 10000)},
 	}}
-	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}

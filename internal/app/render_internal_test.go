@@ -10,6 +10,7 @@ package app
 // the default.
 
 import (
+	"context"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
@@ -22,7 +23,7 @@ func TestService_render_Success_ReturnsRenderedCanvas(t *testing.T) {
 	s := &Service{}
 	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello"}}}
 
-	c, err := s.render(r, printer.Profile{})
+	c, err := s.render(context.Background(), r, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
@@ -43,11 +44,11 @@ func TestService_render_ReceiptContentReachesRendererUnchanged(t *testing.T) {
 	s := &Service{}
 	f := layout.EmbeddedFont{}
 
-	short, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}, printer.Profile{})
+	short, err := s.render(context.Background(), receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
-	long, err := s.render(receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello world"}}}, printer.Profile{})
+	long, err := s.render(context.Background(), receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello world"}}}, printer.Profile{})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}
@@ -78,7 +79,7 @@ func TestService_render_UnsupportedElement_ReturnsPermanentError(t *testing.T) {
 	s := &Service{}
 	r := receipt.Receipt{Elements: []receipt.Element{unsupportedElement{}}}
 
-	c, err := s.render(r, printer.Profile{})
+	c, err := s.render(context.Background(), r, printer.Profile{})
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("render() error = %v, want apperr.KindPermanent", err)
 	}
@@ -91,7 +92,7 @@ func TestService_render_ProfileWidthDots_SetsCanvasWidth(t *testing.T) {
 	s := &Service{}
 	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hi"}}}
 
-	c, err := s.render(r, printer.Profile{WidthDots: 200})
+	c, err := s.render(context.Background(), r, printer.Profile{WidthDots: 200})
 	if err != nil {
 		t.Fatalf("render() error = %v, want nil", err)
 	}

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 	"github.com/harveysandiego/receiptd/internal/render/canvas"
@@ -58,7 +60,13 @@ func runRender(inPath, outPath string) error {
 		return err
 	}
 
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	// This offline path has no config or daemon to resolve a real
+	// assets.Store from, the same reason it renders against the zero-value
+	// printer.Profile above — an empty in-memory Store means any
+	// receipt.Asset the input Receipt contains fails as apperr.KindNotFound,
+	// the correct outcome for a name this command has no way to resolve,
+	// rather than a nil-pointer panic.
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, assets.NewMemoryStore())
 	if err != nil {
 		return err
 	}

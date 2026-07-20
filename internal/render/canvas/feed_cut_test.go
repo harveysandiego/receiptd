@@ -1,6 +1,7 @@
 package canvas_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/printer"
@@ -17,7 +18,7 @@ func TestPaint_FeedBetweenTextBlocks_NoGapInPixels(t *testing.T) {
 		receipt.Feed{Lines: 10},
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A") + 200}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A") + 200}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -43,7 +44,7 @@ func TestPaint_CutBetweenTextBlocks_NoGapInPixels(t *testing.T) {
 		receipt.Cut{},
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A") + 200}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A") + 200}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -68,7 +69,7 @@ func TestPaint_FeedRecordedAsControl(t *testing.T) {
 		receipt.Text{Content: "A"},
 		receipt.Feed{Lines: 6},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -98,7 +99,7 @@ func TestPaint_CutRecordedAsControl_NotTerminalWhenFollowedByMoreContent(t *test
 		receipt.Cut{Mode: "partial"},
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -124,7 +125,7 @@ func TestPaint_MultipleFeedAndCutControls_PreserveOrder(t *testing.T) {
 		receipt.Feed{Lines: 2},
 		receipt.Cut{Mode: "full"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -162,7 +163,7 @@ func TestPaint_FeedAndCutDoNotAffectDocumentWidth(t *testing.T) {
 		receipt.Feed{Lines: 200},
 		receipt.Cut{},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}

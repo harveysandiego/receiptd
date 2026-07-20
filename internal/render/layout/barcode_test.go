@@ -1,6 +1,7 @@
 package layout_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
@@ -13,7 +14,7 @@ func TestBuild_OneBarcode(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -37,7 +38,7 @@ func TestBuild_BarcodeAdvancesYByDefaultHeight_NoPrinterProfile(t *testing.T) {
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128"},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -54,7 +55,7 @@ func TestBuild_BarcodeExplicitHeight(t *testing.T) {
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 40},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -71,7 +72,7 @@ func TestBuild_BarcodeWiderThanPrintableWidth_ScalesDownWidthOnly(t *testing.T) 
 		receipt.Barcode{Content: "HELLO-128-WITH-LOTS-OF-CONTENT-TO-MAKE-IT-WIDE", Symbology: "code128", Height: 40},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: 20}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 20}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -87,7 +88,7 @@ func TestBuild_BarcodeBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) 
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 30},
 		receipt.Text{Content: "After"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -110,7 +111,7 @@ func TestBuild_BarcodeAfterDivider(t *testing.T) {
 		receipt.Divider{},
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 25},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -130,11 +131,11 @@ func TestBuild_BarcodeDeterministic(t *testing.T) {
 	}}
 	f := layout.EmbeddedFont{}
 
-	first, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	first, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
-	second, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	second, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -158,7 +159,7 @@ func TestBuild_BarcodeInvalidContent_ReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Barcode{Content: "12345", Symbology: "itf"}, // odd digit count
 	}}
-	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}

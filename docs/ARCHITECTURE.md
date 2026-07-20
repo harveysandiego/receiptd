@@ -77,7 +77,11 @@ internal/
                          Milestone 6.
 
   assets/                 Store interface (Get/Put/Delete/List) +
-                         filesystem implementation. Depends on apperr/.
+                         filesystem implementation (cmd/receiptd's real
+                         Store) and an in-memory one (cmd/receipt's offline
+                         path, tests) — the same "both implementations live
+                         here as plain files" pattern queue/ already uses.
+                         Depends on apperr/.
 
   config/                 YAML config struct + loader + validation.
                          Depends on printer/ (Profile+Connection shape),
@@ -276,8 +280,15 @@ type Document struct {
     Blocks     []Block
 }
 
-func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, a assets.Store) (Document, error)
+func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a assets.Store) (Document, error)
 ```
+
+`f Font` is an explicit parameter, not folded into `p` or dropped in favour of
+always using the one real `Font` implementation internally: Milestone 3's
+bitmap-styling and Table work depend on injecting a fake `Font` in
+`render/layout` tests to get exact, controlled glyph measurements, and losing
+that would be a real regression to that test suite for no design benefit —
+see "Font" below for why the interface itself exists at all.
 
 `Font` is the one interface in this design with a single implementation and
 no immediate second one planned — a deliberate exception to "don't design an
@@ -382,7 +393,26 @@ type Store interface {
     Delete(ctx context.Context, name string) error
     List(ctx context.Context) ([]string, error)
 }
+
+func NewFilesystemStore(root string) Store // filesystem_store.go — cmd/receiptd's
+                                            // real Store, configured via
+                                            // config.AssetsConfig.Path
+func NewMemoryStore() Store                // memory_store.go — the same
+                                            // "also ship an in-memory Store"
+                                            // pattern queue.Store already
+                                            // uses; used by cmd/receipt's
+                                            // offline render path (which has
+                                            // no configured asset backend at
+                                            // all) and by tests
 ```
+
+Both implementations reject a name containing a path separator or a bare
+`"."`/`".."` before doing anything else — the same rule
+`receipt.Asset.Validate()` already applies to a `Name` arriving via a
+Receipt, reused here so a name arriving directly at a `Store` method (e.g.
+a future asset-management API handler, which never goes through
+`receipt.Asset.Validate()` at all) gets the same protection against
+`FilesystemStore` escaping its root via `".."`.
 
 ```go
 // app

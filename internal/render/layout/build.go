@@ -1,10 +1,12 @@
 package layout
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
@@ -12,30 +14,58 @@ import (
 // Build turns r into a Document: each receipt.Text or receipt.Heading
 // becomes one Block per wrapped line, each receipt.Spacer becomes one
 // Block, each receipt.Divider becomes one Block, and each receipt.Image,
-// receipt.QRCode, or receipt.Barcode becomes one Block, stacked top to
-// bottom in Receipt order. Every Block advances Y by f.LineHeight() times
-// its resolved Style.Size, except a Spacer (which advances Y by its own
-// Height, dots), a Divider (which advances Y by DividerThickness times
-// its own resolved Size — see ResolveSize), an
+// receipt.Asset, receipt.QRCode, or receipt.Barcode becomes one Block,
+// stacked top to bottom in Receipt order. Every Block advances Y by
+// f.LineHeight() times its resolved Style.Size, except a Spacer (which
+// advances Y by its own Height, dots), a Divider (which advances Y by
+// DividerThickness times its own resolved Size — see ResolveSize), an
 // Image (which advances Y by its decoded, printable-width-scaled height —
-// see imageDimensions), a QRCode (which advances Y by its generated,
-// printable-width-scaled size — see qrCodeDimensions), a Barcode (which
-// advances Y by its configured or default height, unaffected by any
-// printable-width scaling of its own — see barcodeDimensions), and a Feed
-// or Cut (which advance Y by nothing at all: they are printer-control
-// elements with no raster footprint — see render/escpos.Encode, the stage
-// that turns their Document position into actual command bytes). A
-// receipt.Table becomes one TableLine Block per composed output line
-// (header row, then each data row, wrapped and column-aligned to
-// p.WidthDots — see tableLines and TableLine), keeping its own identity
-// through layout the same as every other element type — render/canvas.Paint
-// paints a TableLine's Content through the exact same glyph-painting path
-// a receipt.Text Block already uses, but still knows a Block came from a
-// Table, not ordinary Text. Every element advances Y per its documented
-// meaning in docs/ARCHITECTURE.md §3. The returned
+// see imageHeight), an Asset (resolved via a.Get to the same raw
+// bytes an Image carries inline, then advanced by exactly the same rule —
+// see the receipt.Asset case below), a QRCode (which advances Y by its
+// generated, printable-width-scaled size — see qrCodeDimensions), a
+// Barcode (which advances Y by its configured or default height,
+// unaffected by any printable-width scaling of its own — see
+// barcodeDimensions), and a Feed or Cut (which advance Y by nothing at
+// all: they are printer-control elements with no raster footprint — see
+// render/escpos.Encode, the stage that turns their Document position into
+// actual command bytes). A receipt.Table becomes one TableLine Block per
+// composed output line (header row, then each data row, wrapped and
+// column-aligned to p.WidthDots — see tableLines and TableLine), keeping
+// its own identity through layout the same as every other element type —
+// render/canvas.Paint paints a TableLine's Content through the exact same
+// glyph-painting path a receipt.Text Block already uses, but still knows
+// a Block came from a Table, not ordinary Text. Every element advances Y
+// per its documented meaning in docs/ARCHITECTURE.md §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
+//
+// receipt.Asset is the one element type Build deliberately does not
+// preserve the identity of: a.Get(ctx, e.Name) resolves it to raw bytes,
+// which become the Data of a receipt.Image Block — the same type an
+// ordinary receipt.Image element already produces — rather than a
+// TableLine-style layout-local type that would keep Asset distinguishable
+// downstream. This is the documented exception, not an oversight: an
+// Asset and an Image "render identically today... the resolution step is
+// exactly where future flexibility belongs" (docs/ARCHITECTURE.md §3
+// "Image vs. Asset"), and canvas.Paint is specifically documented to
+// never distinguish between them, only layout does. A missing asset
+// surfaces whatever apperr.Kind a.Get itself chose (apperr.KindNotFound
+// for assets.Store's own implementations) unchanged; invalid resolved
+// image data is reported as apperr.KindPermanent, the same Kind an
+// Image's own decode failure already uses.
+//
+// a may be nil: most callers know in advance their Receipt carries no
+// receipt.Asset and have no assets.Store to construct, the same "a nil
+// map/interface is a valid zero value until something actually needs it"
+// convention Service.Printers and Service.Profiles already establish
+// (docs/ARCHITECTURE.md §2). Build only ever calls a method on a once it
+// has already matched a receipt.Asset in r.Elements — a Receipt with no
+// Asset never touches a at all, nil or not. If r does contain a
+// receipt.Asset and a is nil, that is reported as apperr.KindPermanent (a
+// caller/wiring mistake, not something retrying fixes) rather than
+// panicking on the nil interface method call.
 //
 // Every Block Build produces carries a fully resolved Style: a
 // receipt.Text's own Bold/Italic/Underline/Strikethrough/Size fields (see
@@ -52,15 +82,12 @@ import (
 // from its Blocks: it falls out of however many lines wrapping produced,
 // the same way it always has for any other sequence of Blocks.
 //
-// This is an early, partial implementation of the Build described in
-// docs/ARCHITECTURE.md §2 — it does not yet accept a context.Context or
-// assets.Store, since this slice performs no I/O. Element types other
-// than receipt.Text, receipt.Heading, receipt.Spacer, receipt.Divider,
-// receipt.Image, receipt.QRCode, receipt.Barcode, receipt.Table,
-// receipt.Feed, and receipt.Cut are not yet supported and are reported as an
-// apperr.KindPermanent error rather than skipped or given placeholder
-// positions.
-func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
+// Element types other than receipt.Text, receipt.Heading, receipt.Spacer,
+// receipt.Divider, receipt.Image, receipt.Asset, receipt.QRCode,
+// receipt.Barcode, receipt.Table, receipt.Feed, and receipt.Cut are not
+// yet supported and are reported as an apperr.KindPermanent error rather
+// than skipped or given placeholder positions.
+func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a assets.Store) (Document, error) {
 	var blocks []Block
 	y := 0
 	for _, el := range r.Elements {
@@ -85,11 +112,25 @@ func Build(r receipt.Receipt, p printer.Profile, f Font) (Document, error) {
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += DividerThickness * ResolveSize(e.Size)
 		case receipt.Image:
-			_, h, err := imageDimensions(e.Data, p.WidthDots)
+			h, err := imageHeight(e.Data, p.WidthDots)
 			if err != nil {
 				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("image: %w", err))
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
+			y += h
+		case receipt.Asset:
+			if a == nil {
+				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("asset %q: no assets.Store configured to resolve it", e.Name))
+			}
+			data, err := a.Get(ctx, e.Name)
+			if err != nil {
+				return Document{}, err
+			}
+			h, err := imageHeight(data, p.WidthDots)
+			if err != nil {
+				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("asset: %w", err))
+			}
+			blocks = append(blocks, Block{Y: y, Element: receipt.Image{Data: data}, Style: normalStyle})
 			y += h
 		case receipt.QRCode:
 			_, h, err := qrCodeDimensions(e, p.WidthDots)

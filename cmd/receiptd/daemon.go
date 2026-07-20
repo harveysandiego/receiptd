@@ -9,6 +9,7 @@ import (
 
 	"github.com/harveysandiego/receiptd/internal/api"
 	"github.com/harveysandiego/receiptd/internal/app"
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/auth"
 	"github.com/harveysandiego/receiptd/internal/config"
 	"github.com/harveysandiego/receiptd/internal/printer"
@@ -66,6 +67,7 @@ func build(cfg *config.Config) (*daemon, error) {
 	q := queue.New(store, svc)
 	svc.Queue = q
 	svc.Printers, svc.Profiles = buildPrinters(cfg.Printers)
+	svc.Assets = assets.NewFilesystemStore(cfg.Assets.Path)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/v1/print", api.NewPrintHandler(svc))

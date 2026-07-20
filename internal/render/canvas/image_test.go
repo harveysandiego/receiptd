@@ -2,6 +2,7 @@ package canvas_test
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -84,7 +85,7 @@ func TestPaint_ImageBetweenTextBlocks(t *testing.T) {
 		receipt.Image{Data: data},
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A") + 20}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A") + 20}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}

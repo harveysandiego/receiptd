@@ -1,6 +1,7 @@
 package canvas_test
 
 import (
+	"context"
 	"image/color"
 	"strings"
 	"testing"
@@ -64,7 +65,7 @@ func TestPaint_QRCodeBetweenTextBlocks(t *testing.T) {
 		qr,
 		receipt.Text{Content: "B"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: f.Measure("A") + 40}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: f.Measure("A") + 40}, f, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}
@@ -189,7 +190,7 @@ func TestPaint_QRCodeAndImageSideBySideBlocks_BothPaintViaSameRasterPath(t *test
 		receipt.Image{Data: data},
 		qr,
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("layout.Build() error = %v, want nil", err)
 	}

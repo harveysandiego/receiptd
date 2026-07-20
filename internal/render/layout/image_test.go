@@ -2,6 +2,7 @@ package layout_test
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/gif"
@@ -40,7 +41,7 @@ func TestBuild_OneImage(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Image{Data: data},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -67,7 +68,7 @@ func TestBuild_ImageAdvancesYByDecodedHeight_NoPrinterProfile(t *testing.T) {
 		receipt.Image{Data: solidPNG(t, 4, 7, color.Black)},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -87,7 +88,7 @@ func TestBuild_ImageWiderThanPrintableWidth_ScalesDownPreservingAspectRatio(t *t
 		receipt.Image{Data: solidPNG(t, 20, 10, color.Black)},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: 10}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 10}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -104,7 +105,7 @@ func TestBuild_ImageNarrowerThanPrintableWidth_NeverUpscaled(t *testing.T) {
 		receipt.Image{Data: solidPNG(t, 4, 2, color.Black)},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 1000}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -120,7 +121,7 @@ func TestBuild_ImageBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
 		receipt.Image{Data: solidPNG(t, 4, 6, color.Black)},
 		receipt.Text{Content: "After"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -146,7 +147,7 @@ func TestBuild_ImageAfterDivider(t *testing.T) {
 		receipt.Divider{},
 		receipt.Image{Data: solidPNG(t, 4, 6, color.Black)},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -168,7 +169,7 @@ func TestBuild_InvalidImageData_ReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Image{Data: []byte("not an image")},
 	}}
-	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}
@@ -188,11 +189,11 @@ func TestBuild_ImageDeterministic(t *testing.T) {
 	}}
 	f := layout.EmbeddedFont{}
 
-	first, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	first, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
-	second, err := layout.Build(r, printer.Profile{WidthDots: 100}, f)
+	second, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 100}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -499,7 +500,7 @@ func TestBuild_JPEGImage(t *testing.T) {
 		receipt.Image{Data: solidJPEG(t, 4, 6, color.Black)},
 		receipt.Text{Content: "Milk"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -512,7 +513,7 @@ func TestBuild_SVGImage_ReturnsPermanentError(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Image{Data: []byte(minimalSVG)},
 	}}
-	_, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
 	}

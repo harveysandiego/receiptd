@@ -2,6 +2,7 @@ package escpos_test
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
@@ -672,9 +673,10 @@ func TestEncode_NoControls_MatchesPreviousBehaviour(t *testing.T) {
 
 func TestEncode_Pipeline_TextReceiptProducesRasterOutput(t *testing.T) {
 	f := layout.EmbeddedFont{}
-	doc, err := layout.Build(receipt.Receipt{Elements: []receipt.Element{
+	doc, err := layout.Build(context.Background(), receipt.Receipt{Elements: []receipt.Element{
 		receipt.Text{Content: "A"},
-	}}, printer.Profile{}, f)
+	}}, printer.Profile{}, f, nil)
+
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -705,7 +707,7 @@ func TestEncode_Pipeline_ExplicitTrailingCutSuppressesAutomaticCut(t *testing.T)
 		receipt.Text{Content: "A"},
 		receipt.Cut{Mode: "full"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -732,7 +734,7 @@ func TestEncode_Pipeline_ExplicitFeedThenText_FeedsBeforePrinting(t *testing.T) 
 		receipt.Feed{Lines: 8},
 		receipt.Text{Content: "A"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}

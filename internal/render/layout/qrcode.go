@@ -27,11 +27,11 @@ func qrCodeSize(q receipt.QRCode, maxWidth int) int {
 // standard to represent at q's error-correction level) at Build time
 // rather than only discovering it later in GenerateQRCodeBitmap — the
 // same "Build fails fast on content it can't lay out" precedent
-// imageDimensions already sets for undecodable Image data, even though
+// imageHeight already sets for undecodable Image data, even though
 // unlike an image header read this has no cheaper partial form: the
 // encode is redone in GenerateQRCodeBitmap when the actual bitmap is
 // needed, mirroring how DecodeImageBitmap independently redecodes Data
-// after imageDimensions already read its header once — each of the two
+// after imageHeight already read its header once — each of the two
 // call sites (Build, Paint) encodes at most once, never twice within the
 // same call.
 func qrCodeDimensions(q receipt.QRCode, maxWidth int) (width, height int, err error) {

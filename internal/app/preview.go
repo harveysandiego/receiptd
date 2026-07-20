@@ -25,7 +25,7 @@ func (s *Service) Preview(ctx context.Context, r receipt.Receipt, printerName st
 		return nil, apperr.Wrap(apperr.KindNotFound, "app.Preview", fmt.Errorf("printer profile %q not configured", printerName))
 	}
 
-	c, err := s.render(r, profile)
+	c, err := s.render(ctx, r, profile)
 	if err != nil {
 		return nil, err
 	}

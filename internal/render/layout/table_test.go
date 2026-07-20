@@ -1,6 +1,7 @@
 package layout_test
 
 import (
+	"context"
 	"image/color"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestBuild_Table_NoWidthConstraint_RowsJoinCellsWithSingleSpace(t *testing.T
 			},
 		},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -57,7 +58,7 @@ func TestBuild_Table_SingleColumnSingleRow(t *testing.T) {
 	r := receipt.Receipt{Elements: []receipt.Element{
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -80,7 +81,7 @@ func TestBuild_Table_MultipleRows_PreserveOrder(t *testing.T) {
 			Rows:    [][]string{{"Milk"}, {"Eggs"}, {"Bread"}},
 		},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -115,7 +116,7 @@ func TestBuild_Table_ColumnsStayAlignedAcrossRows(t *testing.T) {
 			},
 		},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: widthDots}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: widthDots}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -161,7 +162,7 @@ func TestBuild_Table_WrappedCells(t *testing.T) {
 			Rows:    [][]string{{"Whole Milk", "1"}},
 		},
 	}}
-	doc, err := layout.Build(r, printer.Profile{WidthDots: widthDots}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: widthDots}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -199,11 +200,11 @@ func TestBuild_Table_Deterministic(t *testing.T) {
 	f := layout.EmbeddedFont{}
 	profile := printer.Profile{WidthDots: 98}
 
-	first, err := layout.Build(r, profile, f)
+	first, err := layout.Build(context.Background(), r, profile, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
-	second, err := layout.Build(r, profile, f)
+	second, err := layout.Build(context.Background(), r, profile, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -224,7 +225,7 @@ func TestBuild_TableBetweenTextBlocks_PreservesOrderAndPosition(t *testing.T) {
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}, {"Eggs"}}},
 		receipt.Text{Content: "After"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -260,7 +261,7 @@ func TestBuild_TableThenDivider(t *testing.T) {
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 		receipt.Divider{},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -281,7 +282,7 @@ func TestBuild_DividerThenTable(t *testing.T) {
 		receipt.Divider{},
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -302,7 +303,7 @@ func TestBuild_TableThenImage(t *testing.T) {
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 		receipt.Image{Data: solidPNG(t, 4, 6, color.Black)},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -323,7 +324,7 @@ func TestBuild_TableThenBarcode(t *testing.T) {
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 		receipt.Barcode{Content: "HELLO-128", Symbology: "code128"},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -344,7 +345,7 @@ func TestBuild_TableThenQRCode(t *testing.T) {
 		receipt.Table{Headers: []string{"Item"}, Rows: [][]string{{"Milk"}}},
 		receipt.QRCode{Content: "https://example.com", Size: 60},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, f)
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
@@ -369,7 +370,7 @@ func TestBuild_Table_ZeroProfileWidthDots_NoWrapping(t *testing.T) {
 			Rows:    [][]string{{"Milk", "Whole milk, two litres, semi-skimmed alternative available"}},
 		},
 	}}
-	doc, err := layout.Build(r, printer.Profile{}, layout.EmbeddedFont{})
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if err != nil {
 		t.Fatalf("Build() error = %v, want nil", err)
 	}
