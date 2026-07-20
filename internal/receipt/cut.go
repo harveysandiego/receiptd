@@ -43,7 +43,7 @@ func (c Cut) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("cut", func(data []byte) (Element, error) {
+	registerElement("cut", func(data []byte, _ int) (Element, error) {
 		var c Cut
 		if err := json.Unmarshal(data, &c); err != nil {
 			return nil, err

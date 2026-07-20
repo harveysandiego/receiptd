@@ -32,7 +32,7 @@ func (h Heading) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("heading", func(data []byte) (Element, error) {
+	registerElement("heading", func(data []byte, _ int) (Element, error) {
 		var h Heading
 		if err := json.Unmarshal(data, &h); err != nil {
 			return nil, err

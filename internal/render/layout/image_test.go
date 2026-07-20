@@ -3,6 +3,8 @@ package layout_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -34,6 +36,81 @@ func solidPNG(t *testing.T, width, height int, c color.Color) []byte {
 		t.Fatalf("png.Encode() error = %v, want nil", err)
 	}
 	return buf.Bytes()
+}
+
+// pngChunk and hugePNGHeader mirror internal/receipt/image_test.go's
+// identically-named helpers: a structurally valid PNG (signature, IHDR
+// declaring width x height, IEND) with no IDAT chunk at all. Both
+// imageHeight and DecodeImageBitmap need only image.DecodeConfig's header
+// read to see the declared dimensions, so this decodes successfully with
+// zero actual pixel bytes — the same tiny-file-huge-header shape a real
+// decompression bomb takes.
+func pngChunk(typ string, data []byte) []byte {
+	var buf bytes.Buffer
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(data)))
+	buf.Write(length[:])
+	buf.WriteString(typ)
+	buf.Write(data)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(data)
+	var sum [4]byte
+	binary.BigEndian.PutUint32(sum[:], crc.Sum32())
+	buf.Write(sum[:])
+	return buf.Bytes()
+}
+
+func hugePNGHeader(t *testing.T, width, height uint32) []byte {
+	t.Helper()
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], width)
+	binary.BigEndian.PutUint32(ihdr[4:8], height)
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 6 // color type: truecolor with alpha
+
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	buf.Write(pngChunk("IHDR", ihdr))
+	buf.Write(pngChunk("IEND", nil))
+	return buf.Bytes()
+}
+
+// This is a regression test for a real vulnerability: Build used to have
+// no bound on an Image's declared dimensions, so a tiny file declaring
+// e.g. 40000x40000 forced a multi-gigabyte bitmap allocation per request.
+// See receipt.MaxImagePixels's doc comment.
+func TestBuild_Image_ExceedsMaxImagePixels_ReturnsPermanentError(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Image{Data: hugePNGHeader(t, 40000, 40000)},
+	}}
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
+	if !apperr.Is(err, apperr.KindPermanent) {
+		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
+	}
+}
+
+func TestDecodeImageBitmap_ExceedsMaxImagePixels_ReturnsError(t *testing.T) {
+	_, err := layout.DecodeImageBitmap(hugePNGHeader(t, 40000, 40000), 0)
+	if err == nil {
+		t.Fatal("DecodeImageBitmap() error = nil, want error for a declared pixel count over MaxImagePixels")
+	}
+}
+
+// Guards checkImageDimensions's arithmetic itself: width*height here (3.6
+// billion) overflows a 32-bit int, which is what plain `int` multiplication
+// would silently wrap to on a 32-bit build (e.g. 32-bit ARM) — a wrapped
+// negative or small product could pass the "> MaxImagePixels" comparison
+// outright. This can't observe an actual wraparound on this repo's 64-bit
+// test/CI hosts (Go's `int` is 64-bit there), but it does pin down that
+// the check must keep rejecting a product this large regardless of how
+// it's computed. See receipt package's identically-purposed
+// TestImageValidate_DimensionsOverflow32BitInt_StillRejected.
+func TestDecodeImageBitmap_DimensionsOverflow32BitInt_StillRejected(t *testing.T) {
+	_, err := layout.DecodeImageBitmap(hugePNGHeader(t, 60000, 60000), 0) // 3.6B pixels
+	if err == nil {
+		t.Fatal("DecodeImageBitmap() error = nil, want error for a pixel count that overflows a 32-bit int")
+	}
 }
 
 func TestBuild_OneImage(t *testing.T) {

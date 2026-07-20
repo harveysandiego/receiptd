@@ -6,12 +6,17 @@ import (
 	"fmt"
 )
 
-// Divider is a horizontal rule. Style is optional; when empty,
-// render/layout chooses a default. Size is an integer thickness scale
-// factor, the same "0 or omitted means unscaled" convention Text.Size
-// uses (docs/adr/0007-bitmap-text-styling.md): the rendered line is
-// render/layout.DividerThickness dots at Size 1, or a Size multiple of it
-// for a deliberately heavier rule — see
+// Divider is a horizontal rule. Style selects "solid" or "dashed", but is
+// accepted, validated, and round-trips through JSON with no rendering
+// effect yet — every Divider paints as one solid line regardless of
+// Style, the same "accepted by the schema, not yet renderable" position
+// Text.Align, Asset.Width/Align, and Barcode.ShowText currently hold (see
+// each type's own doc comment); see render/layout.DividerThickness's doc
+// comment for where that solid-line rendering actually happens. Size is
+// an integer thickness scale factor, the same "0 or omitted means
+// unscaled" convention Text.Size uses (docs/adr/0007-bitmap-text-styling.md):
+// the rendered line is render/layout.DividerThickness dots at Size 1, or
+// a Size multiple of it for a deliberately heavier rule — see
 // docs/adr/0012-divider-thickness-default-and-scaling.md.
 type Divider struct {
 	Style string `json:"style,omitempty"`
@@ -46,7 +51,7 @@ func (d Divider) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("divider", func(data []byte) (Element, error) {
+	registerElement("divider", func(data []byte, _ int) (Element, error) {
 		var d Divider
 		if err := json.Unmarshal(data, &d); err != nil {
 			return nil, err

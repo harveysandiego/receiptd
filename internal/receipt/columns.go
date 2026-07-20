@@ -69,8 +69,25 @@ func (c Columns) MarshalJSON() ([]byte, error) {
 // described in docs/ARCHITECTURE.md §3: each column's "elements" entries
 // carry their own "type" string, resolved through the same registry
 // Receipt.UnmarshalJSON uses — encoding/json cannot populate a []Element
-// field on its own, since Element is an interface.
+// field on its own, since Element is an interface. Always starts depth
+// tracking fresh at 0 — see unmarshalJSON's own doc comment for why a
+// caller reaching Columns through this method (rather than through the
+// registry's own "columns" decoder) is definitionally the top of its own
+// decode.
 func (c *Columns) UnmarshalJSON(data []byte) error {
+	return c.unmarshalJSON(data, 0)
+}
+
+// unmarshalJSON is UnmarshalJSON's depth-aware implementation. It is
+// called directly — bypassing the json.Unmarshaler dispatch UnmarshalJSON
+// satisfies, which cannot carry extra arguments — by the "columns" entry
+// this file registers in init(), so that Columns nested inside a sibling
+// Columns's own Column.Elements shares one running depth count with its
+// ancestor calls rather than each resetting to 0. See maxElementDepth's
+// doc comment in registry.go for why this matters: without it, decoding a
+// deeply nested columns-in-columns payload recurses on the Go call stack
+// with no bound.
+func (c *Columns) unmarshalJSON(data []byte, depth int) error {
 	var wire struct {
 		Columns []struct {
 			Weight   int               `json:"weight,omitempty"`
@@ -87,7 +104,7 @@ func (c *Columns) UnmarshalJSON(data []byte) error {
 		if wc.Elements != nil {
 			elements = make([]Element, len(wc.Elements))
 			for j, raw := range wc.Elements {
-				el, err := decodeElement(raw)
+				el, err := decodeElement(raw, depth+1)
 				if err != nil {
 					return err
 				}
@@ -102,9 +119,9 @@ func (c *Columns) UnmarshalJSON(data []byte) error {
 }
 
 func init() {
-	registerElement("columns", func(data []byte) (Element, error) {
+	registerElement("columns", func(data []byte, depth int) (Element, error) {
 		var c Columns
-		if err := json.Unmarshal(data, &c); err != nil {
+		if err := c.unmarshalJSON(data, depth); err != nil {
 			return nil, err
 		}
 		return c, nil

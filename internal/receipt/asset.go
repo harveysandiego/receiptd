@@ -60,7 +60,7 @@ func (a Asset) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("asset", func(data []byte) (Element, error) {
+	registerElement("asset", func(data []byte, _ int) (Element, error) {
 		var a Asset
 		if err := json.Unmarshal(data, &a); err != nil {
 			return nil, err

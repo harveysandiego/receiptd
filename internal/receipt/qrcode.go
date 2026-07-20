@@ -116,7 +116,7 @@ func (q QRCode) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("qrcode", func(data []byte) (Element, error) {
+	registerElement("qrcode", func(data []byte, _ int) (Element, error) {
 		var q QRCode
 		if err := json.Unmarshal(data, &q); err != nil {
 			return nil, err

@@ -5,9 +5,19 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
+
+// testTimeout is the timeout newTestNetworkPrinter's networkPrinter uses.
+// It only needs to be non-zero — long enough that SetWriteDeadline never
+// actually expires during these scripted, synchronous fakeConn.Write
+// calls — since these tests are about Send's write-loop and error-mapping
+// logic, not about networkTimeout's real duration (see
+// TestNetworkPrinter_Send_WriteDeadlineExceeded_ReturnsTransientError for
+// that).
+const testTimeout = time.Minute
 
 // This file is package printer (not printer_test), solely so it can set
 // networkPrinter.dial directly. A real TCP socket's Write essentially never
@@ -70,10 +80,22 @@ func (c *fakeConn) Close() error {
 	return nil
 }
 
+// SetWriteDeadline is a no-op: fakeConn's scripted Write calls are
+// synchronous and never actually block, so there is nothing for a
+// deadline to interrupt here — Send still calls it unconditionally
+// (see network.go), and the embedded nil net.Conn would otherwise panic.
+func (c *fakeConn) SetWriteDeadline(time.Time) error {
+	return nil
+}
+
 func newTestNetworkPrinter(fc *fakeConn) *networkPrinter {
-	return &networkPrinter{address: "unused", dial: func(_ context.Context, _, _ string) (net.Conn, error) {
-		return fc, nil
-	}}
+	return &networkPrinter{
+		address: "unused",
+		dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return fc, nil
+		},
+		timeout: testTimeout,
+	}
 }
 
 func TestNetworkPrinter_Send_MultiplePartialWrites_DeliversCompleteByteStream(t *testing.T) {
@@ -152,5 +174,31 @@ func TestNetworkPrinter_Send_ClosesConnectionAfterMultiplePartialWrites(t *testi
 	_ = p.Send(context.Background(), []byte("hello"))
 	if !fc.closed {
 		t.Error("Send() did not close the connection after completing multiple partial writes")
+	}
+}
+
+// This is a regression test for a real vulnerability: Send used to have
+// no write deadline, so a printer (or anything on that network segment)
+// that accepted the connection but never read from it would block Write
+// forever — wedging the single-threaded queue worker's entire job queue,
+// not just this one Job. net.Pipe's Conn is synchronous with no internal
+// buffer, so a Write with nothing reading the other end blocks exactly
+// the way a stalled real socket would, making this reproducible without a
+// real network or a multi-second sleep. See networkTimeout's doc comment.
+func TestNetworkPrinter_Send_WriteDeadlineExceeded_ReturnsTransientErrorRatherThanBlockingForever(t *testing.T) {
+	client, server := net.Pipe()
+	defer func() { _ = server.Close() }()
+
+	p := &networkPrinter{
+		address: "unused",
+		dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return client, nil
+		},
+		timeout: 50 * time.Millisecond,
+	}
+
+	err := p.Send(context.Background(), []byte("hello"))
+	if !apperr.Is(err, apperr.KindTransient) {
+		t.Fatalf("Send() error = %v, want apperr.KindTransient", err)
 	}
 }

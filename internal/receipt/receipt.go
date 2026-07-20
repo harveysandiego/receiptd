@@ -66,7 +66,7 @@ func (r *Receipt) UnmarshalJSON(data []byte) error {
 	if wire.Elements != nil {
 		elements = make([]Element, len(wire.Elements))
 		for i, raw := range wire.Elements {
-			el, err := decodeElement(raw)
+			el, err := decodeElement(raw, 0)
 			if err != nil {
 				return err
 			}

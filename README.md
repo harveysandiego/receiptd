@@ -123,12 +123,14 @@ philosophy, and the reasoning behind each decision, lives in
 Receiptd's architecture is frozen (see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11) and implementation is
 proceeding milestone by milestone, using test-driven development.
-Milestones 1 and 2 are done: the `receipt`/`render` pipeline, the REST API
-(`preview`, `print`, job status), the persistent job queue, Bearer-token
-auth (on by default; Basic auth exists in `auth` too, ready for
-Milestone 4's Web UI), and a CLI that talks to the API. Printing still
-writes to a log file rather than a real printer — that's Milestone 3.
-There is no working release yet. Track progress via the
+Milestones 1 through 3 are done: the `receipt`/`render` pipeline, the REST
+API (`preview`, `print`, job status), the persistent job queue,
+Bearer-token auth (on by default; Basic auth exists in `auth` too, ready
+for Milestone 4's Web UI), a CLI that talks to the API, ESC/POS encoding,
+network printer transport, and every Milestone 3 Element type (Image,
+Asset, QRCode, Barcode, Columns, Table, Feed, Cut). Receiptd has printed
+successfully to real hardware (an Epson TM-m30II). There is no working
+release yet — that's Milestone 5 (Packaging). Track progress via the
 [roadmap](#roadmap) below and the
 [milestones](https://github.com/harveysandiego/receiptd/milestones) on
 GitHub. See [VERSIONING.md](VERSIONING.md) and
@@ -235,7 +237,7 @@ detail on each milestone's scope.
 - [x] **Milestone 1** — Local render, no server (`receipt`, `apperr`,
       `render/layout`, `render/canvas`, offline CLI preview)
 - [x] **Milestone 2** — REST API, job queue, auth (fake printer sink)
-- [ ] **Milestone 3** — Real printer support (ESC/POS encoding, network
+- [x] **Milestone 3** — Real printer support (ESC/POS encoding, network
       transport, remaining Element types) — first physical print
 - [ ] **Milestone 4** — Web UI
 - [ ] **Milestone 5** — Packaging (Docker, multi-arch, release pipeline)

@@ -2,7 +2,9 @@ package receipt_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -78,6 +80,49 @@ func realWebP(t *testing.T) []byte {
 	return data
 }
 
+// pngChunk encodes one PNG chunk: a 4-byte big-endian length, the 4-byte
+// type, data, and a CRC32 of type+data — the structure hugePNGHeader
+// assembles by hand.
+func pngChunk(typ string, data []byte) []byte {
+	var buf bytes.Buffer
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(data)))
+	buf.Write(length[:])
+	buf.WriteString(typ)
+	buf.Write(data)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(data)
+	var sum [4]byte
+	binary.BigEndian.PutUint32(sum[:], crc.Sum32())
+	buf.Write(sum[:])
+	return buf.Bytes()
+}
+
+// hugePNGHeader returns a structurally valid PNG — signature, IHDR
+// declaring width x height, IEND — with no IDAT (pixel data) chunk at
+// all. image.DecodeConfig only ever needs IHDR to report Config.Width/
+// Height, so this decodes successfully despite containing zero actual
+// pixel bytes: exactly the shape a real "decompression bomb" image
+// takes, a tiny file whose header claims dimensions wildly out of
+// proportion to its size. Used to prove MaxImagePixels is checked from
+// the declared header, not from how much pixel data was actually
+// decoded.
+func hugePNGHeader(t *testing.T, width, height uint32) []byte {
+	t.Helper()
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], width)
+	binary.BigEndian.PutUint32(ihdr[4:8], height)
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 6 // color type: truecolor with alpha
+
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	buf.Write(pngChunk("IHDR", ihdr))
+	buf.Write(pngChunk("IEND", nil))
+	return buf.Bytes()
+}
+
 // minimalSVG is well-formed SVG/XML — not a raster format, and this
 // project deliberately does not implement an SVG rasterizer (see
 // docs/adr/0002-raster-rendering.md and this slice's own scope), so it
@@ -106,6 +151,41 @@ func TestImageValidate(t *testing.T) {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// This is a regression test for a real vulnerability: Validate used to
+// call image.Decode (full pixel decode) before this check existed, so a
+// tiny file declaring huge dimensions ("decompression bomb") forced a
+// multi-gigabyte allocation per /preview or /print request. See
+// MaxImagePixels's doc comment.
+func TestImageValidate_ExceedsMaxImagePixels_ReturnsError(t *testing.T) {
+	img := receipt.Image{Data: hugePNGHeader(t, 40000, 40000)} // 1.6B pixels
+	if err := img.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want error for a declared pixel count over MaxImagePixels")
+	}
+}
+
+func TestImageValidate_WithinMaxImagePixels_NoError(t *testing.T) {
+	img := receipt.Image{Data: hugePNGHeader(t, 4000, 4000)} // 16M pixels, under the 20M cap
+	if err := img.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil for a declared pixel count under MaxImagePixels", err)
+	}
+}
+
+// Guards the pixel-count check's arithmetic itself: width*height here
+// (3.6 billion) overflows a 32-bit int, which is what plain `int`
+// multiplication would silently wrap to on a 32-bit build (e.g. 32-bit
+// ARM) — a wrapped negative or small product could pass the ">
+// MaxImagePixels" comparison outright, defeating the check on exactly the
+// platform-and-input combination it exists to guard. This can't observe
+// an actual wraparound on this repo's 64-bit test/CI hosts (Go's `int` is
+// 64-bit there), but it does pin down that the check must keep rejecting
+// a product this large regardless of how it's computed.
+func TestImageValidate_DimensionsOverflow32BitInt_StillRejected(t *testing.T) {
+	img := receipt.Image{Data: hugePNGHeader(t, 60000, 60000)} // 3.6B pixels
+	if err := img.Validate(); err == nil {
+		t.Fatal("Validate() error = nil, want error for a pixel count that overflows a 32-bit int")
 	}
 }
 

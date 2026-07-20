@@ -82,6 +82,25 @@ func TestBuild_Asset_WiderThanPrintableWidth_ScalesDownPreservingAspectRatio(t *
 	}
 }
 
+// This is a regression test for a real vulnerability, and specifically
+// for the Asset path rather than Image's: an Asset's resolved bytes reach
+// decodeImage/imageHeight via assets.Store.Get, never through
+// receipt.Image.Validate — so the MaxImagePixels check inside
+// render/layout (checkImageDimensions) is the *only* place a
+// decompression-bomb asset already stored via assets.Store gets rejected,
+// unlike an inline receipt.Image which Validate also screens on the way
+// in. See receipt.MaxImagePixels's doc comment.
+func TestBuild_Asset_ExceedsMaxImagePixels_ReturnsPermanentError(t *testing.T) {
+	store := storeWith(t, hugePNGHeader(t, 40000, 40000))
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Asset{Name: "logo.png"},
+	}}
+	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, store)
+	if !apperr.Is(err, apperr.KindPermanent) {
+		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
+	}
+}
+
 func TestBuild_Asset_MissingAsset_ReturnsNotFound(t *testing.T) {
 	store := assets.NewMemoryStore()
 	r := receipt.Receipt{Elements: []receipt.Element{

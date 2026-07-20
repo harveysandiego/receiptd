@@ -146,7 +146,7 @@ func (b Barcode) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("barcode", func(data []byte) (Element, error) {
+	registerElement("barcode", func(data []byte, _ int) (Element, error) {
 		var b Barcode
 		if err := json.Unmarshal(data, &b); err != nil {
 			return nil, err

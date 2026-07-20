@@ -1,3 +1,12 @@
+// Feed and Spacer are two of several structurally-identical Element
+// boilerplate types the registry pattern produces by design (see
+// docs/adr/0001-receipt-model.md) — one struct field, a bound check, and
+// the same Validate/MarshalJSON/init shape every other Element file
+// repeats. A shared abstraction for two ~50-line files would cost more
+// than the duplication it removes (CLAUDE.md: "Three similar lines is
+// better than a premature abstraction").
+
+//nolint:dupl // see the file comment above
 package receipt
 
 import (
@@ -41,7 +50,7 @@ func (s Spacer) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("spacer", func(data []byte) (Element, error) {
+	registerElement("spacer", func(data []byte, _ int) (Element, error) {
 		var s Spacer
 		if err := json.Unmarshal(data, &s); err != nil {
 			return nil, err

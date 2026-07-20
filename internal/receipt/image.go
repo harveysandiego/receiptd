@@ -74,26 +74,51 @@ func IsSupportedImageFormat(format string) bool {
 	return ok
 }
 
-// Validate reports whether i is well-formed: Data must be non-empty and
-// decode as one of supportedImageFormats. Decoding here is local,
-// in-memory work against bytes the caller already holds, not I/O, so it
-// fits this package's "Validate stays fast and local" convention
-// (docs/ARCHITECTURE.md §3: "Image.Validate() checks Data decodes as a
-// supported image format"). Animated GIFs decode as their first frame
-// only: image.RegisterFormat("gif", ...) registers image/gif's Decode
-// (single image.Image), not DecodeAll, so this falls out of using the
-// same image.Decode entry point every format uses — no animation-specific
-// code needed here.
+// MaxImagePixels bounds the total pixel count (width * height) Image.Data
+// — or an Asset's resolved bytes, checked the same way by
+// render/layout.checkImageDimensions — may declare. A compressed image's
+// header can claim dimensions wildly disproportionate to its byte size (a
+// "decompression bomb"): a tiny, highly compressible file can declare
+// e.g. 40000x40000 and force a multi-gigabyte bitmap allocation once
+// decoded. 20,000,000 (e.g. a 5000x4000 photo) comfortably covers any
+// legitimate receipt image or logo — receipts print narrow and images are
+// downscaled to fit anyway — while keeping the worst case bounded to
+// roughly 80MB decoded.
+const MaxImagePixels = 20_000_000
+
+// Validate reports whether i is well-formed: Data must be non-empty,
+// decode as one of supportedImageFormats, and declare no more than
+// MaxImagePixels. It reads only Data's header via image.DecodeConfig
+// rather than decoding full pixel data — both because Validate needs
+// nothing more than the format name and dimensions, and because decoding
+// full pixel data before the MaxImagePixels check would defeat the
+// check's own purpose. This is local, in-memory work against bytes the
+// caller already holds, not I/O, so it fits this package's "Validate
+// stays fast and local" convention (docs/ARCHITECTURE.md §3:
+// "Image.Validate() checks Data decodes as a supported image format").
+// Animated GIFs report their first frame's dimensions only:
+// image.RegisterFormat("gif", ...) registers image/gif's Decode (single
+// image.Image) and DecodeConfig, not DecodeAll, so this falls out of
+// using the same image.DecodeConfig entry point every format uses — no
+// animation-specific code needed here. The pixel-count check multiplies
+// in int64 rather than cfg's own int fields directly: Go's int is only
+// 32 bits wide on some of this project's target architectures, and
+// cfg.Width*cfg.Height could overflow one well before reaching
+// MaxImagePixels on such a platform, silently defeating the check on
+// exactly the input it exists to catch.
 func (i Image) Validate() error {
 	if len(i.Data) == 0 {
 		return errors.New("image: data is required")
 	}
-	_, format, err := image.Decode(bytes.NewReader(i.Data))
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(i.Data))
 	if err != nil {
 		return fmt.Errorf("image: data does not decode as a supported image format: %w", err)
 	}
 	if !IsSupportedImageFormat(format) {
 		return fmt.Errorf("image: unsupported format %q (supported: %s)", format, SupportedImageFormatsList)
+	}
+	if pixels := int64(cfg.Width) * int64(cfg.Height); pixels > MaxImagePixels {
+		return fmt.Errorf("image: %dx%d (%d pixels) exceeds the %d pixel limit", cfg.Width, cfg.Height, pixels, MaxImagePixels)
 	}
 	return nil
 }
@@ -110,7 +135,7 @@ func (i Image) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("image", func(data []byte) (Element, error) {
+	registerElement("image", func(data []byte, _ int) (Element, error) {
 		var i Image
 		if err := json.Unmarshal(data, &i); err != nil {
 			return nil, err

@@ -2,6 +2,7 @@ package receipt_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -148,6 +149,49 @@ func TestColumns_UnmarshalJSON_MalformedJSON(t *testing.T) {
 	var decoded receipt.Columns
 	if err := json.Unmarshal([]byte(`{not valid json`), &decoded); err == nil {
 		t.Fatalf("json.Unmarshal() error = nil, want error for malformed JSON")
+	}
+}
+
+// nestedColumnsJSON wraps leaf n times in `{"type":"columns","columns":[{"elements":[ ... ]}]}`,
+// producing a Columns-in-Columns-in-... payload n levels deep.
+func nestedColumnsJSON(leaf string, n int) []byte {
+	data := leaf
+	for i := 0; i < n; i++ {
+		data = fmt.Sprintf(`{"type":"columns","columns":[{"elements":[%s]}]}`, data)
+	}
+	return []byte(data)
+}
+
+func TestColumns_UnmarshalJSON_NestingWithinLimit_Decodes(t *testing.T) {
+	data := nestedColumnsJSON(`{"type":"text","content":"leaf"}`, 5)
+	var decoded receipt.Columns
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v, want nil for nesting well within the depth limit", err)
+	}
+}
+
+// This is a regression test for a real vulnerability: decoding recursed on
+// the Go call stack (decodeElement -> Columns.unmarshalJSON ->
+// decodeElement -> ...) with no depth bound, so a small, deeply nested
+// columns-in-columns payload could crash the whole process with a fatal
+// stack overflow — unrecoverable by net/http's panic recovery — rather
+// than failing this one request. See maxElementDepth's doc comment in
+// registry.go.
+func TestColumns_UnmarshalJSON_ExcessiveNestingDepth_ReturnsErrorNotStackOverflow(t *testing.T) {
+	data := nestedColumnsJSON(`{"type":"text","content":"leaf"}`, 1000)
+	var decoded receipt.Columns
+	if err := json.Unmarshal(data, &decoded); err == nil {
+		t.Fatal("json.Unmarshal() error = nil, want error for excessive nesting depth")
+	}
+}
+
+func TestReceipt_UnmarshalJSON_ExcessiveColumnsNestingDepth_ReturnsErrorNotStackOverflow(t *testing.T) {
+	nested := nestedColumnsJSON(`{"type":"text","content":"leaf"}`, 1000)
+	data := []byte(fmt.Sprintf(`{"version":1,"elements":[%s]}`, nested))
+
+	var decoded receipt.Receipt
+	if err := json.Unmarshal(data, &decoded); err == nil {
+		t.Fatal("json.Unmarshal() error = nil, want error for excessive nesting depth")
 	}
 }
 

@@ -51,19 +51,48 @@ func checkSupportedFormat(format string) error {
 	return nil
 }
 
+// checkImageDimensions returns an error if cfg's declared pixel count
+// exceeds receipt.MaxImagePixels — the same decompression-bomb check
+// receipt.Image.Validate applies to a receipt.Image's own Data, applied
+// again here since decodeImage and imageHeight independently decode Data
+// for their own reasons (see decodeImage's doc comment) and, for a
+// receipt.Asset, are the *only* check: an Asset's resolved bytes reach
+// here via assets.Store.Get in Build's own receipt.Asset case, never
+// through receipt.Image.Validate at all. Multiplies in int64 rather than
+// cfg's own int fields directly — see receipt.Image.Validate's identical
+// note on its own equivalent check for why.
+func checkImageDimensions(cfg image.Config) error {
+	if pixels := int64(cfg.Width) * int64(cfg.Height); pixels > receipt.MaxImagePixels {
+		return fmt.Errorf("image: %dx%d (%d pixels) exceeds the %d pixel limit", cfg.Width, cfg.Height, pixels, receipt.MaxImagePixels)
+	}
+	return nil
+}
+
 // decodeImage decodes data as any receipt.IsSupportedImageFormat raster
 // format (checkSupportedFormat) into the same image.Image representation
 // regardless of source format — everything downstream of this call
 // (scaledImageSize, rasterizeImage, darkOverWhite) is entirely
 // format-agnostic, so a new supported format only ever needs a decoder
 // registered (see this file's blank imports) and an entry in
-// receipt.supportedImageFormats, never a change here or below.
+// receipt.supportedImageFormats, never a change here or below. It checks
+// the format and declared dimensions via the cheap image.DecodeConfig
+// header read (checkSupportedFormat, checkImageDimensions) before ever
+// calling the full image.Decode below it — checking after would already
+// have paid the cost checkImageDimensions exists to avoid.
 func decodeImage(data []byte) (image.Image, error) {
-	img, format, err := image.Decode(bytes.NewReader(data))
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
 	if err := checkSupportedFormat(format); err != nil {
+		return nil, err
+	}
+	if err := checkImageDimensions(cfg); err != nil {
+		return nil, err
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
 		return nil, err
 	}
 	return img, nil
@@ -89,6 +118,9 @@ func imageHeight(data []byte, maxWidth int) (height int, err error) {
 		return 0, err
 	}
 	if err := checkSupportedFormat(format); err != nil {
+		return 0, err
+	}
+	if err := checkImageDimensions(cfg); err != nil {
 		return 0, err
 	}
 	_, h := scaledImageSize(cfg.Width, cfg.Height, maxWidth)

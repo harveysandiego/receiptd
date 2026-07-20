@@ -56,7 +56,7 @@ func (t Table) MarshalJSON() ([]byte, error) {
 }
 
 func init() {
-	registerElement("table", func(data []byte) (Element, error) {
+	registerElement("table", func(data []byte, _ int) (Element, error) {
 		var t Table
 		if err := json.Unmarshal(data, &t); err != nil {
 			return nil, err

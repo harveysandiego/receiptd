@@ -9,8 +9,13 @@ import (
 
 // elementDecoder decodes the raw JSON object for a single Element
 // (including its "type" field, which a decoder is free to ignore) into a
-// concrete Element value.
-type elementDecoder func(data []byte) (Element, error)
+// concrete Element value. depth is the element's own nesting level within
+// the Receipt (0 for a top-level Receipt.Elements entry) — every decoder
+// accepts it, even the ten that never recurse and simply ignore it,
+// so that Columns (the one type that does recurse, via Column.Elements)
+// can pass it on to decodeElement for its own nested elements without a
+// second, Columns-specific registry mechanism.
+type elementDecoder func(data []byte, depth int) (Element, error)
 
 // registry maps a JSON "type" discriminator to the decoder for the
 // concrete Element type it names. Populated by each Element type's own
@@ -30,9 +35,28 @@ func registerElement(typ string, decode elementDecoder) {
 	registry[typ] = decode
 }
 
+// maxElementDepth bounds how deeply a Columns may nest another Columns
+// inside its own Column.Elements. Decoding recurses on the Go call stack
+// for each nesting level (decodeElement -> Columns' registered decoder ->
+// Columns.unmarshalJSON -> decodeElement -> ...), and a Go stack overflow
+// is a fatal, unrecoverable process crash — not a panic net/http's
+// ServeMux can recover from — so this has to be enforced structurally
+// during decode itself, rather than left to Validate() or the API's
+// request-body size limit to catch indirectly (a deeply nested payload
+// can be tiny). 32 is far beyond any legitimate receipt layout — Columns
+// nested even two or three deep is already unusual — while leaving huge
+// headroom under the default goroutine stack.
+const maxElementDepth = 32
+
 // decodeElement decodes a single element's raw JSON object by resolving
-// its "type" field through the registry.
-func decodeElement(data []byte) (Element, error) {
+// its "type" field through the registry. depth is this element's own
+// nesting level (see elementDecoder); callers decoding a Receipt's
+// top-level Elements always pass 0.
+func decodeElement(data []byte, depth int) (Element, error) {
+	if depth > maxElementDepth {
+		return nil, apperr.Wrap(apperr.KindValidation, "receipt.decodeElement", fmt.Errorf("element nesting exceeds the maximum depth of %d", maxElementDepth))
+	}
+
 	var head struct {
 		Type string `json:"type"`
 	}
@@ -45,7 +69,7 @@ func decodeElement(data []byte) (Element, error) {
 		return nil, apperr.Wrap(apperr.KindValidation, "receipt.decodeElement", fmt.Errorf("unknown element type %q", head.Type))
 	}
 
-	el, err := decode(data)
+	el, err := decode(data, depth)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.KindValidation, "receipt.decodeElement", err)
 	}

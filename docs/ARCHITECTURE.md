@@ -451,14 +451,14 @@ unconfigured `Job.PrinterName`.
 
 | Type       | Key fields                                                        |
 |------------|--------------------------------------------------------------------|
-| `text`     | `content`, `align`, `bold`, `italic`, `underline`, `strikethrough`, `size` |
+| `text`     | `content`, `align` (accepted but not yet rendered), `bold`, `italic`, `underline`, `strikethrough`, `size` |
 | `heading`  | `content` (implies `bold: true, size: 2`, see "Text styling" below) |
-| `divider`  | `style` (solid/dashed, optional), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
+| `divider`  | `style` (solid/dashed, optional — accepted but not yet rendered, always a solid line), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
 | `spacer`   | `height` (dots)                                                     |
 | `image`    | `data` (inline base64) — always bytes the client already has        |
-| `asset`    | `name`, `width`, `align` — resolved by name via `assets.Store` at layout time |
+| `asset`    | `name`, `width`, `align` (`width`/`align` accepted but not yet rendered) — resolved by name via `assets.Store` at layout time |
 | `qrcode`   | `content`, `size`, `error_correction`                                |
-| `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` |
+| `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` (accepted but not yet rendered) |
 | `columns`  | `columns: []{ weight int, elements: []Element }` — recursive        |
 | `table`    | `headers: []string`, `rows: [][]string` — flat, no nested Elements  |
 | `feed`     | `lines`                                                              |
@@ -522,18 +522,20 @@ resolves this equivalence once, at the same point it resolves a `Text`'s
 own style fields into a `Style` (§2) — there is no second,
 `Heading`-specific styling or painting path anywhere downstream.
 
-`Italic`, `Underline`, and `Strikethrough` are part of this public schema
-now, ahead of their implementation. Only `Bold` is implemented in the
-Milestone 3 bitmap-styling slice; the other three are accepted, validated,
-stored, and round-trip through JSON like any other field, but currently
-render with no visible effect — the same position `Align` has already
-held since Milestone 1. Fixing the schema once, rather than growing it
-field-by-field alongside each rendering milestone, means a client
-integrating today doesn't need to change its request shape when underline
-support lands later — only this document's roadmap (§10) and
-`render/canvas`'s implementation change. See
-`docs/adr/0007-bitmap-text-styling.md` for the full reasoning and
-alternatives considered.
+`Bold`, `Italic`, `Underline`, and `Strikethrough` are all implemented —
+`docs/adr/0007-bitmap-text-styling.md` records why they joined the schema
+together, ahead of `Italic`/`Underline`/`Strikethrough` actually
+rendering, and that gap has since closed (see "Rendering model" below for
+the pipeline that paints all four). `Align` is the one `Text` field still
+ahead of its implementation: accepted, validated, and round-tripped
+through JSON like any other field, but not yet interpreted by
+`render/layout.Build` — the same position `Divider.Style`,
+`Barcode.ShowText`, and `Asset.Width`/`Align` currently hold (§3's element
+table). Fixing the schema once, rather than growing it field-by-field
+alongside each rendering milestone, means a client integrating today
+doesn't need to change its request shape when alignment support lands
+later — only this document's roadmap (§10) and `render/layout`/
+`render/canvas`'s implementation change.
 
 #### Rendering model
 
@@ -678,10 +680,13 @@ Because this technique only has a defined meaning for plain text, only
 and validated, per §3's "Element types" table) — but `render/layout.Build`
 reports any other element type nested in a column (an `Image`, `Divider`,
 `QRCode`, `Barcode`, a nested `Table`/`Columns`, or a `Heading`) as
-`apperr.KindPermanent`, the same "accepted by the schema, not yet
-renderable" position `Text.Italic`/`Underline`/`Strikethrough` and
-`Asset.Width`/`Align` already hold elsewhere in this document. Supporting
-arbitrary nested content side by side would require a real horizontal-
+`apperr.KindPermanent`. This is a different flavor of "accepted by the
+schema, not yet renderable" than `Text.Align`, `Divider.Style`,
+`Barcode.ShowText`, and `Asset.Width`/`Align` hold elsewhere in §3's
+element table: those fields render as if unset, while an unsupported
+element type nested in a column is rejected outright rather than
+silently ignored. Supporting arbitrary nested content side by side would
+require a real horizontal-
 positioning primitive on `Block`/`Canvas`, which is a materially bigger
 change than this slice's scope — see §11's "Future maintenance concerns".
 
