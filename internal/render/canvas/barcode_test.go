@@ -161,6 +161,72 @@ func TestPaint_BarcodeDeterministic(t *testing.T) {
 	}
 }
 
+func TestPaint_BarcodeCaption_PaintsViaSameGlyphPathAsText(t *testing.T) {
+	// Given the same Content and Style, a BarcodeCaption Block must paint
+	// pixel-for-pixel identically to a receipt.Text Block with that same
+	// content — the same proof TestPaint_TableLineAndTextWithSameContent...
+	// and its Columns/ColumnsLine analogue already establish for their own
+	// Block-carrying types.
+	style := layout.Style{Size: 1}
+	docCaption := layout.Document{
+		Font: layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: layout.BarcodeCaption{Content: "  HELLO-128"}, Style: style},
+		},
+	}
+	docText := layout.Document{
+		Font: layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Text{Content: "  HELLO-128"}, Style: style},
+		},
+	}
+	cCaption, err := canvas.Paint(docCaption)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	cText, err := canvas.Paint(docText)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if cCaption.Width != cText.Width || cCaption.Height != cText.Height {
+		t.Fatalf("Canvas = %dx%d, want %dx%d", cCaption.Width, cCaption.Height, cText.Width, cText.Height)
+	}
+	if string(cCaption.Bits) != string(cText.Bits) {
+		t.Errorf("BarcodeCaption and Text Bits differ given the same Content and Style, want identical")
+	}
+}
+
+func TestPaint_BarcodeShowText_PaintsCaptionBelowBars(t *testing.T) {
+	bc := receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 30, ShowText: true}
+	r := receipt.Receipt{Elements: []receipt.Element{bc}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 200}, layout.EmbeddedFont{}, nil)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Height <= 30 {
+		t.Errorf("c.Height = %d, want more than the barcode's own 30 dots (caption line adds height)", c.Height)
+	}
+
+	noText := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 30},
+	}}
+	docNoText, err := layout.Build(context.Background(), noText, printer.Profile{WidthDots: 200}, layout.EmbeddedFont{}, nil)
+	if err != nil {
+		t.Fatalf("layout.Build() error = %v, want nil", err)
+	}
+	cNoText, err := canvas.Paint(docNoText)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Height == cNoText.Height {
+		t.Errorf("c.Height = %d, same as ShowText=false (%d), want the caption to add height", c.Height, cNoText.Height)
+	}
+}
+
 func TestPaint_BarcodeImageAndQRCodeTogether_AllPaintViaSameRasterPath(t *testing.T) {
 	// Exercises Paint's raster dispatch handling a mix of receipt.Image,
 	// receipt.QRCode, and receipt.Barcode Blocks in one Document, without

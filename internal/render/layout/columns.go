@@ -44,8 +44,7 @@ func (ColumnsLine) Validate() error { return nil }
 // apperr.KindPermanent: accepted and recursively validated by
 // receipt.Columns.Validate() per the frozen schema (docs/ARCHITECTURE.md
 // §3), but not yet renderable inside a column — the same "ahead of
-// implementation" position Text.Italic/Underline/Strikethrough and
-// Asset.Width/Align already hold.
+// implementation" position Text.Align and Asset.Align currently hold.
 func columnsLines(c receipt.Columns, widthDots int, f Font) ([]string, error) {
 	widths := columnWidths(c.Columns, widthDots, f)
 

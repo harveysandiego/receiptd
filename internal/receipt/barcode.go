@@ -36,14 +36,13 @@ type Barcode struct {
 	Height int `json:"height,omitempty"`
 
 	// ShowText selects whether Content is printed as human-readable text
-	// beneath the bars — accepted, validated, and round-trips through
-	// JSON like any other field, but currently renders with no visible
-	// effect: render/canvas.Paint does not yet paint it, the same
-	// "schema value shipped ahead of its rendering" position
-	// docs/adr/0007-bitmap-text-styling.md documents for Text's
-	// Italic/Underline/Strikethrough. Only render/canvas's implementation
-	// needs to change when caption rendering lands — this field's shape
-	// is already final.
+	// beneath the bars: render/layout.Build adds one extra
+	// render/layout.BarcodeCaption Block, Content space-padded to sit
+	// roughly centered under the barcode's own rendered width
+	// (render/layout.centerBarcodeCaption — leading spaces sized to the
+	// embedded font's fixed glyph advance, not a geometric/font-independent
+	// centering), which render/canvas.Paint paints through the same
+	// glyph-by-glyph path any other text Block uses.
 	ShowText bool `json:"show_text,omitempty"`
 }
 

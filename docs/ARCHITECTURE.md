@@ -453,12 +453,12 @@ unconfigured `Job.PrinterName`.
 |------------|--------------------------------------------------------------------|
 | `text`     | `content`, `align` (accepted but not yet rendered), `bold`, `italic`, `underline`, `strikethrough`, `size` |
 | `heading`  | `content` (implies `bold: true, size: 2`, see "Text styling" below) |
-| `divider`  | `style` (solid/dashed, optional — accepted but not yet rendered, always a solid line), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
+| `divider`  | `style` (solid/dashed, optional, default solid), `size` (integer thickness scale factor, optional, default 1 — see "Divider thickness" below) |
 | `spacer`   | `height` (dots)                                                     |
 | `image`    | `data` (inline base64) — always bytes the client already has        |
 | `asset`    | `name`, `width`, `align` (`width`/`align` accepted but not yet rendered) — resolved by name via `assets.Store` at layout time |
 | `qrcode`   | `content`, `size`, `error_correction`                                |
-| `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` (accepted but not yet rendered) |
+| `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` (prints `content` as a caption beneath the bars, space-padded to sit roughly centered — see `render/layout.centerBarcodeCaption`) |
 | `columns`  | `columns: []{ weight int, elements: []Element }` — recursive        |
 | `table`    | `headers: []string`, `rows: [][]string` — flat, no nested Elements  |
 | `feed`     | `lines`                                                              |
@@ -529,13 +529,12 @@ rendering, and that gap has since closed (see "Rendering model" below for
 the pipeline that paints all four). `Align` is the one `Text` field still
 ahead of its implementation: accepted, validated, and round-tripped
 through JSON like any other field, but not yet interpreted by
-`render/layout.Build` — the same position `Divider.Style`,
-`Barcode.ShowText`, and `Asset.Width`/`Align` currently hold (§3's element
-table). Fixing the schema once, rather than growing it field-by-field
-alongside each rendering milestone, means a client integrating today
-doesn't need to change its request shape when alignment support lands
-later — only this document's roadmap (§10) and `render/layout`/
-`render/canvas`'s implementation change.
+`render/layout.Build` — the same position `Asset.Align` currently holds
+(§3's element table). Fixing the schema once, rather than growing it
+field-by-field alongside each rendering milestone, means a client
+integrating today doesn't need to change its request shape when alignment
+support lands later — only this document's roadmap (§10) and
+`render/layout`/`render/canvas`'s implementation change.
 
 #### Rendering model
 
@@ -681,13 +680,12 @@ and validated, per §3's "Element types" table) — but `render/layout.Build`
 reports any other element type nested in a column (an `Image`, `Divider`,
 `QRCode`, `Barcode`, a nested `Table`/`Columns`, or a `Heading`) as
 `apperr.KindPermanent`. This is a different flavor of "accepted by the
-schema, not yet renderable" than `Text.Align`, `Divider.Style`,
-`Barcode.ShowText`, and `Asset.Width`/`Align` hold elsewhere in §3's
-element table: those fields render as if unset, while an unsupported
-element type nested in a column is rejected outright rather than
-silently ignored. Supporting arbitrary nested content side by side would
-require a real horizontal-
-positioning primitive on `Block`/`Canvas`, which is a materially bigger
+schema, not yet renderable" than `Text.Align` and `Asset.Width`/`Align`
+hold elsewhere in §3's element table: those fields render as if unset,
+while an unsupported element type nested in a column is rejected outright
+rather than silently ignored. Supporting arbitrary nested content side by
+side would require a real horizontal-positioning primitive on
+`Block`/`Canvas`, which is a materially bigger
 change than this slice's scope — see §11's "Future maintenance concerns".
 
 `receipt.Heading` is called out specifically because it is a case that

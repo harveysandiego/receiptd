@@ -2,6 +2,7 @@ package layout_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
@@ -162,6 +163,131 @@ func TestBuild_BarcodeInvalidContent_ReturnsPermanentError(t *testing.T) {
 	_, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
 	if !apperr.Is(err, apperr.KindPermanent) {
 		t.Fatalf("Build() error = %v, want apperr.KindPermanent", err)
+	}
+}
+
+// --- receipt.Barcode.ShowText: caption Block ---
+
+func TestBuild_BarcodeShowTextFalse_NoCaptionBlock(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("len(doc.Blocks) = %d, want 1 (no caption Block when ShowText is false)", len(doc.Blocks))
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_AddsCaptionBlock(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", ShowText: true},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 2 {
+		t.Fatalf("len(doc.Blocks) = %d, want 2 (barcode + caption)", len(doc.Blocks))
+	}
+	caption, ok := doc.Blocks[1].Element.(layout.BarcodeCaption)
+	if !ok {
+		t.Fatalf("doc.Blocks[1].Element = %T, want layout.BarcodeCaption", doc.Blocks[1].Element)
+	}
+	if got := strings.TrimSpace(caption.Content); got != "HELLO-128" {
+		t.Errorf("caption.Content = %q (trimmed %q), want %q", caption.Content, got, "HELLO-128")
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_CaptionPositionedBelowBarcode(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 40, ShowText: true},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if doc.Blocks[1].Y != 40 {
+		t.Errorf("doc.Blocks[1].Y = %d, want 40 (immediately below the barcode's own height)", doc.Blocks[1].Y)
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_AdvancesYByCaptionLineHeight(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 40, ShowText: true},
+		receipt.Text{Content: "After"},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if len(doc.Blocks) != 3 {
+		t.Fatalf("len(doc.Blocks) = %d, want 3 (barcode + caption + text)", len(doc.Blocks))
+	}
+	if want := 40 + f.LineHeight(); doc.Blocks[2].Y != want {
+		t.Errorf("doc.Blocks[2].Y = %d, want %d", doc.Blocks[2].Y, want)
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_CaptionCenteredUnderBarcodeWidth(t *testing.T) {
+	// A caption narrower than the barcode's own rendered width must gain
+	// leading space padding (centerBarcodeCaption's technique, the same
+	// leading-space-padding idea tableRowLines/columnsLines already use for
+	// trailing padding) so it paints roughly centered, once the ordinary
+	// text-glyph path (starting at x=0) paints it, against the embedded
+	// font's fixed glyph advance — not a font-independent geometric
+	// centering (see centerBarcodeCaption's own doc comment).
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "1", Symbology: "code39", ShowText: true},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 1000}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	caption := doc.Blocks[1].Element.(layout.BarcodeCaption)
+	if !strings.HasPrefix(caption.Content, " ") {
+		t.Errorf("caption.Content = %q, want leading space padding to center it under a much wider barcode", caption.Content)
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_CaptionWiderThanBarcode_NoPaddingPanic(t *testing.T) {
+	f := layout.EmbeddedFont{}
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "1", Symbology: "code39", ShowText: true},
+	}}
+	doc, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 4}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	caption := doc.Blocks[1].Element.(layout.BarcodeCaption)
+	if caption.Content == "" {
+		t.Errorf("caption.Content is empty, want the barcode's own Content unchanged")
+	}
+}
+
+func TestBuild_BarcodeShowTextTrue_Deterministic(t *testing.T) {
+	r := receipt.Receipt{Elements: []receipt.Element{
+		receipt.Barcode{Content: "HELLO-128", Symbology: "code128", ShowText: true},
+	}}
+	f := layout.EmbeddedFont{}
+	first, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 300}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	second, err := layout.Build(context.Background(), r, printer.Profile{WidthDots: 300}, f, nil)
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	for i := range first.Blocks {
+		a, b := first.Blocks[i], second.Blocks[i]
+		if a.Y != b.Y || a.Style != b.Style || a.Element != b.Element {
+			t.Errorf("Blocks[%d] differs between calls, want equal", i)
+		}
 	}
 }
 

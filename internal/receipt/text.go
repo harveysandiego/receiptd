@@ -13,9 +13,8 @@ import (
 // Underline, Strikethrough, and Size all affect rendering; Align is the
 // one field still ahead of its implementation — accepted, validated, and
 // round-tripped through JSON like any other field, but not yet
-// interpreted by render/layout.Build, the same position Divider.Style,
-// Barcode.ShowText, and Asset.Width/Align currently hold (see each type's
-// own doc comment).
+// interpreted by render/layout.Build, the same position Asset.Align
+// currently holds (see its own doc comment).
 type Text struct {
 	Content       string `json:"content"`
 	Align         string `json:"align,omitempty"`

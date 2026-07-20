@@ -806,9 +806,9 @@ func TestBuild_DividerAsFinalElement(t *testing.T) {
 
 func TestBuild_DividerStyleValue_DoesNotAffectPositioning(t *testing.T) {
 	// receipt.Divider.Style ("solid"/"dashed", docs/ARCHITECTURE.md §3) is
-	// not read by Build at all: dashed-pattern rendering is out of scope
-	// for this slice (see canvas.TestPaint_DividerStyleValue_...), and Y
-	// advancement never varied by style to begin with.
+	// not read by Build at all: the dashed pattern only changes which
+	// pixels render/canvas.Paint paints along the line (see
+	// canvas.paintDivider), never the line's own thickness/Y advancement.
 	solid := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "solid"}, receipt.Text{Content: "A"}}}
 	dashed := receipt.Receipt{Elements: []receipt.Element{receipt.Divider{Style: "dashed"}, receipt.Text{Content: "A"}}}
 

@@ -78,3 +78,62 @@ func GenerateBarcodeBitmap(b receipt.Barcode, maxWidth int) (GlyphBitmap, error)
 	height := barcodeHeight(b)
 	return rasterizeImage(bc, width, height), nil
 }
+
+// BarcodeCaption is one already-space-padded line of human-readable text
+// printed beneath a receipt.Barcode's bars when Barcode.ShowText is true —
+// the Barcode analogue of TableLine/ColumnsLine (see TableLine's own doc
+// comment for why Build produces a distinct Block-carrying type here
+// rather than reusing receipt.Text): a Barcode-derived caption Block keeps
+// its own identity through layout, the same as every other element type.
+// render/canvas.Paint paints a BarcodeCaption's Content through the exact
+// same glyph-by-glyph path a receipt.Text Block already uses (see
+// canvas.textContent) — this is not a second text-rendering primitive,
+// just one more case recognized by the existing one. "Centered" here means
+// centerBarcodeCaption's leading-space padding, not a geometric,
+// font-independent alignment — see that function's own doc comment.
+type BarcodeCaption struct {
+	Content string
+}
+
+// Validate always succeeds — see TableLine.Validate's identical doc
+// comment: BarcodeCaption is never part of a client-supplied
+// receipt.Receipt, it exists only as a Block.Element Build itself
+// produces.
+func (BarcodeCaption) Validate() error { return nil }
+
+// centerBarcodeCaption approximates centering content under width dots of
+// bars by left-padding it with as many leading spaces as fit within half
+// of (width - f.Measure(content)) — the same "pad with spaces so plain
+// text paints as positioned once painted by the ordinary text-glyph path
+// starting at x=0" technique tableRowLines/columnsLines already use for
+// their own (trailing) padding via padToWidth, applied here to leading
+// padding instead.
+//
+// This is space-padded centering against the embedded font's own fixed
+// glyph advance (every rune measures the same width — see
+// docs/adr/0008-embedded-font-legibility.md), not a general,
+// font-independent text-alignment primitive: the padding is only ever a
+// whole number of space-glyph widths, so the result can be off by up to
+// half a glyph's advance from true geometric center, and a proportional
+// font would need a different implementation entirely (padding by a
+// fractional-width space isn't possible with this technique). That
+// imprecision is acceptable for a caption whose only job is to read as
+// "roughly under the barcode," the same tolerance TableLine/ColumnsLine's
+// own space-padding already accepts for column alignment.
+//
+// content already as wide as or wider than width, or width <= 0 (Build's
+// documented "no printer configured" sentinel, see wrapText), is returned
+// unchanged — the same "no width to constrain to" fallback padToWidth
+// itself applies.
+func centerBarcodeCaption(content string, width int, f Font) string {
+	contentWidth := f.Measure(content)
+	if width <= 0 || contentWidth >= width {
+		return content
+	}
+	pad := (width - contentWidth) / 2
+	prefix := ""
+	for f.Measure(prefix+" ") <= pad {
+		prefix += " "
+	}
+	return prefix + content
+}

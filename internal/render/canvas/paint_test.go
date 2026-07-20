@@ -480,16 +480,11 @@ func TestPaint_DividerDeterministic(t *testing.T) {
 	}
 }
 
-func TestPaint_DividerStyleValue_DoesNotAffectRendering(t *testing.T) {
-	// receipt.Divider.Style ("solid"/"dashed", docs/ARCHITECTURE.md §3) is
-	// accepted by receipt.Divider.Validate() but dashed-pattern rendering
-	// is explicitly out of scope for this slice — both styles, and the
-	// empty (default) style, must paint an identical solid line, the same
-	// "accepted but not yet visually distinct" position Text's
-	// Italic/Underline/Strikethrough fields held before their own
-	// rendering landed.
+func TestPaint_DividerEmptyAndSolidStyle_RenderIdentically(t *testing.T) {
+	// "" (omitted) and "solid" are both the same solid-line rendering —
+	// the empty string is Style's zero value, not a third distinct style.
 	widthDots := 20
-	styles := []string{"", "solid", "dashed"}
+	styles := []string{"", "solid"}
 	var results [][]byte
 	for _, style := range styles {
 		doc := layout.Document{
@@ -505,10 +500,107 @@ func TestPaint_DividerStyleValue_DoesNotAffectRendering(t *testing.T) {
 		}
 		results = append(results, c.Bits)
 	}
-	for i := 1; i < len(results); i++ {
-		if string(results[i]) != string(results[0]) {
-			t.Errorf("Bits for style %q differ from style %q, want identical (dashed rendering not yet implemented)", styles[i], styles[0])
+	if string(results[0]) != string(results[1]) {
+		t.Errorf("Bits for style %q differ from style %q, want identical", styles[1], styles[0])
+	}
+}
+
+func TestPaint_DividerDashedStyle_DiffersFromSolid(t *testing.T) {
+	widthDots := 100
+	solidDoc := layout.Document{
+		WidthDots: widthDots,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{}, Style: layout.Style{Size: 1}},
+		},
+	}
+	dashedDoc := layout.Document{
+		WidthDots: widthDots,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{Style: "dashed"}, Style: layout.Style{Size: 1}},
+		},
+	}
+	solid, err := canvas.Paint(solidDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	dashed, err := canvas.Paint(dashedDoc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(solid.Bits) == string(dashed.Bits) {
+		t.Errorf("dashed Bits identical to solid, want a repeating on/off pattern")
+	}
+}
+
+func TestPaint_DividerDashedStyle_ContainsGapsAcrossFullWidth(t *testing.T) {
+	// A dashed divider must actually stop short of the full width somewhere
+	// (a gap), not just differ from solid by one pixel at the edge — proves
+	// the pattern repeats across the whole line, not just at one end.
+	widthDots := 100
+	doc := layout.Document{
+		WidthDots: widthDots,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{Style: "dashed"}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	var sawSet, sawUnset bool
+	for x := 0; x < c.Width; x++ {
+		if pixelSet(c, x, 0) {
+			sawSet = true
+		} else {
+			sawUnset = true
 		}
+	}
+	if !sawSet || !sawUnset {
+		t.Errorf("sawSet = %v, sawUnset = %v, want both true (a repeating dash/gap pattern)", sawSet, sawUnset)
+	}
+}
+
+func TestPaint_DividerDashedStyle_DeterministicAcrossCalls(t *testing.T) {
+	doc := layout.Document{
+		WidthDots: 100,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{Style: "dashed"}, Style: layout.Style{Size: 1}},
+		},
+	}
+	first, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	second, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if string(first.Bits) != string(second.Bits) {
+		t.Errorf("Bits differ between calls, want identical")
+	}
+}
+
+func TestPaint_DividerDashedStyle_ScalesThicknessWithSize(t *testing.T) {
+	// Style's on/off pattern only varies the line horizontally; vertical
+	// thickness must still scale with Size exactly like the solid line does
+	// (layout.DividerThickness * layout.ResolveSize(d.Size), unchanged).
+	doc := layout.Document{
+		WidthDots: 100,
+		Font:      layout.EmbeddedFont{},
+		Blocks: []layout.Block{
+			{Y: 0, Element: receipt.Divider{Style: "dashed", Size: 3}, Style: layout.Style{Size: 1}},
+		},
+	}
+	c, err := canvas.Paint(doc)
+	if err != nil {
+		t.Fatalf("Paint() error = %v, want nil", err)
+	}
+	if c.Height != layout.DividerThickness*3 {
+		t.Errorf("c.Height = %d, want %d", c.Height, layout.DividerThickness*3)
 	}
 }
 

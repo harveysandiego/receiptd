@@ -26,7 +26,11 @@ import (
 // generated, printable-width-scaled size — see qrCodeDimensions), a
 // Barcode (which advances Y by its configured or default height,
 // unaffected by any printable-width scaling of its own — see
-// barcodeDimensions), and a Feed or Cut (which advance Y by nothing at
+// barcodeDimensions — plus one further line if its ShowText is set, for a
+// BarcodeCaption Block space-padded to sit roughly centered under the
+// barcode's own rendered width — see centerBarcodeCaption's doc comment
+// for why this is font-relative space-padding, not geometric centering),
+// and a Feed or Cut (which advance Y by nothing at
 // all: they are printer-control elements with no raster footprint — see
 // render/escpos.Encode, the stage that turns their Document position into
 // actual command bytes). A receipt.Table becomes one TableLine Block per
@@ -149,12 +153,17 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
 		case receipt.Barcode:
-			_, h, err := barcodeDimensions(e, p.WidthDots)
+			w, h, err := barcodeDimensions(e, p.WidthDots)
 			if err != nil {
 				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("barcode: %w", err))
 			}
 			blocks = append(blocks, Block{Y: y, Element: el, Style: normalStyle})
 			y += h
+			if e.ShowText {
+				caption := centerBarcodeCaption(e.Content, w, f)
+				blocks = append(blocks, Block{Y: y, Element: BarcodeCaption{Content: caption}, Style: normalStyle})
+				y += f.LineHeight() * normalStyle.Size
+			}
 		case receipt.Table:
 			for _, line := range tableLines(e, p.WidthDots, f) {
 				blocks = append(blocks, Block{Y: y, Element: TableLine{Content: line}, Style: normalStyle})
@@ -200,8 +209,10 @@ var normalStyle = Style{Size: 1}
 // ResolveSize(receipt.Divider.Size) the same way. See
 // docs/adr/0012-divider-thickness-default-and-scaling.md (which supersedes
 // docs/adr/0011-divider-thickness-legibility.md's now-changed default).
-// Style ("solid"/"dashed") is not read here or in Paint — a Divider
-// always renders as this one solid line until dashed rendering lands.
+// Style ("solid"/"dashed") is not read here — Build advances Y by the same
+// thickness regardless of Style, since the dashed pattern only changes
+// which pixels along that line are painted (render/canvas.Paint's
+// paintDivider), never the line's own vertical extent.
 const DividerThickness = 2
 
 // textStyle resolves t's own styling fields into a Style, normalizing
