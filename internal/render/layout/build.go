@@ -35,8 +35,13 @@ import (
 // its own identity through layout the same as every other element type —
 // render/canvas.Paint paints a TableLine's Content through the exact same
 // glyph-painting path a receipt.Text Block already uses, but still knows
-// a Block came from a Table, not ordinary Text. Every element advances Y
-// per its documented meaning in docs/ARCHITECTURE.md §3. The returned
+// a Block came from a Table, not ordinary Text. A receipt.Columns becomes
+// one ColumnsLine Block per composed output line, the same technique
+// generalized from Table's plain-string cells to each Column's own
+// receipt.Text content, proportioned across p.WidthDots by each column's
+// own Weight — see columnsLines and ColumnsLine. Every
+// element advances Y per its documented meaning in docs/ARCHITECTURE.md
+// §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
 // later stage (e.g. render/canvas.Paint) measures and paints against the
 // same Font and target width Build used.
@@ -84,9 +89,13 @@ import (
 //
 // Element types other than receipt.Text, receipt.Heading, receipt.Spacer,
 // receipt.Divider, receipt.Image, receipt.Asset, receipt.QRCode,
-// receipt.Barcode, receipt.Table, receipt.Feed, and receipt.Cut are not
-// yet supported and are reported as an apperr.KindPermanent error rather
-// than skipped or given placeholder positions.
+// receipt.Barcode, receipt.Table, receipt.Columns, receipt.Feed, and
+// receipt.Cut are not yet supported and are reported as an
+// apperr.KindPermanent error rather than skipped or given placeholder
+// positions. Within a receipt.Columns, only receipt.Text is currently
+// renderable — receipt.Heading is deliberately rejected too, not just
+// silently downgraded to plain text (see columnLines for why); anything
+// else nested in a column is reported the same way.
 func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a assets.Store) (Document, error) {
 	var blocks []Block
 	y := 0
@@ -151,6 +160,15 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 				blocks = append(blocks, Block{Y: y, Element: TableLine{Content: line}, Style: normalStyle})
 				y += f.LineHeight() * normalStyle.Size
 			}
+		case receipt.Columns:
+			lines, err := columnsLines(e, p.WidthDots, f)
+			if err != nil {
+				return Document{}, apperr.Wrap(apperr.KindPermanent, "layout.Build", fmt.Errorf("columns: %w", err))
+			}
+			for _, line := range lines {
+				blocks = append(blocks, Block{Y: y, Element: ColumnsLine{Content: line}, Style: normalStyle})
+				y += f.LineHeight() * normalStyle.Size
+			}
 		case receipt.Feed, receipt.Cut:
 			// Printer-control elements: positioned but weightless — unlike
 			// every other case here, y is never advanced. See
@@ -198,15 +216,16 @@ func textStyle(t receipt.Text) Style {
 	}
 }
 
-// ResolveSize normalizes a receipt.Text.Size or receipt.Divider.Size value
-// into the >= 1 scale factor each field's "0 or omitted means unscaled"
-// convention promises (docs/adr/0007-bitmap-text-styling.md,
-// docs/adr/0012-divider-thickness-default-and-scaling.md). Both types'
-// Validate() already reject a negative Size before a Receipt reaches
-// Build; ResolveSize also floors it to 1 rather than propagating it, so
-// the >= 1 invariant holds unconditionally. Exported so render/canvas can
-// resolve a receipt.Divider's Size the same way Build itself does (see
-// canvas.blockHeight), without a second copy of this rule.
+// ResolveSize normalizes a receipt.Text.Size, receipt.Divider.Size, or
+// receipt.Column.Weight value into the >= 1 scale factor each field's "0
+// or omitted means unscaled" convention promises (docs/adr/0007-bitmap-text-styling.md,
+// docs/adr/0012-divider-thickness-default-and-scaling.md). All three
+// types' Validate() already reject a negative value before a Receipt
+// reaches Build; ResolveSize also floors it to 1 rather than propagating
+// it, so the >= 1 invariant holds unconditionally. Exported so
+// render/canvas can resolve a receipt.Divider's Size the same way Build
+// itself does (see canvas.blockHeight), without a second copy of this
+// rule.
 func ResolveSize(size int) int {
 	if size < 1 {
 		return 1

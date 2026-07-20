@@ -652,6 +652,55 @@ every raster element uses. No printer-native ESC/POS barcode command is
 emitted for any symbology — `render/escpos` gains no barcode-specific
 encoding of its own.
 
+### Columns
+
+`render/layout.Block` carries only a vertical position (`Y` — see §2's
+`Block` definition); there is no horizontal-position primitive anywhere in
+`Document`/`Block`/`Canvas`. `Columns` therefore lays its columns out side
+by side using exactly the technique `Table` already established for its
+own row/column alignment (see `tableColumnWidths`/`tableRowLines`):
+`render/layout.Build` word-wraps each column's own content to its share of
+`p.WidthDots` — divided proportionally by `Column.Weight` (0 or omitted
+floors to 1, `render/layout.ResolveSize`) rather than evenly as `Table`'s
+columns are — then composes the wrapped lines side by side into full-width
+text, right-padding every non-last column to its column budget. Each
+composed line becomes one `ColumnsLine` Block, the `Columns` analogue of
+`TableLine`: a `Block` derived from a `Columns` element keeps its own
+identity through layout rather than being lowered into `receipt.Text`, and
+`render/canvas.Paint` paints its `Content` through the exact same
+glyph-by-glyph path `Text`/`Heading`/`TableLine` already use — no new
+painting primitive.
+
+Because this technique only has a defined meaning for plain text, only
+`receipt.Text` is currently supported inside a `Column`.
+`receipt.Columns.Validate()` still recursively validates a column's
+`Elements` against the full frozen schema (any `Element` type is accepted
+and validated, per §3's "Element types" table) — but `render/layout.Build`
+reports any other element type nested in a column (an `Image`, `Divider`,
+`QRCode`, `Barcode`, a nested `Table`/`Columns`, or a `Heading`) as
+`apperr.KindPermanent`, the same "accepted by the schema, not yet
+renderable" position `Text.Italic`/`Underline`/`Strikethrough` and
+`Asset.Width`/`Align` already hold elsewhere in this document. Supporting
+arbitrary nested content side by side would require a real horizontal-
+positioning primitive on `Block`/`Canvas`, which is a materially bigger
+change than this slice's scope — see §11's "Future maintenance concerns".
+
+`receipt.Heading` is called out specifically because it is a case that
+might look supportable at first glance — `Build` already knows how to lay
+a `Heading` out everywhere else — but isn't, for a different reason than
+the other rejected types: a `ColumnsLine` Block carries exactly one
+`Style` for its whole composed line, and that line is assembled from one
+line of *every* column in the row, each of which may come from a
+different, independently-authored `Column.Elements`. A `Heading`'s
+`Bold`/`Size: 2` styling (`headingStyle`, §3 "Text styling") cannot be
+applied to only its own column's slice of a row shared with a sibling
+column's plain `Text` without per-run styling inside a `Block` — another
+new rendering primitive, not just a missing type-switch case. Painting the
+whole row at `headingStyle` instead would incorrectly style the sibling
+columns' `Text` too; painting it at `normalStyle` would silently drop the
+`Heading`'s styling. Neither is "supporting" `Heading`, so `Build` rejects
+it outright rather than picking one of those two wrong answers.
+
 ### JSON representation
 
 Unchanged — discriminated union via `type`, same shape as Slack's Block Kit:
@@ -1090,6 +1139,15 @@ justify it.
   contract" and silent breakage as Element types accumulate — worth a
   compatibility test (old fixture JSON still unmarshals) once there are a
   few real templates exercising the schema in Milestone 6.
+- `Columns` currently only renders `Text` content inside a column (see §3
+  "Columns") because `Block` has no horizontal-position primitive to place
+  anything else with, and no per-run styling primitive to give a `Heading`
+  its own styling within a row shared with other columns. If a real use
+  case needs, say, an `Image` inside a column, that's the point to design
+  an actual `X` concept onto `Block`/`Canvas`; if it needs a `Heading`
+  inside a column, that's the point to design per-run `Block` styling —
+  not before, per "discover interfaces at the second real use"
+  (`CLAUDE.md`).
 
 ### Verdict
 
