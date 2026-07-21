@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/api"
@@ -109,12 +110,18 @@ func TestJobStatusHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 		name string
 		kind apperr.Kind
 		want int
+		// wantDetailed is true for a 4xx status (body must still carry the
+		// underlying detail) and false for a 5xx status (body must be the
+		// fixed generic message, with no trace of "boom" or the Op) — see
+		// TestPrintHandler_ServiceError_MapsKindToStatus's identical table
+		// for the full rationale.
+		wantDetailed bool
 	}{
-		{"validation", apperr.KindValidation, http.StatusBadRequest},
-		{"not found", apperr.KindNotFound, http.StatusNotFound},
-		{"unauthorized", apperr.KindUnauthorized, http.StatusUnauthorized},
-		{"transient", apperr.KindTransient, http.StatusServiceUnavailable},
-		{"permanent", apperr.KindPermanent, http.StatusInternalServerError},
+		{"validation", apperr.KindValidation, http.StatusBadRequest, true},
+		{"not found", apperr.KindNotFound, http.StatusNotFound, true},
+		{"unauthorized", apperr.KindUnauthorized, http.StatusUnauthorized, true},
+		{"transient", apperr.KindTransient, http.StatusServiceUnavailable, false},
+		{"permanent", apperr.KindPermanent, http.StatusInternalServerError, false},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +134,26 @@ func TestJobStatusHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 
 			if rec.Code != tt.want {
 				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+
+			var body struct {
+				Error string `json:"error"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode response body: %v", err)
+			}
+
+			if tt.wantDetailed {
+				if !strings.Contains(body.Error, "boom") {
+					t.Errorf("error = %q, want it to contain the underlying error detail %q", body.Error, "boom")
+				}
+			} else {
+				if body.Error != "internal server error" {
+					t.Errorf("error = %q, want the generic message %q", body.Error, "internal server error")
+				}
+				if strings.Contains(body.Error, "boom") || strings.Contains(body.Error, "app.Service.JobStatus") {
+					t.Errorf("error = %q, must not leak the underlying error or Op for a 5xx response", body.Error)
+				}
 			}
 		})
 	}

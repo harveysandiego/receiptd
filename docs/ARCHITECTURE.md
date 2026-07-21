@@ -948,7 +948,12 @@ This maps cleanly onto every consumer you listed:
 
 - **API**: a small `apperr.Kind -> http.StatusCode` table in `api`
   (`KindValidation→400, KindNotFound→404, KindUnauthorized→401,
-  KindTransient→503, KindPermanent→500`).
+  KindTransient→503, KindPermanent→500`). The API is the trust boundary: a
+  4xx response body returns `err.Error()` (actionable — the request itself
+  was the problem), but a 5xx response body is always the fixed generic
+  `"internal server error"` message, never the wrapped error, a
+  filesystem/database path, a network error, or the `Op` — the real `err`
+  is logged server-side instead (`api.writeError`).
 - **Queue retry**: `apperr.Is(err, apperr.KindTransient)` is the *only*
   condition that consumes retry budget (formalizes the transient-vs-permanent
   distinction from the previous revision).

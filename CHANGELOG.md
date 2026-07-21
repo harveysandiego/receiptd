@@ -9,6 +9,15 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Changed
+
+- The REST API no longer includes wrapped error detail, filesystem/database
+  paths, network errors, or `apperr.Error` operation names in a **5xx**
+  response body — those are now logged server-side, with clients getting a
+  fixed `{"error":"internal server error"}` message instead. **4xx**
+  responses (validation failures, malformed JSON, not-found, unauthorized)
+  are unchanged and still return the detailed, actionable message.
+
 ## [0.3.0] - 2026-07-21
 
 ### Changed

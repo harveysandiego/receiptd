@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/harveysandiego/receiptd/internal/receipt"
@@ -68,8 +69,25 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// internalServerErrorMessage is the fixed body every 5xx response uses in
+// place of err.Error(). The API is the trust boundary (docs/ARCHITECTURE.md
+// §5): a 4xx status means the request itself was the problem, so
+// err.Error() — which may include the apperr.Error Op and the wrapped
+// cause — is actionable detail worth returning. A 5xx status means
+// something on the server's side failed, and err.Error() at that point may
+// contain a filesystem or database path, a network error, or other
+// implementation detail no client has a legitimate need to see; the
+// underlying err is still logged server-side by writeError before being
+// discarded.
+const internalServerErrorMessage = "internal server error"
+
 func writeError(w http.ResponseWriter, status int, err error) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		log.Printf("api: internal error: %v", err)
+		message = internalServerErrorMessage
+	}
 	writeJSON(w, status, struct {
 		Error string `json:"error"`
-	}{Error: err.Error()})
+	}{Error: message})
 }
