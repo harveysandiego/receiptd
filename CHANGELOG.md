@@ -9,7 +9,9 @@ the 0.x series.
 
 ## [Unreleased]
 
-### Changed
+## [0.3.1] - 2026-07-22
+
+### Security
 
 - The REST API no longer includes wrapped error detail, filesystem/database
   paths, network errors, or `apperr.Error` operation names in a **5xx**
@@ -88,7 +90,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/harveysandiego/receiptd/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/harveysandiego/receiptd/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/harveysandiego/receiptd/compare/v0.1.0...v0.1.1
