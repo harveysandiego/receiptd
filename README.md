@@ -20,7 +20,7 @@ appliance on your home network.
 > auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
 > multi-arch image publishing, release pipeline) are implemented and
 > tested — Receiptd has printed to real hardware, and
-> [v0.1.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.1.0)
+> [v0.2.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.2.0)
 > is tagged and published, including multi-arch images at
 > `ghcr.io/harveysandiego/receiptd`. See [Current status](#current-status)
 > before trying to run this.
