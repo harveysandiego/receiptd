@@ -49,3 +49,14 @@ jobs:
     uses: ./.github/workflows/docker-image.yml
     with:
       push: true
+
+  pkg-go-dev:
+    name: notify pkg.go.dev
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      # pkg.go.dev only indexes a version once something asks the Go module
+      # proxy for it — it doesn't poll GitHub for new tags on its own. This
+      # makes that first request automatically so the site picks up each
+      # release without anyone needing to hit "Request" by hand.
+      - run: curl -sf "https://proxy.golang.org/github.com/harveysandiego/receiptd/@v/${GITHUB_REF_NAME}.info"
