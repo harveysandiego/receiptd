@@ -9,6 +9,15 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Added
+
+- `list` Element type: bulleted, numbered, and checkbox lists as one
+  `receipt.List`/`ListItem` shape with a closed-enum `Kind`, per
+  [ADR-0014](docs/adr/0014-list-elements.md). Renders through the
+  existing text-layout pipeline — markers, semantic indentation, and
+  hanging-indent word-wrap are all resolved by `layout.Build`, with no new
+  drawing primitive in `render/canvas`.
+
 ## [0.1.1] - 2026-07-20
 
 ### Fixed

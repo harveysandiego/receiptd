@@ -47,7 +47,11 @@ import (
 // one ColumnsLine Block per composed output line, the same technique
 // generalized from Table's plain-string cells to each Column's own
 // receipt.Text content, proportioned across p.WidthDots by each column's
-// own Weight — see columnsLines and ColumnsLine. Every
+// own Weight — see columnsLines and ColumnsLine. A receipt.List becomes
+// one ListLine Block per composed output line, the same technique
+// generalized once more to a List's own marker-and-indent-composed item
+// lines — see listLines, ListLine, and docs/adr/0014-list-elements.md.
+// Every
 // element advances Y per its documented meaning in docs/ARCHITECTURE.md
 // §3. The returned
 // Document carries f and p.WidthDots (see Document.WidthDots), so every
@@ -99,8 +103,8 @@ import (
 //
 // Element types other than receipt.Text, receipt.Heading, receipt.Spacer,
 // receipt.Divider, receipt.Image, receipt.Asset, receipt.QRCode,
-// receipt.Barcode, receipt.Table, receipt.Columns, receipt.Feed, and
-// receipt.Cut are not yet supported and are reported as an
+// receipt.Barcode, receipt.Table, receipt.Columns, receipt.List,
+// receipt.Feed, and receipt.Cut are not yet supported and are reported as an
 // apperr.KindPermanent error rather than skipped or given placeholder
 // positions. Within a receipt.Columns, only receipt.Text is currently
 // renderable — receipt.Heading is deliberately rejected too, not just
@@ -182,6 +186,11 @@ func Build(ctx context.Context, r receipt.Receipt, p printer.Profile, f Font, a 
 			}
 			for _, line := range lines {
 				blocks = append(blocks, Block{Y: y, Element: ColumnsLine{Content: line}, Style: normalStyle})
+				y += f.LineHeight() * normalStyle.Size
+			}
+		case receipt.List:
+			for _, line := range listLines(e, p.WidthDots, f) {
+				blocks = append(blocks, Block{Y: y, Element: ListLine{Content: line}, Style: normalStyle})
 				y += f.LineHeight() * normalStyle.Size
 			}
 		case receipt.Feed, receipt.Cut:

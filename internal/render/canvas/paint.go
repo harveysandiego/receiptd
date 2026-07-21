@@ -74,7 +74,9 @@ func isRasterElement(el receipt.Element) bool {
 // Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
 // order. receipt.Text, receipt.Heading, layout.TableLine (one already
 // wrapped, column-aligned line of a receipt.Table's output),
-// layout.ColumnsLine (the same for a receipt.Columns's output), and
+// layout.ColumnsLine (the same for a receipt.Columns's output),
+// layout.ListLine (the same for a receipt.List's marker-and-indent-composed
+// output, per docs/adr/0014-list-elements.md), and
 // layout.BarcodeCaption (a receipt.Barcode's caption line, already
 // space-padded to sit roughly centered under the barcode's own rendered
 // width, when its ShowText is set — see render/layout.Build and
@@ -113,14 +115,14 @@ func isRasterElement(el receipt.Element) bool {
 // Paint never inspects receipt.Text/receipt.Heading fields to decide how
 // to style a Block — only Block.Style, already fully resolved by
 // render/layout.Build (docs/ARCHITECTURE.md §3 "Text styling"). This is
-// what makes a receipt.Heading, layout.TableLine, layout.ColumnsLine, or
-// layout.BarcodeCaption Block render identically to a receipt.Text Block
-// given the same Style: there is exactly one rendering pipeline, not a
-// per-type one. The type switches below (textContent, blockHeight) exist
-// only to read structural data the frozen receipt.Element interface
-// doesn't expose generically — a
-// Text/Heading/TableLine/ColumnsLine/BarcodeCaption's Content, a Spacer's
-// own Height — never to branch on styling.
+// what makes a receipt.Heading, layout.TableLine, layout.ColumnsLine,
+// layout.ListLine, or layout.BarcodeCaption Block render identically to a
+// receipt.Text Block given the same Style: there is exactly one rendering
+// pipeline, not a per-type one. The type switches below (textContent,
+// blockHeight) exist only to read structural data the frozen
+// receipt.Element interface doesn't expose generically — a
+// Text/Heading/TableLine/ColumnsLine/ListLine/BarcodeCaption's Content, a
+// Spacer's own Height — never to branch on styling.
 //
 // The Canvas is sized to doc.WidthDots when it's positive (the printer
 // width render/layout.Build resolved the Document against) — content
@@ -214,15 +216,16 @@ func Paint(doc layout.Document) (*Canvas, error) {
 }
 
 // textContent returns el's text content if el is a receipt.Text,
-// receipt.Heading, layout.TableLine, layout.ColumnsLine, or
-// layout.BarcodeCaption — the element types Paint paints glyphs for via
+// receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine,
+// or layout.BarcodeCaption — the element types Paint paints glyphs for via
 // the same code path (see Paint's painting loop). A TableLine is a
 // receipt.Table's already-composed, already-wrapped output line, a
-// ColumnsLine is a receipt.Columns's, and a BarcodeCaption is a
-// receipt.Barcode's caption line, already space-padded to sit roughly
-// centered under the barcode (see render/layout.Build and each type's own
-// doc comment): Paint reads their Content exactly like
-// any other line of text, never anything Table-, Columns-, or
+// ColumnsLine is a receipt.Columns's, a ListLine is a receipt.List's
+// already-marker-and-indent-composed, already-wrapped output line, and a
+// BarcodeCaption is a receipt.Barcode's caption line, already space-padded
+// to sit roughly centered under the barcode (see render/layout.Build and
+// each type's own doc comment): Paint reads their Content exactly like
+// any other line of text, never anything Table-, Columns-, List-, or
 // Barcode-specific.
 func textContent(el receipt.Element) (string, bool) {
 	switch e := el.(type) {
@@ -234,6 +237,8 @@ func textContent(el receipt.Element) (string, bool) {
 		return e.Content, true
 	case layout.ColumnsLine:
 		return e.Content, true
+	case layout.ListLine:
+		return e.Content, true
 	case layout.BarcodeCaption:
 		return e.Content, true
 	default:
@@ -243,10 +248,10 @@ func textContent(el receipt.Element) (string, bool) {
 
 // blockHeight returns b's vertical extent in dots if its Element is a
 // supported type: f.LineHeight() * b.Style.Size for receipt.Text,
-// receipt.Heading, layout.TableLine, layout.ColumnsLine, and
-// layout.BarcodeCaption alike (the same Style.Size used to scale their
-// glyphs — see Paint; a TableLine's, ColumnsLine's, or BarcodeCaption's
-// Style is always layout.Build's normalStyle, Size 1), the
+// receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine,
+// and layout.BarcodeCaption alike (the same Style.Size used to scale their
+// glyphs — see Paint; a TableLine's, ColumnsLine's, ListLine's, or
+// BarcodeCaption's Style is always layout.Build's normalStyle, Size 1), the
 // Spacer's own Height (unaffected by Style), layout.DividerThickness times
 // the Divider's own resolved Size for a receipt.Divider (layout.ResolveSize,
 // the same resolution and the same DividerThickness constant layout.Build
@@ -255,7 +260,7 @@ func textContent(el receipt.Element) (string, bool) {
 // layout.Build never advances Y for either.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
-	case receipt.Text, receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.BarcodeCaption:
+	case receipt.Text, receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine, layout.BarcodeCaption:
 		return f.LineHeight() * b.Style.Size, true
 	case receipt.Spacer:
 		return e.Height, true

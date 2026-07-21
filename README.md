@@ -117,7 +117,8 @@ philosophy, and the reasoning behind each decision, lives in
 - **CLI** (`receipt`) for scripting and quick ad-hoc prints
 - **Web UI** for browsing/printing without touching a terminal
 - **Element-based Receipt model**: text, headings, dividers, spacers,
-  images, named assets, QR codes, barcodes, columns, tables, feed, cut
+  images, named assets, QR codes, barcodes, columns, tables, lists
+  (bulleted, numbered, checkbox), feed, cut
 - **PNG preview** before anything hits paper
 - **Async, persistent print queue** with retry/backoff for transient
   printer failures

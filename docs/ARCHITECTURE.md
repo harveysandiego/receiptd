@@ -779,13 +779,15 @@ silently ignoring it.
 `ListItem.Indent` (0 = top level) is a **semantic nesting level, not a
 count of characters**: `Indent: 2` means two levels deep, and how much
 visual space one level occupies is a rendering choice, not part of the
-schema's contract. `ListItem` has no nested `Items`/`Elements` field —
+schema's contract — expressed as leading content composed onto the line
+itself, the same way every other positioning decision in this schema is
+(see "Columns" above). `ListItem` has no nested `Items`/`Elements` field —
 a flat level integer, not a recursive tree — the same "flat, no nested
 Elements" design `Table`'s `Headers`/`Rows` already use. `Validate()`
-rejects a negative `Indent` and enforces a defensive maximum nesting
-depth (an implementation detail, not part of the public contract),
-guarding against pathological width-consuming input the same way
-`Columns`' `maxElementDepth` guards against pathological nesting depth.
+rejects a negative `Indent` and enforces a defensive maximum nesting depth
+(an implementation detail, not part of the public contract), guarding
+against pathological width-consuming input the same way `Columns`'
+`maxElementDepth` guards against pathological nesting depth.
 
 Each item's `Content` word-wraps to its own available width (narrower
 the more deeply an item is indented, degrading to the narrowest
@@ -797,12 +799,12 @@ or number, correctly even when markers vary in width (`"1."` vs.
 `"10."`).
 
 Rendering follows `Table`/`Columns`/`Barcode`'s established pattern:
-`layout.Build` performs all the semantic expansion — markers,
-indentation, and wrapping resolved into fully positioned per-line text
-content — and `render/canvas.Paint` paints it through the existing
+`layout.Build` performs all the semantic expansion — markers, indentation,
+and wrapping resolved into fully positioned per-line text content, one
+`ListLine` Block per output line, the `List` analogue of `TableLine` and
+`ColumnsLine` — and `render/canvas.Paint` paints it through the existing
 text-content path, unchanged. No new drawing primitive, no change to
-`Block`/`Canvas`/`Document`; the specific internal type(s) layout uses to
-carry that content are an implementation detail.
+`Block`/`Canvas`/`Document`.
 
 ### JSON representation
 
