@@ -461,6 +461,7 @@ unconfigured `Job.PrinterName`.
 | `barcode`  | `content`, `symbology` (see "Barcode symbologies" below), `height`, `show_text` (prints `content` as a caption beneath the bars, space-padded to sit roughly centered — see `render/layout.alignPad`) |
 | `columns`  | `columns: []{ weight int, elements: []Element }` — recursive        |
 | `table`    | `headers: []string`, `rows: [][]string` — flat, no nested Elements  |
+| `list`     | `kind` (`""`/`bullet`/`number`/`checkbox`, optional, default bullet), `items: []{ content string, checked bool, indent int }` — flat, no nested Elements — see "Lists" below |
 | `feed`     | `lines`                                                              |
 | `cut`      | `mode` (full/partial) — optional; renderer supplies `Profile.DefaultCut` if absent |
 
@@ -740,6 +741,68 @@ whole row at `headingStyle` instead would incorrectly style the sibling
 columns' `Text` too; painting it at `normalStyle` would silently drop the
 `Heading`'s styling. Neither is "supporting" `Heading`, so `Build` rejects
 it outright rather than picking one of those two wrong answers.
+
+### Lists
+
+`list` covers bulleted, numbered, and checkbox lists as one Element type
+with a closed-enum `Kind`, per `docs/adr/0014-list-elements.md`:
+
+```go
+type List struct {
+    Kind  string     `json:"kind,omitempty"`
+    Items []ListItem `json:"items"`
+}
+
+type ListItem struct {
+    Content string `json:"content"`
+    Checked bool   `json:"checked,omitempty"`
+    Indent  int    `json:"indent,omitempty"`
+}
+```
+
+`Kind` accepts `""`/`"bullet"` (equivalent, the default), `"number"`, or
+`"checkbox"` — the same closed-vocabulary pattern `Divider.Style` and
+`Barcode.Symbology` already establish. `List` carries no styling fields
+of its own, rendering as plain unstyled text like `Table` and `Columns`;
+an author wanting styled list text composes it from `Text`.
+
+Marker generation happens during layout, entirely from characters the
+embedded ASCII font can render (`docs/adr/0008-embedded-font-legibility.md`):
+a hyphen for a bullet item, a 1-based sequential number (independent of
+`Indent`) for a numbered item, and `"[x]"`/`"[ ]"` for a
+checked/unchecked checkbox item — deliberately ASCII brackets rather
+than a Unicode checkbox glyph, which the embedded font cannot render.
+`ListItem.Checked` is only valid when the parent `List.Kind ==
+"checkbox"`; `Validate()` rejects the combination otherwise rather than
+silently ignoring it.
+
+`ListItem.Indent` (0 = top level) is a **semantic nesting level, not a
+count of characters**: `Indent: 2` means two levels deep, and how much
+visual space one level occupies is a rendering choice, not part of the
+schema's contract. `ListItem` has no nested `Items`/`Elements` field —
+a flat level integer, not a recursive tree — the same "flat, no nested
+Elements" design `Table`'s `Headers`/`Rows` already use. `Validate()`
+rejects a negative `Indent` and enforces a defensive maximum nesting
+depth (an implementation detail, not part of the public contract),
+guarding against pathological width-consuming input the same way
+`Columns`' `maxElementDepth` guards against pathological nesting depth.
+
+Each item's `Content` word-wraps to its own available width (narrower
+the more deeply an item is indented, degrading to the narrowest
+wrapping this schema already falls back to elsewhere rather than
+failing); wrapped continuation lines are prefixed with blank space
+equivalent to the marker's own width instead of the marker itself, so
+they hang-indent under the item's content rather than under its bullet
+or number, correctly even when markers vary in width (`"1."` vs.
+`"10."`).
+
+Rendering follows `Table`/`Columns`/`Barcode`'s established pattern:
+`layout.Build` performs all the semantic expansion — markers,
+indentation, and wrapping resolved into fully positioned per-line text
+content — and `render/canvas.Paint` paints it through the existing
+text-content path, unchanged. No new drawing primitive, no change to
+`Block`/`Canvas`/`Document`; the specific internal type(s) layout uses to
+carry that content are an implementation detail.
 
 ### JSON representation
 
