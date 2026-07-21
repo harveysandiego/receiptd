@@ -30,7 +30,10 @@ internal/
 
   printer/               Profile (capabilities), Connection (transport
                          details), Printer interface (Send/Status/Close),
-                         and the network transport implementation.
+                         the network transport implementation, and
+                         ModelProfiles, a small built-in catalogue of
+                         verified Profiles config's "model:" field
+                         resolves against (docs/adr/0015-printer-model-catalogue.md).
                          Depends on apperr/. See below for why Profile,
                          Connection, and the one existing transport all
                          live in one package for now.
@@ -994,18 +997,26 @@ queue:
   retry_backoff: 5s
 
 printers:
-  - name: default
+  - name: front-desk
     # -- Connection fields --
     transport: network
     address: 192.168.1.50:9100
-    # -- Profile fields --
-    width_mm: 80
-    dpi: 203
-    margins_dots: { left: 0, right: 0 }
-    supports_cut: true
-    supports_partial_cut: true
-    default_cut: partial
-    max_image_height_dots: 0   # 0 = no chunking; revisit once tested on real hardware
+    # -- known model (recommended) --
+    model: epson-tm-m30ii
+
+  - name: custom-printer
+    # -- Connection fields --
+    transport: network
+    address: 192.168.1.60:9100
+    # -- custom profile (advanced) --
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      margins_dots: { left: 0, right: 0 }
+      supports_cut: true
+      supports_partial_cut: true
+      default_cut: partial
+      max_image_height_dots: 0   # 0 = no chunking; revisit once tested on real hardware
 
 providers:
   weather:
@@ -1016,10 +1027,36 @@ web:
   enabled: true
 ```
 
-Each YAML `printers[]` entry stays a single flat block for the user's
+Each YAML `printers[]` entry stays a single block for the user's
 convenience — `config` is the one place that splits it into the
 `printer.Profile` and `printer.Connection` Go values, matching the "one
 config file, two internal types" trade-off described in §1.
+
+A printer's `Profile` is resolved from exactly one of two mutually
+exclusive sources (`docs/adr/0015-printer-model-catalogue.md`) — an
+entry giving both or neither is rejected outright, with no precedence
+rule between them:
+
+- **`model:`** (recommended) — a name looked up in
+  `printer.ModelProfiles`, a small built-in catalogue of `Profile`
+  values whose characteristics have been independently verified,
+  preferably through real hardware testing. This needs no
+  hardware-specific knowledge from the operator beyond the printer's own
+  model name.
+- **`profile:`** (advanced) — every `Profile` field supplied explicitly,
+  for hardware not yet in the catalogue. `printable_width_mm` must be
+  the printhead's actual printable width, not the paper roll width
+  printed on the packaging — these are frequently different numbers
+  (most 80mm-roll thermal printers, including the Epson TM-m30II behind
+  the one built-in `model:` entry, only address a 72mm-wide printhead).
+  Configuring the roll width here produces a `WidthDots` wider than the
+  hardware can actually raster, which doesn't necessarily fail cleanly —
+  see the ADR for the real-hardware symptom this caused.
+
+Nothing in `config` or `printer` ever derives a printable width from a
+paper/roll size — every `Profile` in the system is either a verified
+`model:` catalogue entry or a value the operator states explicitly in
+`profile:`, never a guess.
 
 `auth.enabled` defaults to `true` if the `auth:` block is omitted from the
 document entirely, or present without an `enabled:` key — the API must

@@ -9,6 +9,21 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-21
+
+### Changed
+
+- **Breaking:** `printers[]` config entries now require either a known
+  `model:` (looked up in a small built-in `printer.ModelProfiles`
+  catalogue, currently `epson-tm-m30ii`) or an explicit `profile:` block
+  — never both, never neither — instead of a flat set of profile fields
+  on the entry itself. The old `width_mm` field is retired entirely (no
+  alias); its replacement inside `profile:` is `printable_width_mm`,
+  which must be the printhead's actual printable width, not the paper
+  roll width. No migration shim is provided — see
+  [ADR-0015](docs/adr/0015-printer-model-catalogue.md) for why a
+  paper-width heuristic was rejected in favor of this split.
+
 ## [0.2.0] - 2026-07-21
 
 ### Added
@@ -64,7 +79,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/harveysandiego/receiptd/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/harveysandiego/receiptd/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/harveysandiego/receiptd/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/harveysandiego/receiptd/releases/tag/v0.1.0

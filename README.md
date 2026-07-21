@@ -20,7 +20,7 @@ appliance on your home network.
 > auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
 > multi-arch image publishing, release pipeline) are implemented and
 > tested — Receiptd has printed to real hardware, and
-> [v0.2.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.2.0)
+> [v0.3.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.3.0)
 > is tagged and published, including multi-arch images at
 > `ghcr.io/harveysandiego/receiptd`. See [Current status](#current-status)
 > before trying to run this.
@@ -266,14 +266,14 @@ printers:
   - name: front-desk
     transport: network
     address: 192.168.1.50:9100 # your printer's IP:port
-    width_mm: 80
-    dpi: 203
+    model: epson-tm-m30ii # or use profile: for hardware not in the catalogue
 web:
   enabled: false
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §7 for the full
-config schema.
+config schema, including the `profile:` alternative to `model:` for
+printers not yet in the built-in catalogue.
 
 ### Raspberry Pi
 

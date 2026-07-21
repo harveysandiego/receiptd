@@ -36,13 +36,14 @@ printers:
   - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    margins_dots: { left: 0, right: 0 }
-    supports_cut: true
-    supports_partial_cut: true
-    default_cut: partial
-    max_image_height_dots: 0
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      margins_dots: { left: 0, right: 0 }
+      supports_cut: true
+      supports_partial_cut: true
+      default_cut: partial
+      max_image_height_dots: 0
 
 providers:
   weather:
@@ -117,6 +118,9 @@ func TestLoad_Success(t *testing.T) {
 	if got, want := p.Name, "default"; got != want {
 		t.Errorf("Printers[0].Name = %q, want %q", got, want)
 	}
+	if got, want := p.Model, ""; got != want {
+		t.Errorf("Printers[0].Model = %q, want %q (configured via profile:, not model:)", got, want)
+	}
 
 	wantConn := printer.Connection{Transport: "network", Address: "192.168.1.50:9100"}
 	if p.Connection != wantConn {
@@ -124,7 +128,7 @@ func TestLoad_Success(t *testing.T) {
 	}
 
 	wantProfile := printer.Profile{
-		WidthDots:          639, // round(80mm / 25.4 * 203dpi)
+		WidthDots:          576, // round(72.02mm / 25.4 * 203dpi)
 		DPI:                203,
 		MarginLeftDots:     0,
 		MarginRightDots:    0,
@@ -138,6 +142,38 @@ func TestLoad_Success(t *testing.T) {
 	}
 }
 
+func TestLoad_Success_KnownModel(t *testing.T) {
+	yaml := `
+queue:
+  store: bbolt
+  max_attempts: 3
+  retry_backoff: 5s
+
+printers:
+  - name: front-desk
+    model: epson-tm-m30ii
+    transport: network
+    address: 192.168.1.50:9100
+`
+	path := writeConfig(t, yaml)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+
+	if len(cfg.Printers) != 1 {
+		t.Fatalf("len(Printers) = %d, want 1", len(cfg.Printers))
+	}
+	p := cfg.Printers[0]
+	if got, want := p.Model, "epson-tm-m30ii"; got != want {
+		t.Errorf("Printers[0].Model = %q, want %q", got, want)
+	}
+	if p.Profile != printer.ModelProfiles["epson-tm-m30ii"] {
+		t.Errorf("Printers[0].Profile = %+v, want %+v (printer.ModelProfiles[%q])", p.Profile, printer.ModelProfiles["epson-tm-m30ii"], "epson-tm-m30ii")
+	}
+}
+
 func TestLoad_AuthSectionOmitted_DefaultsEnabledTrue(t *testing.T) {
 	yaml := `
 queue:
@@ -147,11 +183,9 @@ queue:
 
 printers:
   - name: default
+    model: epson-tm-m30ii
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `
 	path := writeConfig(t, yaml)
 
@@ -176,11 +210,9 @@ queue:
 
 printers:
   - name: default
+    model: epson-tm-m30ii
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `
 	path := writeConfig(t, yaml)
 
@@ -228,11 +260,9 @@ printers:
 	}
 
 	validPrinter := `  - name: default
+    model: epson-tm-m30ii
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `
 
 	tests := []struct {
@@ -275,11 +305,36 @@ printers:
 		{
 			name: "empty printer name",
 			yaml: base(`  - name: ""
+    model: epson-tm-m30ii
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
+`),
+		},
+		{
+			name: "both model and profile",
+			yaml: base(`  - name: default
+    model: epson-tm-m30ii
+    transport: network
+    address: 192.168.1.50:9100
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      default_cut: partial
+`),
+		},
+		{
+			name: "neither model nor profile",
+			yaml: base(`  - name: default
+    transport: network
+    address: 192.168.1.50:9100
+`),
+		},
+		{
+			name: "unknown model",
+			yaml: base(`  - name: default
+    model: some-printer-nobody-has-heard-of
+    transport: network
+    address: 192.168.1.50:9100
 `),
 		},
 		{
@@ -287,9 +342,10 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 0
-    default_cut: partial
+    profile:
+      printable_width_mm: 72.02
+      dpi: 0
+      default_cut: partial
 `),
 		},
 		{
@@ -297,9 +353,10 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 0
-    dpi: 203
-    default_cut: partial
+    profile:
+      printable_width_mm: 0
+      dpi: 203
+      default_cut: partial
 `),
 		},
 		{
@@ -307,10 +364,11 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    margins_dots: { left: -1, right: 0 }
-    default_cut: partial
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      margins_dots: { left: -1, right: 0 }
+      default_cut: partial
 `),
 		},
 		{
@@ -318,10 +376,11 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    margins_dots: { left: 639, right: 0 }
-    default_cut: partial
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      margins_dots: { left: 576, right: 0 }
+      default_cut: partial
 `),
 		},
 		{
@@ -329,10 +388,11 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
-    max_image_height_dots: -1
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      default_cut: partial
+      max_image_height_dots: -1
 `),
 		},
 		{
@@ -340,59 +400,50 @@ printers:
 			yaml: base(`  - name: default
     transport: network
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: sideways
+    profile:
+      printable_width_mm: 72.02
+      dpi: 203
+      default_cut: sideways
 `),
 		},
 		{
 			name: "unknown transport",
 			yaml: base(`  - name: default
+    model: epson-tm-m30ii
     transport: carrier-pigeon
     address: 192.168.1.50:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `),
 		},
 		{
 			name: "usb transport not yet supported in v0.1",
 			yaml: base(`  - name: default
+    model: epson-tm-m30ii
     transport: usb
     device: /dev/usb/lp0
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `),
 		},
 		{
 			name: "bluetooth transport not yet supported in v0.1",
 			yaml: base(`  - name: default
+    model: epson-tm-m30ii
     transport: bluetooth
     mac: 00:11:22:33:44:55
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `),
 		},
 		{
 			name: "serial transport not yet supported in v0.1",
 			yaml: base(`  - name: default
+    model: epson-tm-m30ii
     transport: serial
     device: /dev/ttyUSB0
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `),
 		},
 		{
 			name: "duplicate printer names",
 			yaml: base(validPrinter + `  - name: default
+    model: epson-tm-m30ii
     transport: network
     address: 192.168.1.51:9100
-    width_mm: 80
-    dpi: 203
-    default_cut: partial
 `),
 		},
 	}
