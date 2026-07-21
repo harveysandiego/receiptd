@@ -23,6 +23,8 @@ does without reopening a discussion that already happened.
 | [0011](0011-divider-thickness-legibility.md) | Raising the default divider thickness for hardware legibility — superseded by 0012 |
 | [0012](0012-divider-thickness-default-and-scaling.md) | Lowering the default divider thickness and adding a Size scale factor |
 | [0013](0013-text-and-asset-alignment.md) | Closing the Text.Align/Asset.Align/Asset.Width gap with pixel- and space-padding |
+| [0014](0014-list-elements.md) | Lists: a single `list` element for bulleted, numbered, and checkbox items |
+| [0015](0015-printer-model-catalogue.md) | A known-model printer catalogue, not a paper-width heuristic |
 
 ## Conventions
 
