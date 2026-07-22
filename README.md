@@ -57,9 +57,12 @@ other end. No client anywhere needs to know what an ESC/POS command is.
 
 - **The client never knows about the printer.** Not its width, its DPI,
   its cut command, its codepage — nothing. All of that lives server-side.
-- **One document model, one rendering pipeline.** JSON, Markdown, and
-  server-side templates all produce the same `Receipt` structure, which is
-  rendered by exactly one pipeline. No parallel code paths to keep in sync.
+- **One document model, one rendering pipeline.** A `Receipt` — today,
+  built from raw JSON via the API or CLI — is rendered by exactly one
+  pipeline. No parallel code paths to keep in sync. Server-side templates
+  (Milestone 6, not yet implemented — see [Roadmap](#roadmap)) are
+  designed to build that same `Receipt` structure when they land, rather
+  than a separate rendering path of their own.
 - **Raster-first rendering.** Everything is painted onto a bitmap using an
   embedded font and sent to the printer as an image. This sidesteps printer
   codepage/i18n differences and vendor-specific QR/barcode command
@@ -78,20 +81,20 @@ other end. No client anywhere needs to know what an ESC/POS command is.
 
 ```
         ┌─────────┐   ┌──────────┐   ┌──────────┐
-JSON ──>│         │   │          │   │          │
-Markdown│ Receipt │──>│  Layout  │──>│  Canvas  │──> ESC/POS ──> Printer
-Template│ (model) │   │(measure) │   │ (paint)  │        │
+JSON ──>│ Receipt │──>│  Layout  │──>│  Canvas  │──> ESC/POS ──> Printer
+        │ (model) │   │(measure) │   │ (paint)  │        │
         └─────────┘   └──────────┘   └────┬─────┘        └─> Async job queue
                                            │                  (retry, persist)
                                            v
                                      PNG preview
 ```
 
-Every input format (raw JSON, Markdown, a server-side template like
-"today's weather") is converted into the same `Receipt` document — an
-ordered list of typed `Element`s (text, headings, images, QR codes,
-tables, and so on), deliberately similar in spirit to Slack's Block Kit.
-That single document is then run through one shared pipeline:
+A raw JSON `Receipt` — today, the only input source — is an ordered list
+of typed `Element`s (text, headings, images, QR codes, tables, and so on),
+deliberately similar in spirit to Slack's Block Kit. A server-side
+template producing that same `Receipt` structure (e.g. "today's weather")
+is planned for Milestone 6 — see [Roadmap](#roadmap) — but doesn't exist
+yet. That document is run through one shared pipeline:
 
 1. **Layout** — measure text, wrap lines, resolve images/assets, compute
    positions, using the target printer's declared capabilities
@@ -115,18 +118,19 @@ philosophy, and the reasoning behind each decision, lives in
 
 - **REST API** for printing, previewing, and checking job status
 - **CLI** (`receipt`) for scripting and quick ad-hoc prints
-- **Web UI** for browsing/printing without touching a terminal
 - **Element-based Receipt model**: text, headings, dividers, spacers,
   images, named assets, QR codes, barcodes, columns, tables, lists
   (bulleted, numbered, checkbox), feed, cut
 - **PNG preview** before anything hits paper
 - **Async, persistent print queue** with retry/backoff for transient
   printer failures
-- **Server-side templates** (e.g. a daily weather receipt) that compose
-  over the same Receipt/preview/print pipeline as everything else
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
+
+Planned but not yet implemented — see [Roadmap](#roadmap): a **Web UI**
+(Milestone 4) and **server-side templates**, e.g. a daily weather receipt
+(Milestone 6).
 
 ## Current status
 
@@ -289,6 +293,25 @@ no architecture-specific assumptions, so
 `docker buildx build --platform linux/arm64 .` cross-builds an ARM64
 image from an amd64 machine without changes.
 
+### Reverse proxy and TLS
+
+Receiptd speaks plain HTTP only — it never terminates TLS itself, and has
+no certificate configuration of any kind (see
+[ADR-0021](docs/adr/0021-transport-security-via-reverse-proxy.md)). The
+supported way to expose it beyond a trusted network is behind a reverse
+proxy (Caddy, nginx, Traefik, SWAG, HAProxy, Apache, ...) that owns
+certificate issuance/renewal and the public-facing edge. Receiptd itself
+is only ever responsible for application-layer authentication
+(`auth.enabled`, Bearer/basic) — transport security is the proxy's job,
+not something to reimplement here.
+
+- **Direct Internet exposure of `receiptd` with no reverse proxy in front
+  of it is not a supported deployment model.**
+- On a fully trusted local network (a homelab LAN, an isolated Docker
+  network), plain HTTP with no reverse proxy at all is a legitimate
+  choice — transport encryption was never needed there in the first
+  place, not something Receiptd is securing on your behalf either way.
+
 ## CLI examples
 
 ```sh
@@ -336,6 +359,12 @@ curl -X POST http://receiptd.local:8080/api/v1/print \
 curl http://receiptd.local:8080/api/v1/jobs/<job-id> \
   -H "Authorization: Bearer $RECEIPTD_TOKEN"
 ```
+
+A `Receipt`'s top-level `copies` field is decoded and round-tripped, but
+nothing in the render/print pipeline reads it yet — every Job prints
+exactly once regardless of its value. Multi-copy printing is
+unimplemented, not configurable; omit `copies` until this is documented
+here as supported.
 
 Template-backed convenience endpoints (e.g. `/api/v1/templates/weather`)
 are planned for Milestone 6 and don't exist yet — see the

@@ -19,7 +19,12 @@ type Element interface {
 // It carries no paper width, DPI, or printer identity — those are
 // resolved server-side, by printer name, at render time.
 type Receipt struct {
-	Version  int       `json:"version"`
+	Version int `json:"version"`
+	// Copies is decoded and round-tripped through the API and CLI, but
+	// nothing in the render/print pipeline reads it yet — every Job
+	// prints exactly once regardless of its value. Multi-copy printing is
+	// unimplemented, not silently broken; see the README's REST API
+	// examples section.
 	Copies   int       `json:"copies"`
 	Elements []Element `json:"elements"`
 }

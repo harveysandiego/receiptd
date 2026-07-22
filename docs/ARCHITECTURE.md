@@ -213,7 +213,7 @@ type Element interface {
 
 type Receipt struct {
     Version  int       `json:"version"`
-    Copies   int       `json:"copies,omitempty"`
+    Copies   int       `json:"copies"` // decoded, not yet acted on — see §3
     Elements []Element `json:"elements"`
 }
 
@@ -836,6 +836,12 @@ Unchanged — discriminated union via `type`, same shape as Slack's Block Kit:
   ]
 }
 ```
+
+`copies` is decoded and round-tripped (`receipt.Receipt.Copies`), but no
+stage of the pipeline — `layout`, `canvas`, `escpos`, `printer` — reads it
+yet; every Job prints exactly once regardless of its value. Multi-copy
+printing has no milestone assigned; treat the field as reserved, not
+functional.
 
 ### Polymorphism and validation in Go
 

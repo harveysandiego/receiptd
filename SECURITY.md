@@ -30,9 +30,10 @@ timeline before any public details are published.
 
 ## Scope
 
-Receiptd exposes a REST API and Web UI intended to run on a trusted local
-network (home lab, homeserver, Raspberry Pi). Relevant security concerns
-include, but are not limited to:
+Receiptd exposes a REST API (a Web UI is planned — see the README's
+[Roadmap](README.md#roadmap) — but not yet implemented) intended to run
+on a trusted local network (home lab, homeserver, Raspberry Pi). Relevant
+security concerns include, but are not limited to:
 
 - Authentication/authorization bypass in `auth` (bearer token / basic auth)
 - Path traversal or injection via the `assets` store or uploaded images
