@@ -10,4 +10,10 @@
 // "internal server error" message — never a wrapped error, filesystem or
 // database path, network error, or apperr.Error Op — with the real error
 // logged server-side instead. See writeError.
+//
+// The same boundary applies to a Job's LastError, even though it travels
+// inside a 200 response rather than an error one: it's diagnostic detail
+// a background Processor produced, not something the requesting client
+// caused, so JobStatusHandler substitutes a fixed message for it exactly
+// as writeError does for a 5xx — see sanitizedLastError.
 package api

@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/harveysandiego/receiptd/internal/api"
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
 )
@@ -52,7 +55,6 @@ func TestJobStatusHandler_Success_ReturnsJobAsJSON(t *testing.T) {
 		Receipt:     validReceipt(),
 		State:       queue.JobPending,
 		Attempts:    2,
-		LastError:   "boom",
 	}
 	svc := &fakeJobStatusService{job: job}
 	h := api.NewJobStatusHandler(svc)
@@ -86,8 +88,42 @@ func TestJobStatusHandler_Success_ReturnsJobAsJSON(t *testing.T) {
 	if body.Attempts != job.Attempts {
 		t.Errorf("attempts = %d, want %d", body.Attempts, job.Attempts)
 	}
-	if body.LastError != job.LastError {
-		t.Errorf("last_error = %q, want %q", body.LastError, job.LastError)
+	if body.LastError != "" {
+		t.Errorf("last_error = %q, want %q for a Job that hasn't failed", body.LastError, "")
+	}
+}
+
+// TestJobStatusHandler_Success_FailedJob_SanitizesLastError proves
+// LastError is never returned to a client verbatim: a Processor failure
+// may embed a filesystem path, a network error, or a printer's
+// hostname/IP (see internal/queue/process.go's ProcessNext, which is the
+// only thing that ever sets LastError), none of which this package's
+// trust boundary allows across in a client response — see doc.go and
+// TestJobStatusHandler_RealService_TransientPrinterFailure_DoesNotLeakAddress
+// for the same policy proven against a real Processor failure.
+func TestJobStatusHandler_Success_FailedJob_SanitizesLastError(t *testing.T) {
+	job := &queue.Job{
+		ID:        "abc123",
+		State:     queue.JobFailed,
+		LastError: "dial tcp 192.168.1.50:9100: connect: connection refused",
+	}
+	svc := &fakeJobStatusService{job: job}
+	h := api.NewJobStatusHandler(svc)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, newJobStatusRequest("abc123"))
+
+	var body struct {
+		LastError string `json:"last_error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.LastError == "" {
+		t.Error("last_error is empty, want a fixed non-empty message for a failed Job")
+	}
+	if strings.Contains(body.LastError, "192.168.1.50") {
+		t.Errorf("last_error = %q, must not leak the printer's address", body.LastError)
 	}
 }
 
@@ -298,5 +334,65 @@ func TestJobStatusHandler_RealService_NeverInvokesProcessor(t *testing.T) {
 
 	if proc.calls != 0 {
 		t.Errorf("processor.calls = %d, want 0 (JobStatus must never invoke the Processor)", proc.calls)
+	}
+}
+
+// TestJobStatusHandler_RealService_TransientPrinterFailure_DoesNotLeakAddress
+// runs a Job through the real Print -> ProcessNext -> printer.Send
+// pipeline against a printer.NewNetworkPrinter that cannot be reached
+// (the same net.Listen-then-Close technique
+// internal/printer/network_test.go uses for a deterministic connection
+// failure), proving the resulting JobFailed Job's LastError — which
+// printer.Send populates with the dial error, including the printer's own
+// address — never reaches an API client verbatim.
+func TestJobStatusHandler_RealService_TransientPrinterFailure_DoesNotLeakAddress(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close() // nothing listening on addr now
+
+	svc := &app.Service{}
+	svc.Printers = map[string]printer.Printer{
+		"front-desk": printer.NewNetworkPrinter(printer.Connection{Transport: "network", Address: addr}),
+	}
+	svc.Profiles = map[string]printer.Profile{"front-desk": {}}
+	// maxAttempts=1 fails on the first attempt with no retry backoff to
+	// wait out, keeping the test fast and deterministic.
+	svc.Queue = queue.NewWithRetry(queue.NewMemoryStore(), svc, 1, time.Millisecond)
+
+	ctx := context.Background()
+	jobID, err := svc.Print(ctx, validReceipt(), "front-desk")
+	if err != nil {
+		t.Fatalf("Print() error = %v, want nil", err)
+	}
+	if err := svc.Queue.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+
+	h := api.NewJobStatusHandler(svc)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, newJobStatusRequest(jobID))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body struct {
+		State     string `json:"state"`
+		LastError string `json:"last_error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.State != string(queue.JobFailed) {
+		t.Fatalf("state = %q, want %q (Process must have failed against an unreachable printer)", body.State, queue.JobFailed)
+	}
+	if body.LastError == "" {
+		t.Error("last_error is empty, want a fixed non-empty message for a failed Job")
+	}
+	if strings.Contains(body.LastError, addr) {
+		t.Errorf("last_error = %q, must not leak the printer's address %q", body.LastError, addr)
 	}
 }

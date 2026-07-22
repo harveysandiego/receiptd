@@ -75,6 +75,12 @@ func (q *Queue) ProcessNext(ctx context.Context) error {
 	if procErr != nil {
 		next.State = JobFailed
 		next.LastError = procErr.Error()
+		// Logged here, not just persisted on the Job: LastError is
+		// returned to API clients only in sanitized form (see
+		// internal/api.JobStatusHandler) because a Processor failure may
+		// embed a filesystem path or a printer's hostname/IP, so the full
+		// detail needs a home an operator can still reach.
+		log.Printf("queue: job %s failed: %v", next.ID, procErr)
 	} else {
 		next.State = JobDone
 	}

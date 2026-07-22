@@ -8,13 +8,21 @@ import (
 )
 
 // Validate checks Config against the local invariants required by the
-// frozen schema (docs/ARCHITECTURE.md §7): a supported queue.store value,
-// positive queue.max_attempts and queue.retry_backoff, and, per printer, a
-// non-empty name, valid dimensions/margins, and no duplicate names across
-// printers[]. It does not invent defaults or policy beyond what the
-// schema documents.
+// frozen schema (docs/ARCHITECTURE.md §7): a non-empty server.address, a
+// supported queue.store value, positive queue.max_attempts and
+// queue.retry_backoff, and, per printer, a non-empty name, valid
+// dimensions/margins, and no duplicate names across printers[]. It does
+// not invent defaults or policy beyond what the schema documents.
 func (c Config) Validate() error {
 	var errs []error
+
+	if c.Server.Address == "" {
+		// No default bind address: an operator must state one explicitly
+		// (docs/ARCHITECTURE.md §7's example config always shows one), the
+		// same "no silent default" stance UnmarshalYAML already takes for
+		// auth.enabled.
+		errs = append(errs, errors.New("server.address is required"))
+	}
 
 	switch c.Queue.Store {
 	case "memory", "bbolt":

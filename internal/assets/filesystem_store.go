@@ -3,6 +3,7 @@ package assets
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,7 +48,14 @@ func (s *filesystemStore) Get(_ context.Context, name string) ([]byte, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, apperr.Wrap(apperr.KindNotFound, "assets.Store.Get", err)
+			// A clean "asset %q not found" cause, not err itself: err is an
+			// *fs.PathError carrying p, the full filesystem path under
+			// s.root, which a client has no legitimate need to see (this
+			// Kind maps to a 4xx, so internal/api returns the wrapped
+			// cause's message verbatim) — matching memoryStore.Get's
+			// existing not-found error, which never had a path to leak in
+			// the first place.
+			return nil, apperr.Wrap(apperr.KindNotFound, "assets.Store.Get", fmt.Errorf("asset %q not found", name))
 		}
 		return nil, apperr.Wrap(apperr.KindPermanent, "assets.Store.Get", err)
 	}
@@ -75,7 +83,7 @@ func (s *filesystemStore) Delete(_ context.Context, name string) error {
 	}
 	if err := os.Remove(p); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return apperr.Wrap(apperr.KindNotFound, "assets.Store.Delete", err)
+			return apperr.Wrap(apperr.KindNotFound, "assets.Store.Delete", fmt.Errorf("asset %q not found", name))
 		}
 		return apperr.Wrap(apperr.KindPermanent, "assets.Store.Delete", err)
 	}

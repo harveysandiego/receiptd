@@ -14,6 +14,7 @@ import (
 	"github.com/harveysandiego/receiptd/internal/api"
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
@@ -297,6 +298,44 @@ func TestPreviewHandler_RealService_NeverEnqueuesOrProcesses(t *testing.T) {
 	}
 	if len(jobs) != 0 {
 		t.Errorf("len(store.List()) = %d, want 0 (preview must not enqueue a Job)", len(jobs))
+	}
+}
+
+// TestPreviewHandler_RealService_MissingAsset_ReturnsNotFoundWithoutLeakingPath
+// runs a Receipt referencing an asset that was never Put through the real
+// layout.Build -> assets.FilesystemStore.Get path, proving the resulting
+// 404's body carries an actionable "not found" message but never the
+// store's filesystem root — the exact detail assets.Store.Get used to
+// leak via the raw *fs.PathError os.ReadFile returns.
+func TestPreviewHandler_RealService_MissingAsset_ReturnsNotFoundWithoutLeakingPath(t *testing.T) {
+	store := queue.NewMemoryStore()
+	svc := app.New(queue.New(store, &noopProcessor{}))
+	svc.Profiles = map[string]printer.Profile{"front-desk": {}}
+	root := t.TempDir()
+	svc.Assets = assets.NewFilesystemStore(root)
+	h := api.NewPreviewHandler(svc)
+
+	body := []byte(`{"printer":"front-desk","receipt":{"version":1,"elements":[{"type":"asset","name":"missing-logo.png"}]}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	var respBody struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&respBody); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if respBody.Error == "" {
+		t.Error("error is empty, want an actionable not-found message")
+	}
+	if strings.Contains(respBody.Error, root) {
+		t.Errorf("error = %q, must not leak the assets store's filesystem root %q", respBody.Error, root)
 	}
 }
 

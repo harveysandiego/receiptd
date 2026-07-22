@@ -62,8 +62,27 @@ func (h *JobStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Receipt:     job.Receipt,
 		State:       string(job.State),
 		Attempts:    job.Attempts,
-		LastError:   job.LastError,
+		LastError:   sanitizedLastError(job.LastError),
 		CreatedAt:   job.CreatedAt,
 		UpdatedAt:   job.UpdatedAt,
 	})
+}
+
+// jobFailureMessage replaces a failed Job's raw LastError in API
+// responses. LastError is produced by a background Processor
+// (internal/queue/process.go's ProcessNext, invoked from
+// docs/ARCHITECTURE.md §4's async pipeline) and may embed a filesystem
+// path, a network error, or a printer's hostname/IP — exactly the class
+// of detail this package's trust boundary keeps out of a client-visible
+// response (see doc.go). The full detail is not lost: ProcessNext logs it
+// server-side, and it remains on the stored Job for internal diagnostics.
+const jobFailureMessage = "job processing failed; see server logs for details"
+
+// sanitizedLastError returns raw unchanged if it's empty (a Job that
+// hasn't failed has nothing to sanitize), or jobFailureMessage otherwise.
+func sanitizedLastError(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	return jobFailureMessage
 }

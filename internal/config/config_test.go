@@ -144,6 +144,9 @@ func TestLoad_Success(t *testing.T) {
 
 func TestLoad_Success_KnownModel(t *testing.T) {
 	yaml := `
+server:
+  address: ":8080"
+
 queue:
   store: bbolt
   max_attempts: 3
@@ -176,6 +179,9 @@ printers:
 
 func TestLoad_AuthSectionOmitted_DefaultsEnabledTrue(t *testing.T) {
 	yaml := `
+server:
+  address: ":8080"
+
 queue:
   store: bbolt
   max_attempts: 3
@@ -200,6 +206,9 @@ printers:
 
 func TestLoad_AuthExplicitlyDisabled_StaysDisabled(t *testing.T) {
 	yaml := `
+server:
+  address: ":8080"
+
 auth:
   enabled: false
 
@@ -269,6 +278,17 @@ printers:
 		name string
 		yaml string
 	}{
+		{
+			name: "missing server address",
+			yaml: base(validPrinter),
+		},
+		{
+			name: "empty server address",
+			yaml: `
+server:
+  address: ""
+` + base(validPrinter),
+		},
 		{
 			name: "unsupported queue store",
 			yaml: `
