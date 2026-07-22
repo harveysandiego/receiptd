@@ -134,6 +134,20 @@ HTTP layer wait on the queue, or one printer's worker wait on another's (a
   mechanism rather than inventing a second one for the clean-shutdown
   case.
 
+  **This is a deliberate change from today's behavior, not something
+  ctx-cancellation already gives us for free.** Today, a backoff wait cut
+  short by context cancellation falls through to the same code path as an
+  exhausted retry loop and is persisted as `JobFailed` — this is currently
+  unobservable only because nothing in the codebase ever cancels the
+  worker's context (it runs with a background context that lives for the
+  daemon's whole lifetime). Implementing this ADR therefore isn't just a
+  matter of wiring the worker's context up to the shutdown signal — doing
+  that alone would reproduce exactly the "mark it `Failed`" behavior this
+  ADR rejects, just on a schedule that finally makes it observable. Making
+  a cancelled backoff wait leave the Job non-terminal instead requires a
+  corresponding change to that fallthrough, so cancellation and "retries
+  exhausted" stop sharing one outcome.
+
 **Phase 3 — a hard deadline, then exit regardless:**
 
 - **The architectural commitment is that the drain (Phase 2) is bounded by

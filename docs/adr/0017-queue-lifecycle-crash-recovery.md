@@ -129,26 +129,22 @@ This requires no new capability from the storage layer beyond what
 already exists — a full scan of stored Jobs is already possible today, and
 this ADR gives that capability a second real caller, not a new one.
 
-For every Job found in `JobRunning`:
-
-1. Increment `Attempts` by one, to account for the interrupted attempt —
-   treating "the process died mid-attempt" as consuming one unit of retry
-   budget, the same as any other failed attempt does in the ordinary retry
-   loop.
-2. If the incremented `Attempts` is still under the Job's configured
-   maximum: set `State = JobPending`, set `LastError` to a fixed,
-   greppable diagnostic (e.g. `"interrupted: daemon restarted while this
-   job was running (attempt N of M)"`), and persist the change. The Job
-   re-enters the normal claiming rotation exactly like any other pending
-   Job — no special-casing downstream.
-3. Otherwise (attempts exhausted): set `State = JobFailed` with the same
-   diagnostic `LastError`, and persist the change. This is the terminal,
-   operator-visible signal the current code never produces: a Job that
-   keeps crashing the daemon (rather than merely failing inside
-   `Process`) still stops consuming restarts once its attempt budget is
-   spent, and lands somewhere an operator polling `GET /api/v1/jobs/{id}`
-   or listing jobs can actually see it, instead of sitting invisibly in
-   `Running` forever.
+For every Job found in `JobRunning`, the interrupted attempt counts
+against that Job's retry budget exactly as an ordinary failed attempt
+would — "the process died mid-attempt" consumes one unit of retry budget,
+the same as any other failed attempt does in the normal retry loop. If
+the Job's attempt count, with this one included, is still under its
+configured maximum, the Job is returned to `Pending` with a fixed,
+greppable diagnostic recorded as `LastError` (e.g. `"interrupted: daemon
+restarted while this job was running (attempt N of M)"`) — it re-enters
+the normal claiming rotation exactly like any other pending Job, with no
+special-casing downstream. If the attempt budget is instead exhausted, the
+Job moves to `Failed` with the same diagnostic. This is the terminal,
+operator-visible signal the current code never produces: a Job that keeps
+crashing the daemon (rather than merely failing inside `Process`) still
+stops consuming restarts once its attempt budget is spent, and lands
+somewhere an operator polling for a Job's status can actually see it,
+instead of sitting invisibly in `Running` forever.
 
 Reconciliation runs synchronously as part of daemon startup, strictly
 before any worker begins claiming Jobs — not because of any race with
@@ -251,10 +247,11 @@ and cannot rely on:
   gap for clients that opt in with an idempotency key — see that ADR's own
   "Not provided" framing).
 - **Not print-order preservation across a crash.** `Job.ID` is random hex
-  (`queue.newJobID`), not time-ordered, so claiming "the oldest Job by ID"
-  is not "the oldest Job chronologically" even in the ordinary case;
-  reconciling a Job back to `Pending` does not give it any priority over
-  Jobs enqueued after it, before or after the crash.
+  (`queue.newJobID`), not time-ordered, so claiming the lowest-ID pending
+  Job is not "the oldest Job chronologically" even in the ordinary case
+  (see [0016](0016-queue-concurrency-per-printer-workers.md)'s own note on
+  this); reconciling a Job back to `Pending` does not give it any priority
+  over Jobs enqueued after it, before or after the crash.
 - **Depends on the single-process worker topology
   [0016](0016-queue-concurrency-per-printer-workers.md) commits to.** The
   rule "every `Running` Job found at startup is orphaned" is sound because

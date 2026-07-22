@@ -30,6 +30,7 @@ does without reopening a discussion that already happened.
 | [0018](0018-graceful-shutdown.md) | Bounded graceful shutdown on SIGTERM/SIGINT, without interrupting an in-flight print |
 | [0019](0019-retry-pipeline-granularity.md) | Retry the whole render→encode→send pipeline, not just Send |
 | [0020](0020-idempotent-print-requests.md) | Idempotent print requests via a client-supplied key, deduped at enqueue time |
+| [0021](0021-transport-security-via-reverse-proxy.md) | TLS termination is a deployment concern, handled by a reverse proxy, not the application |
 
 ## Conventions
 

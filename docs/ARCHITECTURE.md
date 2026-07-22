@@ -1305,6 +1305,16 @@ justify it.
   inside a column, that's the point to design per-run `Block` styling —
   not before, per "discover interfaces at the second real use"
   (`CLAUDE.md`).
+- Per-`Element` validation (e.g. `maxElementDepth` bounding `Columns`/`list`
+  nesting) bounds any single Element's own pathological shape, but not a
+  `Receipt`'s aggregate size — nothing today bounds total Element count,
+  overall rendered height, or final `Canvas`/PNG size for a `Receipt` built
+  from many individually-valid Elements. A request could still drive
+  `render/canvas.Paint` into producing an extremely large bitmap. Worth a
+  future document-level limit (max Element count, max rendered height, or
+  similar) once there's a concrete reason to add one — not a gap this
+  needs to close today, since per-Element validation already closes the
+  more common pathological cases.
 
 ### Verdict
 

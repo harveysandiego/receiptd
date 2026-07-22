@@ -28,10 +28,10 @@ JobPending" — globally, with no awareness of `Job.PrinterName`
 processes exactly one Job per call, including that Job's full retry loop
 (bounded attempts, exponential backoff, gated on `apperr.KindTransient`
 per `docs/adr/0003-print-queue.md` and `docs/adr/0005-error-handling.md`).
-Put together: if the oldest pending Job belongs to a printer that is
-offline, that one goroutine spends its entire time retrying and backing
-off on that Job, and every other Job — including ones queued for a
-completely healthy, idle printer — waits behind it. This isn't a
+Put together: if the pending Job a worker would next claim belongs to a
+printer that is offline, that one goroutine spends its entire time
+retrying and backing off on that Job, and every other Job — including
+ones queued for a completely healthy, idle printer — waits behind it. This isn't a
 theoretical risk either: `internal/printer/network.go`'s own doc comment
 on `networkTimeout` already names it explicitly — "the queue worker
 processes one Job at a time ... so one such printer would wedge the
@@ -106,15 +106,14 @@ This remains true for the whole daemon lifetime of one OS process — see
 physical store — no per-printer sharding of storage, and no change to the
 existing lookup-by-ID, save, or list operations. What changes is how a
 worker decides what to process next: **the queue must provide an atomic
-operation that claims the oldest pending Job belonging to one specific
-printer**, transitioning it to the running state as part of that same
-atomic step. No two concurrent callers of this operation — for the same
-printer or for different ones — may ever observe the same Job as
-claimable and both mark it running. This is the architectural commitment;
-how each storage backend satisfies it (a single transactional write, an
-exclusive lock spanning the read-decide-write sequence, or any other
-mechanism appropriate to that backend) is an implementation choice, not
-part of this decision. The existing "give me the next pending Job,
+operation that claims the next pending Job, under the queue's existing
+selection rule, belonging to one specific printer**, transitioning it to
+the running state as part of that same atomic step. No two concurrent
+callers of this operation — for the same printer or for different ones —
+may ever observe the same Job as claimable and both mark it running. This
+is the architectural commitment; which specific mechanism a storage
+backend uses to satisfy it is an implementation choice, not part of this
+decision. The existing "give me the next pending Job,
 globally, regardless of printer" lookup is untouched and remains available
 for any consumer that genuinely wants it (e.g., a future admin/diagnostic
 view) — it simply stops being what a worker uses to decide what to claim.
@@ -140,16 +139,24 @@ double-claimed even in a scenario this design doesn't otherwise create
 (e.g., a future bug that accidentally starts two workers for one printer
 name).
 
-**Ordering guarantee, per printer.** Within one printer's lane, Jobs are
-claimed oldest-first — the same ordering guarantee the daemon already
-provides today, now scoped to one printer instead of applied globally.
-Global FIFO across all printers (a Job for printer B running before an
-earlier-enqueued Job for printer A, because B is idle while A is
-retrying) is not guaranteed, and redesigning that is explicitly out of
-scope per the project owner. Any caller depending on strict cross-printer
-submission order must serialize its own requests; nothing in this design
-promises it, and nothing about it was ever a deliberate guarantee before
-now — it was an accident of "one worker, one ordering."
+**Selection order, per printer.** Within one printer's lane, a worker
+claims the lowest-ID pending Job in that lane — the same selection rule
+the daemon already applies today, now scoped to one printer instead of
+applied globally. Because Job IDs are random hex values with no time
+component, this is not a FIFO or oldest-first guarantee in any
+chronological sense, even within one printer's lane: which of several
+Jobs queued for the same printer gets claimed next is effectively
+arbitrary with respect to enqueue order, not "whichever arrived first."
+That was already true daemon-wide before this ADR — nothing here changes
+it, only narrows its scope from the whole queue to one printer's Jobs.
+Global ordering across all printers (a Job for printer B running before
+an earlier-enqueued Job for printer A, because B is idle while A is
+retrying) is not guaranteed either, and redesigning either kind of
+ordering — global or chronological — is explicitly out of scope per the
+project owner. Any caller depending on submission order, within a
+printer's lane or across printers, must serialize its own requests or
+carry its own ordering information; nothing in this design promises
+either.
 
 **What this settles for the ADRs that follow, stated as a fact this ADR
 commits to, not as a description of what they do with it:**
@@ -240,12 +247,17 @@ Bad / costs:
   concurrent claim attempts — for the same printer and for different ones
   — against every storage backend, asserting no Job is ever claimed by
   more than one caller.
-- Cross-printer global ordering, which happened to hold today only as a
-  side effect of "one worker, one ordering," is now explicitly not a
-  guaranteed property. Anything that implicitly relied on daemon-wide
-  submission order (documentation, an operator's mental model, a client
-  integration) needs to be corrected to "ordered per printer," not
-  "ordered across the whole daemon" — a real, if narrow, behavior change
+- A single global claim order across all printers — never a chronological
+  guarantee (Job IDs are random hex, so even today's lone worker claims
+  Jobs in an order arbitrary with respect to submission time), but a real
+  property nonetheless, simply as a side effect of there being only one
+  worker draining one queue — is now explicitly not something this design
+  preserves. Anything that implicitly relied on daemon-wide submission
+  order, or even just on "there is one single sequence in which Jobs are
+  drained, whatever that sequence is" (documentation, an operator's mental
+  model, a client integration) needs to be corrected to "ordered per
+  printer," not "ordered across the whole daemon" — a real, if narrow,
+  behavior change
   to call out plainly rather than let it be discovered by surprise.
 - The queue's processing surface grows to express "process the next Job
   for this printer" rather than "process the next Job, globally." Existing
