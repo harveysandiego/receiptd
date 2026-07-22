@@ -25,6 +25,11 @@ does without reopening a discussion that already happened.
 | [0013](0013-text-and-asset-alignment.md) | Closing the Text.Align/Asset.Align/Asset.Width gap with pixel- and space-padding |
 | [0014](0014-list-elements.md) | Lists: a single `list` element for bulleted, numbered, and checkbox items |
 | [0015](0015-printer-model-catalogue.md) | A known-model printer catalogue, not a paper-width heuristic |
+| [0016](0016-queue-concurrency-per-printer-workers.md) | Per-printer worker concurrency and atomic Job claiming |
+| [0017](0017-queue-lifecycle-crash-recovery.md) | Startup reconciliation for Jobs orphaned by a daemon crash while Running |
+| [0018](0018-graceful-shutdown.md) | Bounded graceful shutdown on SIGTERM/SIGINT, without interrupting an in-flight print |
+| [0019](0019-retry-pipeline-granularity.md) | Retry the whole render→encode→send pipeline, not just Send |
+| [0020](0020-idempotent-print-requests.md) | Idempotent print requests via a client-supplied key, deduped at enqueue time |
 
 ## Conventions
 
