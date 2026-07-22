@@ -87,16 +87,25 @@ func (p *scriptedProcessor) Process(_ context.Context, _ *Job) error {
 	return p.errs[i]
 }
 
-func recordingSleep(durations *[]time.Duration) func(time.Duration) {
-	return func(d time.Duration) { *durations = append(*durations, d) }
+// recordingSleep returns a Queue.sleep stub that records every requested
+// duration instead of actually waiting, ignoring ctx entirely — the tests
+// that use it are asserting on retry counts and backoff durations, not on
+// cancellation behavior (see TestQueue_ProcessNext_RetryBackoff_Interrupted...
+// below for that).
+func recordingSleep(durations *[]time.Duration) func(context.Context, time.Duration) {
+	return func(_ context.Context, d time.Duration) { *durations = append(*durations, d) }
 }
+
+// noopSleep is a Queue.sleep stub for tests that need retries to happen
+// without delay but don't care what durations were requested.
+func noopSleep(context.Context, time.Duration) {}
 
 func TestQueue_ProcessNext_TransientError_RetriesUntilSuccess(t *testing.T) {
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}}
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
 	proc := &scriptedProcessor{errs: []error{transient, nil}}
 	var slept []time.Duration
-	q := &Queue{store: store, processor: proc, sleep: recordingSleep(&slept)}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
 
 	if err := q.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
@@ -110,7 +119,7 @@ func TestQueue_ProcessNext_TransientError_RetriesUntilSuccess(t *testing.T) {
 	if store.job.Attempts != 2 {
 		t.Errorf("job.Attempts = %d, want 2", store.job.Attempts)
 	}
-	wantSlept := []time.Duration{baseBackoff}
+	wantSlept := []time.Duration{defaultBaseBackoff}
 	if !reflect.DeepEqual(slept, wantSlept) {
 		t.Errorf("slept = %v, want %v", slept, wantSlept)
 	}
@@ -121,7 +130,7 @@ func TestQueue_ProcessNext_SuccessAfterMultipleRetries(t *testing.T) {
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
 	proc := &scriptedProcessor{errs: []error{transient, transient, nil}}
 	var slept []time.Duration
-	q := &Queue{store: store, processor: proc, sleep: recordingSleep(&slept)}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
 
 	if err := q.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
@@ -135,7 +144,7 @@ func TestQueue_ProcessNext_SuccessAfterMultipleRetries(t *testing.T) {
 	if store.job.Attempts != 3 {
 		t.Errorf("job.Attempts = %d, want 3", store.job.Attempts)
 	}
-	wantSlept := []time.Duration{baseBackoff, baseBackoff * 2}
+	wantSlept := []time.Duration{defaultBaseBackoff, defaultBaseBackoff * 2}
 	if !reflect.DeepEqual(slept, wantSlept) {
 		t.Errorf("slept = %v, want %v", slept, wantSlept)
 	}
@@ -146,25 +155,25 @@ func TestQueue_ProcessNext_RetriesExhausted_ResultsInJobFailed(t *testing.T) {
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
 	proc := &scriptedProcessor{errs: []error{transient, transient, transient}}
 	var slept []time.Duration
-	q := &Queue{store: store, processor: proc, sleep: recordingSleep(&slept)}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
 
 	if err := q.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
 	}
-	if proc.calls != maxAttempts {
-		t.Errorf("proc.calls = %d, want %d", proc.calls, maxAttempts)
+	if proc.calls != defaultMaxAttempts {
+		t.Errorf("proc.calls = %d, want %d", proc.calls, defaultMaxAttempts)
 	}
 	if store.job.State != JobFailed {
 		t.Errorf("job.State = %v, want %v", store.job.State, JobFailed)
 	}
-	if store.job.Attempts != maxAttempts {
-		t.Errorf("job.Attempts = %d, want %d", store.job.Attempts, maxAttempts)
+	if store.job.Attempts != defaultMaxAttempts {
+		t.Errorf("job.Attempts = %d, want %d", store.job.Attempts, defaultMaxAttempts)
 	}
 	if store.job.LastError != transient.Error() {
 		t.Errorf("job.LastError = %q, want %q", store.job.LastError, transient.Error())
 	}
-	if len(slept) != maxAttempts-1 {
-		t.Errorf("len(slept) = %d, want %d (one fewer than maxAttempts: no sleep after the final attempt)", len(slept), maxAttempts-1)
+	if len(slept) != defaultMaxAttempts-1 {
+		t.Errorf("len(slept) = %d, want %d (one fewer than maxAttempts: no sleep after the final attempt)", len(slept), defaultMaxAttempts-1)
 	}
 }
 
@@ -173,7 +182,7 @@ func TestQueue_ProcessNext_PermanentError_NotRetried(t *testing.T) {
 	permErr := apperr.Wrap(apperr.KindPermanent, "test", errors.New("renderer bug"))
 	proc := &scriptedProcessor{errs: []error{permErr}}
 	var slept []time.Duration
-	q := &Queue{store: store, processor: proc, sleep: recordingSleep(&slept)}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
 
 	if err := q.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
@@ -194,7 +203,7 @@ func TestQueue_ProcessNext_ValidationError_NotRetried(t *testing.T) {
 	valErr := apperr.Wrap(apperr.KindValidation, "test", errors.New("bad receipt"))
 	proc := &scriptedProcessor{errs: []error{valErr}}
 	var slept []time.Duration
-	q := &Queue{store: store, processor: proc, sleep: recordingSleep(&slept)}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
 
 	if err := q.ProcessNext(context.Background()); err != nil {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
@@ -214,7 +223,7 @@ func TestQueue_ProcessNext_UpdatesTimestampsAcrossRetries(t *testing.T) {
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending, UpdatedAt: time.Now().Add(-time.Hour)}}
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
 	proc := &scriptedProcessor{errs: []error{transient, nil}}
-	q := &Queue{store: store, processor: proc, sleep: func(time.Duration) {}}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: noopSleep}
 
 	before := time.Now()
 	if err := q.ProcessNext(context.Background()); err != nil {
@@ -236,7 +245,7 @@ func TestQueue_ProcessNext_ListErrorPropagates(t *testing.T) {
 	wantErr := apperr.Wrap(apperr.KindPermanent, "retryStore.List", errors.New("disk error"))
 	store := &retryStore{listErr: wantErr}
 	proc := &scriptedProcessor{}
-	q := &Queue{store: store, processor: proc, sleep: func(time.Duration) {}}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: noopSleep}
 
 	err := q.ProcessNext(context.Background())
 	if !apperr.Is(err, apperr.KindPermanent) {
@@ -251,7 +260,7 @@ func TestQueue_ProcessNext_SaveRunningStateErrorPropagates(t *testing.T) {
 	wantErr := apperr.Wrap(apperr.KindPermanent, "retryStore.Save", errors.New("disk full"))
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}, saveErr: wantErr}
 	proc := &scriptedProcessor{}
-	q := &Queue{store: store, processor: proc, sleep: func(time.Duration) {}}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: noopSleep}
 
 	err := q.ProcessNext(context.Background())
 	if !apperr.Is(err, apperr.KindPermanent) {
@@ -266,7 +275,7 @@ func TestQueue_ProcessNext_SaveFinalStateErrorPropagates(t *testing.T) {
 	wantErr := apperr.Wrap(apperr.KindPermanent, "retryStore.Save", errors.New("disk full"))
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}, saveErr: wantErr, failSaveCall: 2}
 	proc := &scriptedProcessor{errs: []error{nil}}
-	q := &Queue{store: store, processor: proc, sleep: func(time.Duration) {}}
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: noopSleep}
 
 	err := q.ProcessNext(context.Background())
 	if !apperr.Is(err, apperr.KindPermanent) {
@@ -274,5 +283,132 @@ func TestQueue_ProcessNext_SaveFinalStateErrorPropagates(t *testing.T) {
 	}
 	if proc.calls != 1 {
 		t.Errorf("proc.calls = %d, want 1", proc.calls)
+	}
+}
+
+// --- Configured retry settings (docs/ARCHITECTURE.md §7's
+// queue.max_attempts/queue.retry_backoff) must actually drive ProcessNext,
+// not the package's own defaultMaxAttempts/defaultBaseBackoff. ---
+
+func TestQueue_ProcessNext_HonoursConfiguredMaxAttempts(t *testing.T) {
+	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	proc := &scriptedProcessor{errs: []error{transient, transient, transient, transient, transient}}
+	var slept []time.Duration
+	const configuredMaxAttempts = 5
+	const configuredBaseBackoff = 10 * time.Millisecond
+	q := NewWithRetry(store, proc, configuredMaxAttempts, configuredBaseBackoff)
+	q.sleep = recordingSleep(&slept)
+
+	if err := q.ProcessNext(context.Background()); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+	if proc.calls != configuredMaxAttempts {
+		t.Errorf("proc.calls = %d, want %d (the configured max_attempts, not defaultMaxAttempts=%d)", proc.calls, configuredMaxAttempts, defaultMaxAttempts)
+	}
+	if store.job.State != JobFailed {
+		t.Errorf("job.State = %v, want %v", store.job.State, JobFailed)
+	}
+	wantSlept := []time.Duration{
+		configuredBaseBackoff,
+		configuredBaseBackoff * 2,
+		configuredBaseBackoff * 4,
+		configuredBaseBackoff * 8,
+	}
+	if !reflect.DeepEqual(slept, wantSlept) {
+		t.Errorf("slept = %v, want %v (the configured retry_backoff, not defaultBaseBackoff=%v)", slept, wantSlept, defaultBaseBackoff)
+	}
+}
+
+func TestNew_UsesDefaultRetrySettings(t *testing.T) {
+	q := New(NewMemoryStore(), &scriptedProcessor{})
+	if q.maxAttempts != defaultMaxAttempts {
+		t.Errorf("maxAttempts = %d, want %d", q.maxAttempts, defaultMaxAttempts)
+	}
+	if q.baseBackoff != defaultBaseBackoff {
+		t.Errorf("baseBackoff = %v, want %v", q.baseBackoff, defaultBaseBackoff)
+	}
+}
+
+func TestNewWithRetry_UsesGivenRetrySettings(t *testing.T) {
+	q := NewWithRetry(NewMemoryStore(), &scriptedProcessor{}, 7, 3*time.Second)
+	if q.maxAttempts != 7 {
+		t.Errorf("maxAttempts = %d, want 7", q.maxAttempts)
+	}
+	if q.baseBackoff != 3*time.Second {
+		t.Errorf("baseBackoff = %v, want %v", q.baseBackoff, 3*time.Second)
+	}
+}
+
+// --- A retry backoff wait must be interruptible by context cancellation
+// (docs/ARCHITECTURE.md's shutdown story assumes ProcessNext never blocks
+// past a cancelled ctx). These tests use the real sleepCtx, not a stubbed
+// sleep, since that's exactly the behavior under test. ---
+
+func TestSleepCtx_WaitsTheFullDurationWhenNotCancelled(t *testing.T) {
+	const d = 30 * time.Millisecond
+	start := time.Now()
+	sleepCtx(context.Background(), d)
+	if elapsed := time.Since(start); elapsed < d {
+		t.Errorf("sleepCtx returned after %v, want at least %v", elapsed, d)
+	}
+}
+
+func TestSleepCtx_ReturnsEarlyWhenContextAlreadyCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	const generous = 5 * time.Second
+	start := time.Now()
+	sleepCtx(ctx, generous)
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Errorf("sleepCtx took %v for an already-cancelled context, want it to return almost immediately (well under the %v duration)", elapsed, generous)
+	}
+}
+
+func TestSleepCtx_ReturnsEarlyWhenContextCancelledMidWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	const generous = 5 * time.Second
+	start := time.Now()
+	sleepCtx(ctx, generous)
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Errorf("sleepCtx took %v after mid-wait cancellation, want it to return shortly after cancel (well under the %v duration)", elapsed, generous)
+	}
+}
+
+func TestQueue_ProcessNext_RetryBackoff_InterruptedByContextCancellation(t *testing.T) {
+	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	// Every attempt fails transiently, so without cancellation ProcessNext
+	// would keep retrying up to configuredMaxAttempts.
+	proc := &scriptedProcessor{errs: []error{transient, transient, transient, transient, transient}}
+	const configuredBaseBackoff = 300 * time.Millisecond
+	q := NewWithRetry(store, proc, 5, configuredBaseBackoff)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	if err := q.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+	elapsed := time.Since(start)
+
+	if elapsed >= configuredBaseBackoff {
+		t.Errorf("ProcessNext() took %v, want well under the %v backoff — cancellation should have cut the wait short", elapsed, configuredBaseBackoff)
+	}
+	if proc.calls != 1 {
+		t.Errorf("proc.calls = %d, want 1 (retrying must stop once ctx is cancelled during the backoff wait)", proc.calls)
+	}
+	if store.job.State != JobFailed {
+		t.Errorf("job.State = %v, want %v", store.job.State, JobFailed)
 	}
 }

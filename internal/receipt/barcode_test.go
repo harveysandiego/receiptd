@@ -46,6 +46,13 @@ func TestBarcodeValidate(t *testing.T) {
 		{"valid itf", receipt.Barcode{Content: "12345678", Symbology: "itf"}, false},
 		{"itf odd digit count", receipt.Barcode{Content: "12345", Symbology: "itf"}, true},
 		{"itf non-digit", receipt.Barcode{Content: "1234567X", Symbology: "itf"}, true},
+
+		{"omitted Height (zero value) is valid", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 0}, false},
+		{"positive Height is valid", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 200}, false},
+		{"negative Height is valid (treated as omitted, see barcodeHeight)", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: -1}, false},
+		{"Height at the upper bound is valid", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 10000}, false},
+		{"Height just over the upper bound is invalid", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 10001}, true},
+		{"Height far over the upper bound is invalid", receipt.Barcode{Content: "HELLO-128", Symbology: "code128", Height: 1 << 30}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

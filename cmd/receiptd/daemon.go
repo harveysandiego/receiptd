@@ -23,6 +23,29 @@ import (
 // enough.
 const pollInterval = 1 * time.Second
 
+// HTTP server timeouts. None of these are configurable yet — the frozen
+// config schema (docs/ARCHITECTURE.md §7) has no server-timeout fields —
+// so these are sensible fixed defaults rather than zero (http.Server's own
+// zero value), which would let a slow or stalled client hold a server
+// goroutine open indefinitely:
+//
+//   - readHeaderTimeout bounds how long reading the request headers may
+//     take, the standard mitigation for a Slowloris-style attack.
+//   - readTimeout bounds the whole request (headers *and* body); it must
+//     exceed readHeaderTimeout, and allows for the largest legitimate
+//     body (the api package's own 10 MiB request-body cap, base64
+//     image data) arriving over a slow connection.
+//   - writeTimeout bounds writing the response, generous enough for
+//     PreviewHandler to render and encode a PNG.
+//   - idleTimeout bounds how long a keep-alive connection may sit between
+//     requests.
+const (
+	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 15 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
 // daemon is every component serve needs once wiring is complete: an HTTP
 // server ready to bind cfg.Server.Address, and the Queue whose Jobs the
 // background worker drains. Building one performs no network I/O and
@@ -64,7 +87,7 @@ func build(cfg *config.Config) (*daemon, error) {
 	// in one line later, exactly as service.go's own doc comment expects
 	// of a composition root.
 	svc := &app.Service{}
-	q := queue.New(store, svc)
+	q := queue.NewWithRetry(store, svc, cfg.Queue.MaxAttempts, cfg.Queue.RetryBackoff)
 	svc.Queue = q
 	svc.Printers, svc.Profiles = buildPrinters(cfg.Printers)
 	svc.Assets = assets.NewFilesystemStore(cfg.Assets.Path)
@@ -80,7 +103,14 @@ func build(cfg *config.Config) (*daemon, error) {
 	}
 
 	return &daemon{
-		srv:   &http.Server{Addr: cfg.Server.Address, Handler: handler},
+		srv: &http.Server{
+			Addr:              cfg.Server.Address,
+			Handler:           handler,
+			ReadTimeout:       readTimeout,
+			ReadHeaderTimeout: readHeaderTimeout,
+			WriteTimeout:      writeTimeout,
+			IdleTimeout:       idleTimeout,
+		},
 		queue: q,
 	}, nil
 }

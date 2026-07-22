@@ -132,6 +132,27 @@ func TestBuild_ValidConfig_Succeeds(t *testing.T) {
 	}
 }
 
+// TestBuild_ServerHasTimeouts guards against http.Server's zero-value
+// defaults (no timeout at all) reaching production: a client that opens a
+// connection and never finishes sending a request, or never reads the
+// response, would otherwise tie up a server goroutine indefinitely.
+func TestBuild_ServerHasTimeouts(t *testing.T) {
+	d := buildDaemon(t, validConfig(t))
+
+	if d.srv.ReadTimeout <= 0 {
+		t.Errorf("srv.ReadTimeout = %v, want a positive timeout", d.srv.ReadTimeout)
+	}
+	if d.srv.ReadHeaderTimeout <= 0 {
+		t.Errorf("srv.ReadHeaderTimeout = %v, want a positive timeout", d.srv.ReadHeaderTimeout)
+	}
+	if d.srv.WriteTimeout <= 0 {
+		t.Errorf("srv.WriteTimeout = %v, want a positive timeout", d.srv.WriteTimeout)
+	}
+	if d.srv.IdleTimeout <= 0 {
+		t.Errorf("srv.IdleTimeout = %v, want a positive timeout", d.srv.IdleTimeout)
+	}
+}
+
 func TestBuild_PreviewRouteWired(t *testing.T) {
 	d := buildDaemon(t, validConfig(t))
 
@@ -270,6 +291,73 @@ func TestBuild_PrintWithoutConfiguredPrinter_JobFails(t *testing.T) {
 	}
 	if statusResp.State != "failed" {
 		t.Errorf("job state = %q, want %q (%q is not in cfg.Printers)", statusResp.State, "failed", "front-desk")
+	}
+}
+
+// TestBuild_HonoursConfiguredQueueRetrySettings proves build() wires
+// cfg.Queue.MaxAttempts/RetryBackoff into the Queue it constructs, instead
+// of queue's own package-default retry settings: a printer.Connection
+// nobody is listening on fails every Send with apperr.KindTransient (see
+// printer.networkPrinter.Send), so the number of Process calls one
+// ProcessNext performs is a direct, observable proxy for which
+// max_attempts value is actually in effect.
+func TestBuild_HonoursConfiguredQueueRetrySettings(t *testing.T) {
+	// A listener opened and immediately closed frees its port back to the
+	// OS but almost certainly still refuses new connections instantly
+	// (no accept queue), giving a fast, reliable dial failure without
+	// depending on a specific unused port being unbound.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("ln.Close() error = %v", err)
+	}
+
+	const configuredMaxAttempts = 2
+	cfg := validConfig(t)
+	cfg.Queue.MaxAttempts = configuredMaxAttempts
+	cfg.Queue.RetryBackoff = time.Millisecond
+	cfg.Printers = []config.PrinterConfig{
+		{
+			Name:       "front-desk",
+			Connection: printer.Connection{Transport: "network", Address: addr},
+			Profile:    printer.Profile{WidthDots: 576, DPI: 203, DefaultCut: "full"},
+		},
+	}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, printRequest())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /api/v1/print status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+	var printResp struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &printResp); err != nil {
+		t.Fatalf("decode /print response: %v", err)
+	}
+
+	if err := d.queue.ProcessNext(context.Background()); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+printResp.JobID, nil))
+	var statusResp struct {
+		State    string `json:"state"`
+		Attempts int    `json:"attempts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &statusResp); err != nil {
+		t.Fatalf("decode job status response: %v", err)
+	}
+	if statusResp.State != "failed" {
+		t.Fatalf("job state = %q, want %q", statusResp.State, "failed")
+	}
+	if statusResp.Attempts != configuredMaxAttempts {
+		t.Errorf("job attempts = %d, want %d (cfg.Queue.MaxAttempts), not queue's own package default", statusResp.Attempts, configuredMaxAttempts)
 	}
 }
 

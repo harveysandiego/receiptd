@@ -19,10 +19,17 @@ type Divider struct {
 	Size  int    `json:"size,omitempty"`
 }
 
+// maxDividerSize bounds Size to the same value Text.maxTextSize uses:
+// Size scales render/layout.DividerThickness (2 dots) the same "integer
+// multiple" way Text.Size scales a glyph, so the same rationale — bound
+// far above any legitimate use, but finite, to keep the paint pipeline's
+// arithmetic clear of excessive allocation or overflow — applies here.
+const maxDividerSize = 100
+
 // Validate reports whether d is well-formed: Style must be empty,
 // "solid", or "dashed" — the values docs/ARCHITECTURE.md defines — and
-// Size, if set, must not be negative (the same rule Text.Validate()
-// applies to its own Size).
+// Size, if set, must be within [0, maxDividerSize] (the same rule
+// Text.Validate() applies to its own Size).
 func (d Divider) Validate() error {
 	switch d.Style {
 	case "", "solid", "dashed":
@@ -31,6 +38,9 @@ func (d Divider) Validate() error {
 	}
 	if d.Size < 0 {
 		return errors.New("divider: size must not be negative")
+	}
+	if d.Size > maxDividerSize {
+		return fmt.Errorf("divider: size must not exceed %d, got %d", maxDividerSize, d.Size)
 	}
 	return nil
 }

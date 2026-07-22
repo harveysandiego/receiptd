@@ -33,6 +33,9 @@ func TestTextValidate(t *testing.T) {
 		{"omitted Size (zero value) is valid", receipt.Text{Content: "Milk", Size: 0}, false},
 		{"positive Size is valid", receipt.Text{Content: "Milk", Size: 3}, false},
 		{"negative Size is invalid", receipt.Text{Content: "Milk", Size: -1}, true},
+		{"Size at the upper bound is valid", receipt.Text{Content: "Milk", Size: 100}, false},
+		{"Size just over the upper bound is invalid", receipt.Text{Content: "Milk", Size: 101}, true},
+		{"Size far over the upper bound is invalid", receipt.Text{Content: "Milk", Size: 1 << 30}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

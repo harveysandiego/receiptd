@@ -3,6 +3,7 @@ package queue_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/queue"
@@ -156,5 +157,98 @@ func TestQueue_ProcessNext_ProcessesAtMostOneJobPerCall(t *testing.T) {
 	}
 	if pendingCount != 1 || doneCount != 1 {
 		t.Errorf("got1.State=%v got2.State=%v, want exactly one JobPending and one JobDone", got1.State, got2.State)
+	}
+}
+
+// panicProcessor is a Processor test double that panics on any Job whose
+// PrinterName is "explode" and succeeds otherwise — used to prove
+// ProcessNext survives a panic inside the Processor (rendering, encoding,
+// or printing can all panic on unexpected input) without taking the
+// caller's goroutine down with it.
+type panicProcessor struct {
+	calls int
+}
+
+func (p *panicProcessor) Process(_ context.Context, j *queue.Job) error {
+	p.calls++
+	if j.PrinterName == "explode" {
+		panic("processor exploded")
+	}
+	return nil
+}
+
+func TestQueue_ProcessNext_ProcessorPanics_RecoveredAndJobFailed(t *testing.T) {
+	store := queue.NewMemoryStore()
+	proc := &panicProcessor{}
+	q := queue.New(store, proc)
+	ctx := context.Background()
+	j := &queue.Job{PrinterName: "explode"}
+	mustEnqueue(t, q, j)
+
+	if err := q.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil (a Processor panic must be recovered, not propagated)", err)
+	}
+
+	got, err := store.Get(ctx, j.ID)
+	if err != nil {
+		t.Fatalf("store.Get(%q) error = %v, want nil", j.ID, err)
+	}
+	if got.State != queue.JobFailed {
+		t.Errorf("store.Get().State = %v, want %v", got.State, queue.JobFailed)
+	}
+	if !strings.Contains(got.LastError, "panic") || !strings.Contains(got.LastError, "processor exploded") {
+		t.Errorf("store.Get().LastError = %q, want it to mention the panic and its recovered value", got.LastError)
+	}
+}
+
+func TestQueue_ProcessNext_ProcessorPanics_NotRetried(t *testing.T) {
+	store := queue.NewMemoryStore()
+	proc := &panicProcessor{}
+	q := queue.New(store, proc)
+	ctx := context.Background()
+	j := &queue.Job{PrinterName: "explode"}
+	mustEnqueue(t, q, j)
+
+	if err := q.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+	if proc.calls != 1 {
+		t.Errorf("proc.calls = %d, want 1 (a panic is treated as a permanent failure, not retried)", proc.calls)
+	}
+}
+
+func TestQueue_ProcessNext_ProcessorPanics_DoesNotStopLaterJobs(t *testing.T) {
+	store := queue.NewMemoryStore()
+	proc := &panicProcessor{}
+	q := queue.New(store, proc)
+	ctx := context.Background()
+	j1 := &queue.Job{PrinterName: "explode"}
+	j2 := &queue.Job{PrinterName: "front-desk"}
+	mustEnqueue(t, q, j1)
+	mustEnqueue(t, q, j2)
+
+	if err := q.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() #1 error = %v, want nil", err)
+	}
+	if err := q.ProcessNext(ctx); err != nil {
+		t.Fatalf("ProcessNext() #2 error = %v, want nil", err)
+	}
+
+	got1, err := store.Get(ctx, j1.ID)
+	if err != nil {
+		t.Fatalf("store.Get(%q) error = %v, want nil", j1.ID, err)
+	}
+	got2, err := store.Get(ctx, j2.ID)
+	if err != nil {
+		t.Fatalf("store.Get(%q) error = %v, want nil", j2.ID, err)
+	}
+	if got1.State != queue.JobFailed {
+		t.Errorf("got1.State = %v, want %v", got1.State, queue.JobFailed)
+	}
+	if got2.State != queue.JobDone {
+		t.Errorf("got2.State = %v, want %v (a panic on an earlier job must not stop a later job from being processed)", got2.State, queue.JobDone)
+	}
+	if proc.calls != 2 {
+		t.Errorf("proc.calls = %d, want 2", proc.calls)
 	}
 }

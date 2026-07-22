@@ -223,6 +223,38 @@ func TestPreviewHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 	}
 }
 
+// TestPreviewHandler_ServiceError_NonAppErrError_SanitizedByStatusNotKind
+// proves the sanitisation policy keys off the response's HTTP status, not
+// whether the error even has an apperr.Kind — see
+// TestPrintHandler_ServiceError_NonAppErrError_SanitizedByStatusNotKind's
+// identical rationale.
+func TestPreviewHandler_ServiceError_NonAppErrError_SanitizedByStatusNotKind(t *testing.T) {
+	svc := &fakePreviewService{err: errors.New("boom: /var/lib/receiptd/assets permission denied")}
+	h := api.NewPreviewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/preview", bytes.NewReader(validPreviewRequestBody()))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error != "internal server error" {
+		t.Errorf("error = %q, want the generic message %q", body.Error, "internal server error")
+	}
+	if strings.Contains(body.Error, "boom") || strings.Contains(body.Error, "assets") {
+		t.Errorf("error = %q, must not leak the underlying error for a 5xx response even without an apperr.Kind", body.Error)
+	}
+}
+
 // --- Tests against the real app.Service, proving the handler actually
 // renders a PNG via the existing pipeline and never touches the queue. ---
 

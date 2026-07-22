@@ -20,6 +20,9 @@ func TestDividerValidate(t *testing.T) {
 		{"zero size", receipt.Divider{Size: 0}, false},
 		{"positive size", receipt.Divider{Size: 2}, false},
 		{"negative size", receipt.Divider{Size: -1}, true},
+		{"size at the upper bound is valid", receipt.Divider{Size: 100}, false},
+		{"size just over the upper bound is invalid", receipt.Divider{Size: 101}, true},
+		{"size far over the upper bound is invalid", receipt.Divider{Size: 1 << 30}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

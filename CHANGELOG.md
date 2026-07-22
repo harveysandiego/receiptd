@@ -9,6 +9,32 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Fixed
+
+- The background queue worker no longer crashes the whole daemon if
+  rendering, encoding, or printing panics: the panic is recovered, logged
+  with the Job ID and a stack trace, and the Job is failed
+  (`apperr.KindPermanent`, not retried) — later Jobs are still processed
+  normally.
+- `queue.max_attempts` and `queue.retry_backoff` now actually take
+  effect. Previously `config.Validate` accepted and required them, but
+  the queue worker silently used its own hardcoded 3 attempts/5s backoff
+  instead.
+- A queued Job's retry backoff wait is now interruptible by context
+  cancellation instead of always sleeping out the full delay.
+- `receiptd`'s HTTP server now sets `ReadTimeout`, `ReadHeaderTimeout`,
+  `WriteTimeout`, and `IdleTimeout` instead of using `net/http`'s
+  no-timeout defaults, so a slow or stalled client can no longer hold a
+  server goroutine open indefinitely.
+
+### Security
+
+- `text`/`heading`'s `size`, `divider`'s `size`, and `barcode`'s `height`
+  are now bounded (`apperr.KindValidation` above 100, 100, and 10,000
+  dots respectively) — previously only a negative value was rejected, so
+  an oversized value could force an excessive allocation or overflow an
+  integer further down the rendering pipeline.
+
 ## [0.3.1] - 2026-07-22
 
 ### Security

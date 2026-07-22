@@ -50,6 +50,14 @@ type Barcode struct {
 // Height is omitted or non-positive.
 const DefaultBarcodeHeight = 80
 
+// maxBarcodeHeightDots bounds Height the same way Spacer.maxSpacerHeightDots
+// bounds Spacer.Height: render/layout.GenerateBarcodeBitmap allocates its
+// rasterized bitmap sized directly off Height, so an unbounded Height
+// would let one Barcode force an arbitrarily large allocation; 10,000
+// dots is about 1.25m at 203 DPI, far beyond any real barcode's use, but
+// finite.
+const maxBarcodeHeightDots = 10000
+
 // BarcodeSymbologies is every value Barcode.Symbology accepts: the
 // complete, stable v1 set frozen by docs/adr/0009-barcode-symbologies.md.
 var BarcodeSymbologies = []string{"code128", "ean13", "ean8", "upca", "code39", "itf"}
@@ -108,12 +116,13 @@ func (b Barcode) Encode() (barcode.Barcode, error) {
 }
 
 // Validate reports whether b is well-formed: Content must be non-empty
-// and valid UTF-8, Symbology must be one of BarcodeSymbologies, and
-// Content must actually be encodable as that symbology — checked by
-// attempting the real encode (Encode), the same "Validate does the real
-// local work rather than reimplementing its rules" precedent
-// QRCode.Validate already sets. Height and ShowText are never invalid —
-// see their doc comments on Barcode for how each is handled.
+// and valid UTF-8, Symbology must be one of BarcodeSymbologies, Content
+// must actually be encodable as that symbology — checked by attempting
+// the real encode (Encode), the same "Validate does the real local work
+// rather than reimplementing its rules" precedent QRCode.Validate already
+// sets — and Height, if positive, must not exceed maxBarcodeHeightDots.
+// ShowText is never invalid, and a zero or negative Height is valid (see
+// its own doc comment: it means DefaultBarcodeHeight, not an error).
 func (b Barcode) Validate() error {
 	if b.Content == "" {
 		return errors.New("barcode: content is required")
@@ -126,6 +135,9 @@ func (b Barcode) Validate() error {
 	}
 	if !IsSupportedBarcodeSymbology(b.Symbology) {
 		return fmt.Errorf("barcode: unsupported symbology %q (supported: %s)", b.Symbology, strings.Join(BarcodeSymbologies, ", "))
+	}
+	if b.Height > maxBarcodeHeightDots {
+		return fmt.Errorf("barcode: height must not exceed %d, got %d", maxBarcodeHeightDots, b.Height)
 	}
 	if _, err := b.Encode(); err != nil {
 		return fmt.Errorf("barcode: content cannot be encoded as %s: %w", b.Symbology, err)

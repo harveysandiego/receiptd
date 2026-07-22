@@ -505,11 +505,18 @@ reports as its own native glyph:
 - `1` is normal size (no scaling).
 - `2` is double size (every glyph pixel becomes a 2x2 block), `3` is
   triple size, and so on.
-- Negative values are the only invalid input: `Text.Validate()` rejects a
-  negative `Size` as `apperr.KindValidation`, consistent with every other
+- Negative values are invalid: `Text.Validate()` rejects a negative
+  `Size` as `apperr.KindValidation`, consistent with every other
   `Validate()` in this schema. `Validate()` stays fast and local for this
   check — no rendering or Font access required to reject a negative
   integer.
+- `Size` above `receipt.maxTextSize` (100) is also invalid, for the same
+  reason `Spacer.Height` and `Feed.Lines` are bounded: left unbounded, a
+  single glyph's scaled bitmap allocation (`render/canvas.scaleGlyph`,
+  sized off `Width*factor, Height*factor`) and the layout arithmetic that
+  positions it (`Font.LineHeight() * Style.Size`) would be open to an
+  arbitrarily large allocation or integer overflow from one oversized or
+  malicious value.
 
 `Heading` gains no fields of its own. It remains exactly:
 
@@ -609,6 +616,9 @@ both `render/layout.Build` (`Y` advancement) and `render/canvas.Paint`
 since `Style` is documented as text-rendering hints and a divider's
 thickness isn't one. See
 `docs/adr/0012-divider-thickness-default-and-scaling.md`.
+`Divider.Validate()` rejects a negative `Size`, and — the same bound
+`Text.Size` uses, for the same reason — a `Size` above
+`receipt.maxDividerSize` (100), as `apperr.KindValidation`.
 
 ### Image vs. Asset — restored as separate types
 

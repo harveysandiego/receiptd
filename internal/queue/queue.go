@@ -16,16 +16,39 @@ import (
 type Queue struct {
 	store     Store
 	processor Processor
-	// sleep is called between retry attempts; it's a field rather than a
-	// direct time.Sleep call so tests can inject a non-blocking stub
-	// instead of waiting out real backoff delays.
-	sleep func(time.Duration)
+	// maxAttempts and baseBackoff configure ProcessNext's retry behavior —
+	// see their doc comments on defaultMaxAttempts/defaultBaseBackoff in
+	// process.go, which New uses as the values here.
+	maxAttempts int
+	baseBackoff time.Duration
+	// sleep waits for one retry backoff, returning early if ctx is
+	// cancelled first; it's a field rather than a direct call to the
+	// package-level sleepCtx so tests can inject a non-blocking, ctx-
+	// agnostic stub instead of waiting out real backoff delays.
+	sleep func(ctx context.Context, d time.Duration)
 }
 
 // New returns a Queue that persists Jobs via store and processes them with
-// processor.
+// processor, retrying apperr.KindTransient failures up to
+// defaultMaxAttempts times with backoff starting at defaultBaseBackoff.
+// Use NewWithRetry instead when the caller has real configured retry
+// settings (cmd/receiptd's composition root always does — see
+// config.QueueConfig).
 func New(store Store, processor Processor) *Queue {
-	return &Queue{store: store, processor: processor, sleep: time.Sleep}
+	return NewWithRetry(store, processor, defaultMaxAttempts, defaultBaseBackoff)
+}
+
+// NewWithRetry returns a Queue exactly like New, except ProcessNext retries
+// an apperr.KindTransient failure up to maxAttempts times with backoff
+// starting at baseBackoff, instead of New's defaults.
+func NewWithRetry(store Store, processor Processor, maxAttempts int, baseBackoff time.Duration) *Queue {
+	return &Queue{
+		store:       store,
+		processor:   processor,
+		maxAttempts: maxAttempts,
+		baseBackoff: baseBackoff,
+		sleep:       sleepCtx,
+	}
 }
 
 // Enqueue assigns j a new ID, sets its State to JobPending, stamps

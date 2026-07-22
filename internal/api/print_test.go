@@ -226,6 +226,39 @@ func TestPrintHandler_ServiceError_MapsKindToStatus(t *testing.T) {
 	}
 }
 
+// TestPrintHandler_ServiceError_NonAppErrError_SanitizedByStatusNotKind
+// proves the sanitisation policy keys off the response's HTTP status, not
+// whether the error even has an apperr.Kind: a plain error (one
+// statusForError can't classify, so it falls back to
+// http.StatusInternalServerError) must be sanitized exactly like a
+// classified apperr.KindPermanent error.
+func TestPrintHandler_ServiceError_NonAppErrError_SanitizedByStatusNotKind(t *testing.T) {
+	svc := &fakePrintService{err: errors.New("boom: /var/lib/receiptd/queue.db permission denied")}
+	h := api.NewPrintHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(validPrintRequestBody()))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Error != "internal server error" {
+		t.Errorf("error = %q, want the generic message %q", body.Error, "internal server error")
+	}
+	if strings.Contains(body.Error, "boom") || strings.Contains(body.Error, "queue.db") {
+		t.Errorf("error = %q, must not leak the underlying error for a 5xx response even without an apperr.Kind", body.Error)
+	}
+}
+
 // --- Tests against the real app.Service, proving the handler actually
 // results in a queued Job and never triggers processing — not just that
 // it calls an interface method correctly. ---
