@@ -14,11 +14,10 @@ import (
 	"github.com/boombuler/barcode/twooffive"
 )
 
-// Barcode is a receipt element that renders as a generated 1D barcode
-// bitmap encoding Content — the same "generation" pattern QRCode already
-// establishes (render/layout.GenerateBarcodeBitmap turns it into pixels
-// at render time, which then flow through the same raster pipeline Image
-// and QRCode already use).
+// Barcode renders as a generated 1D barcode bitmap encoding Content — the
+// same "generation" pattern as QRCode: render/layout.GenerateBarcodeBitmap
+// turns it into pixels at render time, which flow through the raster
+// pipeline Image and QRCode also use.
 type Barcode struct {
 	Content string `json:"content"`
 
@@ -28,21 +27,14 @@ type Barcode struct {
 	// github.com/boombuler/barcode itself supports.
 	Symbology string `json:"symbology"`
 
-	// Height is the barcode's target height in dots (its bar thickness,
-	// not related to its width). Zero or omitted means
-	// DefaultBarcodeHeight. Unlike QRCode.Size, this has no effect on the
-	// barcode's width: a barcode's width is driven entirely by how many
-	// modules Content encodes into.
+	// Height is the barcode's target height in dots. Zero or omitted means
+	// DefaultBarcodeHeight. Unlike QRCode.Size it does not affect width,
+	// which is driven entirely by how many modules Content encodes into.
 	Height int `json:"height,omitempty"`
 
 	// ShowText selects whether Content is printed as human-readable text
-	// beneath the bars: render/layout.Build adds one extra
-	// render/layout.BarcodeCaption Block, Content space-padded to sit
-	// roughly centered under the barcode's own rendered width
-	// (render/layout.alignPad — leading spaces sized to the
-	// embedded font's fixed glyph advance, not a geometric/font-independent
-	// centering), which render/canvas.Paint paints through the same
-	// glyph-by-glyph path any other text Block uses.
+	// beneath the bars, as an extra render/layout.BarcodeCaption Block
+	// roughly centered under the barcode's rendered width.
 	ShowText bool `json:"show_text,omitempty"`
 }
 
@@ -50,12 +42,10 @@ type Barcode struct {
 // Height is omitted or non-positive.
 const DefaultBarcodeHeight = 80
 
-// maxBarcodeHeightDots bounds Height the same way Spacer.maxSpacerHeightDots
-// bounds Spacer.Height: render/layout.GenerateBarcodeBitmap allocates its
-// rasterized bitmap sized directly off Height, so an unbounded Height
-// would let one Barcode force an arbitrarily large allocation; 10,000
-// dots is about 1.25m at 203 DPI, far beyond any real barcode's use, but
-// finite.
+// maxBarcodeHeightDots bounds Height: render/layout.GenerateBarcodeBitmap
+// sizes its bitmap directly off Height, so an unbounded Height would let
+// one Barcode force an arbitrarily large allocation. 10,000 dots is about
+// 1.25m at 203 DPI, far beyond any real barcode's use, but finite.
 const maxBarcodeHeightDots = 10000
 
 // BarcodeSymbologies is every value Barcode.Symbology accepts: the
@@ -78,15 +68,13 @@ func IsSupportedBarcodeSymbology(symbology string) bool {
 }
 
 // Encode encodes b.Content using the github.com/boombuler/barcode
-// encoder for b.Symbology, returning an error if Content is not valid
-// data for that symbology. Exported so render/layout.GenerateBarcodeBitmap
-// performs the exact same encode Validate already checked.
+// encoder for b.Symbology, erroring if Content is not valid data for that
+// symbology. Exported so render/layout.GenerateBarcodeBitmap performs the
+// exact same encode Validate already checked.
 //
-// ean13 and ean8 each require Content's length to match the chosen
-// symbology (12/13 digits, 7/8 digits respectively) before delegating to
-// github.com/boombuler/barcode/ean, which otherwise infers EAN-8 vs
-// EAN-13 purely from length. upca has no dedicated encoder in that
-// library, so it is encoded as EAN-13 with Content prefixed "0".
+// The explicit length checks for ean13/ean8/upca pin down a symbology the
+// underlying ean encoder otherwise infers purely from length; upca has no
+// dedicated encoder, so it is encoded as EAN-13 with Content prefixed "0".
 func (b Barcode) Encode() (barcode.Barcode, error) {
 	switch b.Symbology {
 	case "code128":
@@ -117,12 +105,10 @@ func (b Barcode) Encode() (barcode.Barcode, error) {
 
 // Validate reports whether b is well-formed: Content must be non-empty
 // and valid UTF-8, Symbology must be one of BarcodeSymbologies, Content
-// must actually be encodable as that symbology — checked by attempting
-// the real encode (Encode), the same "Validate does the real local work
-// rather than reimplementing its rules" precedent QRCode.Validate already
-// sets — and Height, if positive, must not exceed maxBarcodeHeightDots.
-// ShowText is never invalid, and a zero or negative Height is valid (see
-// its own doc comment: it means DefaultBarcodeHeight, not an error).
+// must be encodable as that symbology — checked by attempting the real
+// encode (Encode) rather than reimplementing its rules — and Height, if
+// positive, must not exceed maxBarcodeHeightDots. A zero or negative
+// Height is valid: it means DefaultBarcodeHeight, not an error.
 func (b Barcode) Validate() error {
 	if b.Content == "" {
 		return errors.New("barcode: content is required")
@@ -145,9 +131,8 @@ func (b Barcode) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes b alongside the "type":"barcode" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes b with the "type":"barcode" discriminator the
+// registry polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (b Barcode) MarshalJSON() ([]byte, error) {
 	type alias Barcode
 	return json.Marshal(struct {

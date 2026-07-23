@@ -7,28 +7,23 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// EmbeddedFont is the built-in Font: a fixed-width bitmap face compiled
-// into the binary via golang.org/x/image/font/basicfont, so no font file
-// is read at runtime. Consistent with docs/adr/0002-raster-rendering.md,
-// its glyphs are already pixels, not an outline rasterized on demand.
+// EmbeddedFont is the built-in Font: a fixed-width bitmap face compiled into
+// the binary via golang.org/x/image/font/basicfont, so no font file is read
+// at runtime and its glyphs are already pixels (docs/adr/0002-raster-rendering.md).
 //
-// EmbeddedFont's own native resolution is basicfont.Face7x13's 7x13
-// glyphs upscaled by the fixed nativeScale below, baked in here rather
-// than left at basicfont's raw size: real 203 DPI thermal hardware
-// testing found 7x13 dots too small to read reliably
-// (docs/adr/0008-embedded-font-legibility.md). This is purely an
-// internal resolution change — Style.Size (docs/ARCHITECTURE.md §3)
-// keeps its exact documented meaning, an integer multiple of
-// EmbeddedFont's own native glyph, with 1 (or omitted) still
-// "unscaled"; it's just that "unscaled" now means 14x26, not 7x13.
+// Its native resolution is basicfont.Face7x13 upscaled by nativeScale, baked
+// in because real 203 DPI thermal hardware found 7x13 dots too small to read
+// (docs/adr/0008-embedded-font-legibility.md). This is purely an internal
+// resolution change — Style.Size keeps its documented meaning (an integer
+// multiple of the native glyph, 1 or omitted still "unscaled"); "unscaled"
+// now just means 14x26, not 7x13.
 //
 // The zero value is ready to use.
 type EmbeddedFont struct{}
 
-// nativeScale is the fixed nearest-neighbour upscale baked into every
-// glyph, advance, and line height EmbeddedFont reports, applied before
-// Style.Size scaling ever sees them — see EmbeddedFont's own doc
-// comment and docs/adr/0008-embedded-font-legibility.md.
+// nativeScale is the fixed nearest-neighbour upscale baked into every glyph,
+// advance, and line height, applied before Style.Size scaling — see
+// EmbeddedFont and docs/adr/0008-embedded-font-legibility.md.
 const nativeScale = 2
 
 // Measure returns the width of s, in dots, as the sum of each rune's
@@ -60,15 +55,12 @@ func (EmbeddedFont) Glyph(r rune) (GlyphBitmap, int) {
 	return upscale(raw, nativeScale), adv.Round() * nativeScale
 }
 
-// upscale returns bmp scaled by an exact integer factor via
-// nearest-neighbour replication (each source pixel becomes a
-// factor x factor block) — the same scaling contract
-// render/canvas.scaleGlyph applies for Style.Size, duplicated here in
-// miniature rather than imported: render/layout sits below
-// render/canvas in the package dependency order (docs/ARCHITECTURE.md
-// §11) and must not import it. This bakes EmbeddedFont's own native
-// resolution (nativeScale); it has nothing to do with Style.Size, which
-// render/canvas applies separately, afterwards.
+// upscale returns bmp scaled by an integer factor via nearest-neighbour
+// replication — the same contract render/canvas.scaleGlyph applies for
+// Style.Size, duplicated here rather than imported because render/layout
+// sits below render/canvas in the dependency order and must not import it
+// (docs/ARCHITECTURE.md §11). This bakes nativeScale only; Style.Size is
+// applied separately by render/canvas afterwards.
 func upscale(bmp GlyphBitmap, factor int) GlyphBitmap {
 	if factor <= 1 {
 		return bmp

@@ -8,11 +8,9 @@ import (
 
 // Text is a line, or paragraph, of plain content. Align, Bold, Italic,
 // Underline, Strikethrough, and Size are rendering hints interpreted by
-// the bitmap renderer (docs/ARCHITECTURE.md §3 "Text styling",
-// docs/adr/0007-bitmap-text-styling.md, docs/adr/0013-text-and-asset-alignment.md).
-// Align is a closed enum — "" (omitted, left), "left", "center", or
-// "right" — the same closed-vocabulary pattern Barcode.Symbology and
-// QRCode.ErrorCorrection already establish, applied here per ADR-0013.
+// the bitmap renderer (docs/adr/0007-bitmap-text-styling.md,
+// docs/adr/0013-text-and-asset-alignment.md). Align is a closed enum:
+// "" (omitted, left), "left", "center", or "right".
 type Text struct {
 	Content       string `json:"content"`
 	Align         string `json:"align,omitempty"`
@@ -23,22 +21,17 @@ type Text struct {
 	Size          int    `json:"size,omitempty"`
 }
 
-// maxTextSize bounds Size to a value no legitimate receipt would exceed:
-// at Size 100, a single embedded-font glyph (14x26 dots native, see
-// render/layout.EmbeddedFont) already renders at 1400x2600 dots — about
-// 175x325mm at 203 DPI, far larger than any physical receipt could use.
-// Bounding it here keeps render/canvas.Paint's f.LineHeight() * Style.Size
-// arithmetic and scaleGlyph's bitmap allocation (sized off Width*factor,
-// Height*factor) well clear of both excessive allocation and integer
-// overflow for an oversized or malicious value.
+// maxTextSize bounds Size: at 100, a single embedded-font glyph (14x26
+// dots native) already renders at 1400x2600 dots, about 175x325mm at 203
+// DPI — larger than any physical receipt. Bounding it keeps
+// render/canvas.Paint's glyph-scaling arithmetic and bitmap allocation
+// clear of excessive allocation and integer overflow.
 const maxTextSize = 100
 
 // Validate reports whether t is well-formed: Content must be non-empty,
-// Align must be "", "left", "center", or "right" (docs/adr/0013-text-and-asset-alignment.md),
-// and Size, if set, must be within [0, maxTextSize]. Size is an integer
-// bitmap scale factor (docs/adr/0007-bitmap-text-styling.md); 0 (omitted)
-// means "unscaled" and is normalized to 1 by render/layout.Build, not
-// rejected here.
+// Align must be "", "left", "center", or "right", and Size, if set, must
+// be within [0, maxTextSize]. Size 0 (omitted) means "unscaled" and is
+// normalized to 1 by render/layout.Build, not rejected here.
 func (t Text) Validate() error {
 	if t.Content == "" {
 		return errors.New("text: content is required")
@@ -57,9 +50,8 @@ func (t Text) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes t alongside the "type":"text" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes t with the "type":"text" discriminator the registry
+// polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (t Text) MarshalJSON() ([]byte, error) {
 	type alias Text
 	return json.Marshal(struct {

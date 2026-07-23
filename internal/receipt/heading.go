@@ -20,9 +20,8 @@ func (h Heading) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes h alongside the "type":"heading" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes h with the "type":"heading" discriminator the
+// registry polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (h Heading) MarshalJSON() ([]byte, error) {
 	type alias Heading
 	return json.Marshal(struct {

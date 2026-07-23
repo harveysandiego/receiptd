@@ -9,24 +9,21 @@ import (
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
 
-// networkTimeout bounds both how long dialing a printer may take and how
-// long delivering the encoded bytes to it may take, via conn's write
-// deadline. Without the latter, a printer (or anything on that network
-// segment) that accepts the TCP connection but never reads would block
-// Send's Write forever: the queue worker processes one Job at a time (see
-// cmd/receiptd's runWorker), so one such printer would wedge the entire
-// print queue indefinitely, not just its own Job. 30 seconds is generous
-// for delivering a single receipt's worth of raster bytes to a LAN-local
-// thermal printer while still bounding the worst case to "one stuck job
-// blocks the queue for 30s," not forever.
+// networkTimeout bounds both dialing a printer and, via conn's write
+// deadline, delivering the encoded bytes to it. Without the latter, a
+// printer that accepts the connection but never reads would block Send's
+// Write forever; since the queue worker processes one Job at a time (see
+// runWorker), that one printer would wedge the entire queue indefinitely.
+// 30s is generous for a receipt's raster bytes to a LAN-local thermal
+// printer while bounding the worst case to "one stuck job blocks the
+// queue for 30s," not forever.
 const networkTimeout = 30 * time.Second
 
-// networkPrinter sends already-encoded bytes to a printer reachable over
-// TCP. It dials fresh for every Send and Status call rather than holding a
-// connection open between them: print jobs are infrequent enough, and a
-// long-idle socket to this class of device unreliable enough, that a
-// short-lived per-call connection is simpler and more robust than managing
-// a persistent one's staleness.
+// networkPrinter sends already-encoded bytes to a printer over TCP,
+// dialing fresh for every Send and Status rather than holding a connection
+// open: print jobs are infrequent and a long-idle socket to this class of
+// device is unreliable enough that a per-call connection is simpler and
+// more robust than managing a persistent one's staleness.
 type networkPrinter struct {
 	address string
 	dial    func(ctx context.Context, network, address string) (net.Conn, error)
@@ -34,11 +31,10 @@ type networkPrinter struct {
 }
 
 // NewNetworkPrinter returns a Printer that delivers bytes to conn.Address
-// over TCP. It does not dial eagerly — construction cannot fail, and the
-// printer need not be reachable yet for a Printer instance to exist for
-// it — only Send and Status touch the network. Which Connection.Transport
-// value routes here is cmd/receiptd's decision (the composition root), not
-// this constructor's; conn.Transport is not consulted.
+// over TCP. It does not dial eagerly — construction cannot fail and the
+// printer need not be reachable yet; only Send and Status touch the
+// network. Routing Connection.Transport here is cmd/receiptd's decision,
+// so conn.Transport is not consulted.
 func NewNetworkPrinter(conn Connection) Printer {
 	return &networkPrinter{
 		address: conn.Address,
@@ -47,14 +43,12 @@ func NewNetworkPrinter(conn Connection) Printer {
 	}
 }
 
-// Send dials p.address and writes data in full before closing the
-// connection. A single Write call is not guaranteed to consume the whole
-// slice, so Send keeps calling Write with whatever remains until every
-// byte is sent or a call fails — the same "keep writing" contract
-// io.Copy/io.WriteString implement, applied here directly because net.Conn
-// is used without going through one of those. The whole write loop shares
-// one p.timeout deadline (not one per Write call) — see networkTimeout's
-// doc comment for why an unbounded Write is unacceptable here.
+// Send dials p.address and writes data in full before closing. A single
+// Write may not consume the whole slice, so Send loops until every byte
+// is sent or a call fails — the "keep writing" contract io.Copy
+// implements, applied directly to net.Conn here. One p.timeout deadline
+// covers the whole loop, not each Write — see networkTimeout for why an
+// unbounded Write is unacceptable.
 func (p *networkPrinter) Send(ctx context.Context, data []byte) error {
 	conn, err := p.dial(ctx, "tcp", p.address)
 	if err != nil {
@@ -83,9 +77,8 @@ func (p *networkPrinter) Send(ctx context.Context, data []byte) error {
 }
 
 // Status reports the printer reachable if a TCP connection to p.address
-// can be established. Raw TCP — the JetDirect/AppSocket convention thermal
-// printers speak on this port — has no query command this transport could
-// send to report anything more specific than that.
+// succeeds. Raw TCP — the JetDirect/AppSocket convention thermal printers
+// speak — has no query command to report anything more specific.
 func (p *networkPrinter) Status(ctx context.Context) (Status, error) {
 	conn, err := p.dial(ctx, "tcp", p.address)
 	if err != nil {

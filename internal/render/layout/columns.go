@@ -7,15 +7,10 @@ import (
 )
 
 // ColumnsLine is one already-wrapped, column-aligned line of a
-// receipt.Columns's rendered output — analogous to TableLine for
-// receipt.Table (see TableLine's own doc comment for why Build produces a
-// distinct Block-carrying type here rather than reusing receipt.Text: a
-// Columns-derived Block keeps its own identity through layout, the same
-// as every other element type). render/canvas.Paint paints a
-// ColumnsLine's Content through the exact same glyph-by-glyph path a
-// receipt.Text Block already uses (see canvas.textContent) — this is not
-// a second text-rendering primitive, just one more case recognized by the
-// existing one.
+// receipt.Columns's output — see TableLine for why Build produces a
+// distinct Block-carrying type rather than reusing receipt.Text.
+// render/canvas.Paint paints its Content through the same glyph-by-glyph
+// path as receipt.Text (canvas.textContent).
 type ColumnsLine struct {
 	Content string
 }
@@ -26,25 +21,19 @@ type ColumnsLine struct {
 func (ColumnsLine) Validate() error { return nil }
 
 // columnsLines turns c into the plain-text lines Build lays out as
-// ColumnsLine Blocks: each column's own content, word-wrapped to its share
-// of widthDots (columnWidths) and composed side by side into full-width
-// lines — the same technique receipt.Table's own column layout already
-// uses (see tableLines, tableRowLines), generalized from a Table's
-// plain-string cells to a Column's own []receipt.Element content.
+// ColumnsLine Blocks: each column's content word-wrapped to its share of
+// widthDots (columnWidths) and composed side by side — the same technique
+// tableLines uses, generalized from a Table's string cells to a Column's
+// []receipt.Element.
 //
-// Only receipt.Text is supported inside a column (see columnLines):
-// side-by-side layout in this architecture works by composing
-// already-wrapped plain text into a single Block per row, since
-// render/layout.Block carries no horizontal position and no per-run
-// styling of its own (docs/ARCHITECTURE.md §2) — the same constraint that
-// already limits receipt.Table's own cells to plain strings. Any other
-// element type inside a column, including receipt.Heading (see
-// columnLines's own doc comment for why Heading specifically is rejected
-// rather than downgraded), returns an error, which Build reports as
-// apperr.KindPermanent: accepted and recursively validated by
-// receipt.Columns.Validate() per the frozen schema (docs/ARCHITECTURE.md
-// §3), but not yet renderable inside a column — the same "ahead of
-// implementation" position Text.Align and Asset.Align currently hold.
+// Only receipt.Text is supported inside a column (see columnLines): a Block
+// carries no horizontal position and no per-run styling
+// (docs/ARCHITECTURE.md §2), so side-by-side layout works only by composing
+// already-wrapped plain text. Any other element type returns an error,
+// which Build reports as apperr.KindPermanent — accepted and validated by
+// receipt.Columns.Validate per the frozen schema (§3) but not yet
+// renderable, the same "ahead of implementation" position Text.Align and
+// Asset.Align hold.
 func columnsLines(c receipt.Columns, widthDots int, f Font) ([]string, error) {
 	widths := columnWidths(c.Columns, widthDots, f)
 
@@ -79,23 +68,17 @@ func columnsLines(c receipt.Columns, widthDots int, f Font) ([]string, error) {
 }
 
 // columnWidths divides widthDots across len(cols) content budgets in
-// proportion to each Column's own Weight (0 or omitted floors to 1 via
-// ResolveSize, the same "unscaled means 1" convention receipt.Text.Size
-// and receipt.Divider.Size already use), each separated by a one-space
-// gap — sum(widths) plus (len(cols)-1) gaps always equals exactly
-// widthDots, the same invariant tableColumnWidths already establishes for
-// receipt.Table. Any remainder from the division goes to the last column.
-// A budget that would be non-positive floors to len(cols) dots rather than
-// falling back to "unconstrained" — a narrow Profile still constrains, it
-// just wraps aggressively, the same behaviour tableColumnWidths already
-// has.
+// proportion to each Column's Weight (0 floors to 1 via ResolveSize),
+// separated by one-space gaps — sum(widths) plus (len(cols)-1) gaps always
+// equals widthDots, the invariant tableColumnWidths establishes. Remainder
+// goes to the last column. A non-positive budget floors to len(cols) dots
+// rather than "unconstrained": a narrow Profile still constrains, it just
+// wraps aggressively.
 //
-// widthDots <= 0 (Build's documented "no printer configured" sentinel,
-// see wrapText) returns all-zero widths: columnLines (via wrapText) and
-// padToWidth both already no-op at width <= 0, so columns compose as a
-// single unwrapped, unpadded line per row, separated only by the one-space
-// gap — the same "no width to constrain to" fallback receipt.Table's own
-// tableLines uses.
+// widthDots <= 0 (Build's "no printer configured" sentinel, see wrapText)
+// returns all-zero widths, so columns compose as a single unwrapped line
+// per row separated by the gap — columnLines and padToWidth already no-op
+// at width <= 0.
 func columnWidths(cols []receipt.Column, widthDots int, f Font) []int {
 	widths := make([]int, len(cols))
 	if widthDots <= 0 {
@@ -125,25 +108,15 @@ func columnWidths(cols []receipt.Column, widthDots int, f Font) []int {
 	return widths
 }
 
-// columnLines returns col's own content as already-wrapped lines, each
-// wrapped to width via wrapText — the same greedy word-wrap every
-// receipt.Text uses — in the order col.Elements appears, one or more
-// output lines per receipt.Text element. Any other element type is
-// reported as an error rather than silently skipped or given placeholder
-// content (see columnsLines).
+// columnLines returns col's content as already-wrapped lines, each wrapped
+// to width via wrapText, in order. Any non-Text element is reported as an
+// error (see columnsLines).
 //
-// receipt.Heading is deliberately not supported here, even though it is
-// content Build otherwise knows how to lay out: a composed ColumnsLine
-// Block carries exactly one Style for its whole line (columnsLines merges
-// one line from every column into a single Block), so a Heading's
-// Bold/Size styling (headingStyle) cannot be preserved once its line is
-// merged with a sibling column's own — possibly plain-Text — content on
-// the same row, without either per-run styling within a Block or per-
-// column horizontal positioning, both new rendering primitives out of
-// scope here. Silently painting a Heading at normalStyle instead would
-// change what Heading means without saying so, so Build rejects it the
-// same way any other unsupported nested element type already is, rather
-// than downgrading it.
+// receipt.Heading is rejected rather than downgraded: a composed ColumnsLine
+// Block carries one Style for its whole line, so a Heading's Bold/Size
+// styling cannot survive being merged with a sibling column's content
+// without per-run styling or per-column positioning, both out of scope.
+// Painting it at normalStyle would silently change what Heading means.
 func columnLines(col receipt.Column, width int, f Font) ([]string, error) {
 	var lines []string
 	for _, el := range col.Elements {

@@ -71,14 +71,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // internalServerErrorMessage is the fixed body every 5xx response uses in
 // place of err.Error(). The API is the trust boundary (docs/ARCHITECTURE.md
-// §5): a 4xx status means the request itself was the problem, so
-// err.Error() — which may include the apperr.Error Op and the wrapped
-// cause — is actionable detail worth returning. A 5xx status means
-// something on the server's side failed, and err.Error() at that point may
-// contain a filesystem or database path, a network error, or other
-// implementation detail no client has a legitimate need to see; the
-// underlying err is still logged server-side by writeError before being
-// discarded.
+// §5): a 4xx means the request itself was the problem, so err.Error() is
+// actionable detail worth returning, but a 5xx means the server failed and
+// err.Error() may leak a filesystem/database path, network error, or other
+// implementation detail no client needs. The real err is logged
+// server-side by writeError before being discarded.
 const internalServerErrorMessage = "internal server error"
 
 func writeError(w http.ResponseWriter, status int, err error) {

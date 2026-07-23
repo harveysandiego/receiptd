@@ -16,12 +16,10 @@ import (
 )
 
 // The types below are the CLI's own encoding of receiptd's REST wire
-// format (docs/ARCHITECTURE.md §4's /api/v1/preview, /api/v1/print, and
-// GET /api/v1/jobs/{id}). They deliberately duplicate internal/api's
-// unexported request/response structs field-for-field rather than
-// importing them: the CLI depends on the documented HTTP contract, not on
-// the server package's Go types, so cmd/receipt has no import of
-// internal/api at all.
+// format (docs/ARCHITECTURE.md §4). They deliberately duplicate
+// internal/api's unexported request/response structs field-for-field
+// rather than importing them: the CLI depends on the documented HTTP
+// contract, not the server package's Go types.
 
 // printRequest is the wire shape of a POST /api/v1/print request body.
 type printRequest struct {
@@ -62,24 +60,21 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// apiClient is a minimal HTTP client for receiptd's own REST API: it holds
-// only what every request needs (base URL, bearer token, and an
-// *http.Client) and turns a non-2xx response into an error. Receipt
-// validation and rendering both stay server-side (docs/ARCHITECTURE.md
-// §4) — apiClient only serializes requests and deserializes responses, it
-// holds no receipt-processing logic of its own.
+// apiClient is a minimal HTTP client for receiptd's own REST API, holding
+// only what every request needs (base URL, bearer token, *http.Client)
+// and turning a non-2xx response into an error. Validation and rendering
+// stay server-side (docs/ARCHITECTURE.md §4); apiClient only
+// (de)serializes.
 type apiClient struct {
 	baseURL string
 	token   string
 	http    *http.Client
 }
 
-// newAPIClient builds an apiClient from cfg: baseURL derived from
-// cfg.Server.Address, and token via the existing auth.ResolveToken. A bind
-// address with no host (e.g. ":8080", the documented default) is treated
-// as localhost, since the CLI's default use case is a receiptd running on
-// the same host — the config schema has no separate client-facing
-// address, and adding one is out of scope for this slice.
+// newAPIClient builds an apiClient from cfg: baseURL from
+// cfg.Server.Address, token via auth.ResolveToken. A bind address with no
+// host (e.g. ":8080", the documented default) is treated as localhost,
+// since the CLI's default use case is a receiptd on the same host.
 func newAPIClient(cfg *config.Config) (*apiClient, error) {
 	token, err := auth.ResolveToken(cfg.Auth)
 	if err != nil {
@@ -100,10 +95,10 @@ func apiBaseURL(address string) string {
 }
 
 // do sends a request built from method, path, and body (nil for none),
-// attaching the bearer token when set, and returns the raw response body
-// for any 2xx status. A transport failure (e.g. no daemon listening at
-// baseURL) and a non-2xx response (decoded via errorResponse when
-// possible) are both returned as plain errors ready for cobra to print.
+// attaching the bearer token when set, and returns the raw body of any
+// 2xx response. A transport failure and a non-2xx response (decoded via
+// errorResponse when possible) are both returned as plain errors ready
+// for cobra to print.
 func (c *apiClient) do(ctx context.Context, method, path string, body []byte) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {

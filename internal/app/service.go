@@ -15,26 +15,22 @@ import (
 // grows into as later slices land.
 type Service struct {
 	Queue *queue.Queue
-	// Printers maps a Job's PrinterName to the already-constructed Printer
-	// instance Process sends encoded bytes to. cmd/receiptd builds each
-	// entry once at startup from its Connection (docs/ARCHITECTURE.md §4
-	// step 8f) — Service never sees a Connection itself. A nil map (the
-	// zero value) is safe to read from: a PrinterName with no entry is
-	// reported by Process as apperr.KindNotFound, not a panic.
+	// Printers maps a Job's PrinterName to its already-constructed Printer.
+	// cmd/receiptd builds each entry at startup from its Connection
+	// (docs/ARCHITECTURE.md §4 step 8f); Service never sees a Connection. A
+	// nil map is safe to read from: an unknown PrinterName is reported by
+	// Process as apperr.KindNotFound, not a panic.
 	Printers map[string]printer.Printer
-	// Profiles maps a Job's PrinterName to the printer.Profile Process
-	// resolves before encoding (docs/ARCHITECTURE.md §4 step 8a) and passes
-	// to escpos.Encode, the same key space as Printers. A nil map is safe
-	// to read from: a PrinterName with no entry is reported by Process as
-	// apperr.KindNotFound, not a panic.
+	// Profiles maps a Job's PrinterName to the Profile Process passes to
+	// escpos.Encode (docs/ARCHITECTURE.md §4 step 8a), the same key space
+	// as Printers. A nil map is safe to read from: an unknown PrinterName
+	// is reported as apperr.KindNotFound, not a panic.
 	Profiles map[string]printer.Profile
-	// Assets resolves a receipt.Asset's Name to its bytes (docs/ARCHITECTURE.md
-	// §3 "Image vs. Asset"), passed straight through to layout.Build by
-	// render. A nil Assets is safe unless a Receipt actually contains an
-	// Asset element — cmd/receiptd's composition root always supplies one
-	// (assets.NewFilesystemStore(cfg.Assets.Path)); only a Service built
-	// directly by a test, the same way Printers/Profiles are already left
-	// unset in tests that don't need them, may leave this nil.
+	// Assets resolves a receipt.Asset's Name to its bytes
+	// (docs/ARCHITECTURE.md §3 "Image vs. Asset"), passed through to
+	// layout.Build by render. A nil Assets is safe unless a Receipt
+	// actually contains an Asset element; cmd/receiptd always supplies one,
+	// and only a test that doesn't need it may leave this nil.
 	Assets assets.Store
 }
 

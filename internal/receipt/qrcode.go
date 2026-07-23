@@ -10,12 +10,11 @@ import (
 	"github.com/boombuler/barcode/qr"
 )
 
-// QRCode is a receipt element that renders as a generated QR code bitmap
-// encoding Content — the "generation" counterpart to Image's "here are
-// the bytes": Image carries pixels the caller already has, QRCode
+// QRCode renders as a generated QR code bitmap encoding Content — the
+// "generation" counterpart to Image's "here are the bytes": QRCode
 // carries a string a QR encoder turns into pixels at render time
 // (render/layout.GenerateQRCodeBitmap), then flows through the same
-// raster pipeline Image already uses.
+// raster pipeline Image uses.
 type QRCode struct {
 	Content string `json:"content"`
 
@@ -58,13 +57,11 @@ func IsSupportedQRCodeErrorCorrection(level string) bool {
 
 // RecoveryLevel returns the github.com/boombuler/barcode/qr
 // error-recovery level q.ErrorCorrection names. "", "medium", and any
-// value Validate would reject all resolve to qr.M — the fallback for
-// invalid input is purely defensive (Validate always rejects an
-// unsupported ErrorCorrection before a QRCode reaches rendering; this
-// method has no way to report an error of its own, so it degrades to the
-// default rather than panicking). Exported so
-// render/layout.GenerateQRCodeBitmap resolves the exact same level
-// Validate already checked encodability against.
+// value Validate would reject all resolve to qr.M: this method cannot
+// report an error, so it degrades to the default rather than panicking
+// (Validate already rejects an unsupported level before rendering).
+// Exported so render/layout.GenerateQRCodeBitmap resolves the exact same
+// level Validate checked encodability against.
 func (q QRCode) RecoveryLevel() qr.ErrorCorrectionLevel {
 	switch q.ErrorCorrection {
 	case "low":
@@ -79,15 +76,11 @@ func (q QRCode) RecoveryLevel() qr.ErrorCorrectionLevel {
 }
 
 // Validate reports whether q is well-formed: Content must be non-empty,
-// valid UTF-8, and actually encodable as a QR code at q's
-// ErrorCorrection level — checked by attempting the real encode
-// (github.com/boombuler/barcode/qr.Encode), the same "Validate does the
-// real local work rather than reimplementing its rules" precedent
-// Image.Validate already sets for image decoding. This is local,
-// in-memory CPU work, not I/O, so it still fits this package's
-// "Validate stays fast and local" convention. ErrorCorrection, if set,
-// must be one of QRCodeErrorCorrectionLevels. Size is never invalid —
-// see the QRCode doc comment for how a non-positive Size is handled.
+// valid UTF-8, and encodable as a QR code at q's ErrorCorrection level —
+// checked by attempting the real encode (qr.Encode) rather than
+// reimplementing its rules. This is local, in-memory CPU work, so it fits
+// the package's "Validate stays fast and local" convention.
+// ErrorCorrection, if set, must be one of QRCodeErrorCorrectionLevels.
 func (q QRCode) Validate() error {
 	if q.Content == "" {
 		return errors.New("qrcode: content is required")
@@ -104,9 +97,8 @@ func (q QRCode) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes q alongside the "type":"qrcode" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes q with the "type":"qrcode" discriminator the
+// registry polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (q QRCode) MarshalJSON() ([]byte, error) {
 	type alias QRCode
 	return json.Marshal(struct {

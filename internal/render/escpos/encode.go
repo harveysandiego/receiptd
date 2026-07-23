@@ -18,29 +18,24 @@ var initSequence = []byte{0x1B, 0x40}
 // The width/height fields that vary per Canvas follow it in Encode.
 var rasterCommandFixed = []byte{0x1D, 0x76, 0x30, 0x00}
 
-// defaultFeedLines is how far Encode feeds the paper, in print lines,
-// before cutting — clearance so the cut falls below the last printed row
-// rather than through it. printer.Profile has no separate feed-distance
-// field for this: ADR-0002 groups "initialization, feed, and cut" as the
-// three genuine ESC/POS commands this design uses, and feed here is a
-// fixed mechanical part of the cut sequence, not an independent knob.
+// defaultFeedLines is how far Encode feeds the paper before cutting, so
+// the cut falls below the last printed row rather than through it. It has
+// no printer.Profile field because feed here is a fixed mechanical part of
+// the cut sequence, not an independent knob (docs/adr/0002-raster-rendering.md).
 const defaultFeedLines = 4
 
-// Encode turns c into the ESC/POS byte stream needed to print it: init,
-// c's pixels as one or more GS v 0 raster bands (chunked to at most
-// profile.MaxImageHeightDots rows each), and — when profile.SupportsCut —
-// a trailing feed+cut (docs/adr/0002-raster-rendering.md). c.Controls are
-// interleaved at their own Y, splitting the raster bands around them, and
-// an explicit trailing receipt.Cut suppresses the automatic one — see
-// endsWithExplicitCut and docs/adr/0010-printer-control-elements-via-canvas-controls.md.
+// Encode turns c into an ESC/POS byte stream: init, c's pixels as one or
+// more GS v 0 raster bands (chunked to profile.MaxImageHeightDots rows
+// each), and — when profile.SupportsCut — a trailing feed+cut
+// (docs/adr/0002-raster-rendering.md). c.Controls are interleaved at their
+// Y, splitting the bands around them; an explicit trailing receipt.Cut
+// suppresses the automatic one (docs/adr/0010-printer-control-elements-via-canvas-controls.md).
 //
-// profile.SupportsCut gates any cut, explicit or automatic — a Receipt
-// can't know whether its target has a cutter — but not receipt.Feed,
-// which needs no cutter hardware (see controlCommand).
+// profile.SupportsCut gates any cut, explicit or automatic, but not
+// receipt.Feed, which needs no cutter hardware (see controlCommand).
 //
-// Returns apperr.KindPermanent for: an empty Canvas; a Bits length that
-// doesn't match Width x Height; or profile.DefaultCut (when the automatic
-// cut fires) not being "full" or "partial".
+// Returns apperr.KindPermanent for an empty Canvas, a Bits length not
+// matching Width x Height, or a DefaultCut that isn't "full" or "partial".
 func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 	if c.Width == 0 || c.Height == 0 {
 		return nil, apperr.Wrap(apperr.KindPermanent, "escpos.Encode", fmt.Errorf("canvas has no content (%dx%d)", c.Width, c.Height))
@@ -85,9 +80,8 @@ func Encode(c *canvas.Canvas, profile printer.Profile) ([]byte, error) {
 }
 
 // endsWithExplicitCut reports whether controls ends in a Terminal
-// receipt.Cut — docs/ARCHITECTURE.md §4 step 8d's "the Receipt didn't end
-// with an explicit cut". A Cut that isn't actually last, or a trailing
-// receipt.Feed, doesn't count.
+// receipt.Cut (docs/ARCHITECTURE.md §4 step 8d). A Cut that isn't last, or
+// a trailing receipt.Feed, doesn't count.
 func endsWithExplicitCut(controls []canvas.Control) bool {
 	if len(controls) == 0 {
 		return false
@@ -123,11 +117,10 @@ func controlCommand(el receipt.Element, profile printer.Profile) ([]byte, error)
 	}
 }
 
-// bandHeight returns how many rows each raster command emitted for a
-// canvasHeight-tall Canvas should carry. maxImageHeightDots <= 0 means the
-// printer needs no chunking at all (printer.Profile's documented "0 = no
-// chunking"); a value at least canvasHeight needs no splitting either —
-// both cases return canvasHeight, so the whole image fits in one band.
+// bandHeight returns how many rows each raster command should carry.
+// maxImageHeightDots <= 0 is printer.Profile's documented "0 = no
+// chunking"; that and any value >= canvasHeight return canvasHeight, so the
+// whole image fits in one band.
 func bandHeight(canvasHeight, maxImageHeightDots int) int {
 	if maxImageHeightDots <= 0 || maxImageHeightDots >= canvasHeight {
 		return canvasHeight
@@ -135,13 +128,10 @@ func bandHeight(canvasHeight, maxImageHeightDots int) int {
 	return maxImageHeightDots
 }
 
-// appendRasterBands appends one GS v 0 command per band-tall slice of
-// c's rows within [from, to), the last band shorter than band when the
-// range isn't a whole multiple of it. from == to appends nothing. Encode
-// calls this once per gap between consecutive c.Controls (and once more
-// for whatever remains after the last one) rather than once for the whole
-// Canvas, since a raster command can't have a control's bytes spliced
-// into the middle of its data.
+// appendRasterBands appends one GS v 0 command per band-tall slice of c's
+// rows within [from, to); from == to appends nothing. Encode calls it once
+// per gap between c.Controls rather than once for the whole Canvas because
+// a raster command can't have a control's bytes spliced into its data.
 func appendRasterBands(out []byte, c *canvas.Canvas, rowBytes, band, from, to int) []byte {
 	for start := from; start < to; start += band {
 		height := band

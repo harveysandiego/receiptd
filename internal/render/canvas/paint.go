@@ -8,23 +8,14 @@ import (
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// rasterBitmap resolves el's decoded/generated bitmap if el is a
-// receipt.Image, receipt.QRCode, receipt.Barcode, or layout.AlignedAsset —
-// the element types Paint treats as "just another image"
-// (docs/ARCHITECTURE.md §4): scaled/generated to fit maxWidth and
-// converted to the same layout.GlyphBitmap representation glyphs already
-// use, so all four paint through the exact same paintGlyph primitive with
-// no element-specific drawing logic of their own. ok is false for any
-// other Element, in which case bmp and err are both zero. A
-// receipt.QRCode's or receipt.Barcode's bitmap is generated fresh here
-// (render/layout.GenerateQRCodeBitmap, render/layout.GenerateBarcodeBitmap),
-// the render-time analogue of decoding a receipt.Image's bytes — Paint
-// never distinguishes a generated bitmap from a decoded one once it has
-// one. A layout.AlignedAsset's bitmap (render/layout.DecodeAlignedAssetBitmap)
-// already has its own Width/Align resolved and, for "center"/"right",
-// left-padded with blank pixel columns before it reaches here — Paint
-// still blits it at x=0 like any other raster Block, unaware alignment
-// happened at all (docs/adr/0013-text-and-asset-alignment.md).
+// rasterBitmap resolves el's bitmap (scaled/generated to fit maxWidth) if
+// el is a receipt.Image, receipt.QRCode, receipt.Barcode, or
+// layout.AlignedAsset — the element types Paint treats as "just another
+// image" (docs/ARCHITECTURE.md §4), all painted through the one paintGlyph
+// primitive with no element-specific drawing. ok is false for any other
+// Element, with bmp and err both zero. An AlignedAsset arrives already
+// left-padded for "center"/"right" (docs/adr/0013-text-and-asset-alignment.md),
+// so Paint blits it at x=0 like any other raster Block.
 func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok bool, err error) {
 	switch e := el.(type) {
 	case receipt.Image:
@@ -57,11 +48,9 @@ func rasterBitmap(el receipt.Element, maxWidth int) (bmp layout.GlyphBitmap, ok 
 }
 
 // isRasterElement reports whether el is one of the element types
-// rasterBitmap resolves a bitmap for — used by Paint's painting pass to
-// decide whether a Block's already-resolved bitmap (see rasterBitmap)
-// should be painted via paintGlyph, without re-running the (potentially
-// expensive, in QRCode's and Barcode's case CPU-bound) resolution itself
-// a second time.
+// rasterBitmap resolves a bitmap for. Paint's painting pass uses it to
+// reuse the already-resolved bitmap rather than re-running the
+// (CPU-bound, for QRCode/Barcode) resolution a second time.
 func isRasterElement(el receipt.Element) bool {
 	switch el.(type) {
 	case receipt.Image, receipt.QRCode, receipt.Barcode, layout.AlignedAsset:
@@ -71,81 +60,43 @@ func isRasterElement(el receipt.Element) bool {
 	}
 }
 
-// Paint renders doc's Blocks onto a Canvas using doc.Font, in Block
-// order. receipt.Text, receipt.Heading, layout.TableLine (one already
-// wrapped, column-aligned line of a receipt.Table's output),
-// layout.ColumnsLine (the same for a receipt.Columns's output),
-// layout.ListLine (the same for a receipt.List's marker-and-indent-composed
-// output, per docs/adr/0014-list-elements.md), and
-// layout.BarcodeCaption (a receipt.Barcode's caption line, already
-// space-padded to sit roughly centered under the barcode's own rendered
-// width, when its ShowText is set — see render/layout.Build and
-// layout.alignPad) each occupy one line of height f.LineHeight() *
-// b.Style.Size, starting at their Y, and paint their Content as glyphs
-// styled per b.Style (see styleGlyph), followed by any
-// underline/strikethrough decoration (see paintDecorations) — decorations
-// are drawn onto the Canvas after glyph painting, never folded into a
-// glyph's own bitmap. receipt.Spacer occupies its own Height (dots) of
-// blank space and paints nothing. receipt.Divider occupies
-// layout.DividerThickness dots times its own resolved Size
-// (layout.ResolveSize) and paints either one solid horizontal line
-// spanning the Canvas's full width (paintHLine, the same primitive
-// underline and strikethrough already reuse) or, when Style is "dashed", a
-// repeating on/off pattern across that same width (see paintDivider) — it
-// is not part of the text-styling pipeline, so b.Style is not read for it;
-// its own Size and Style fields are read directly instead, the same way
-// Spacer's own Height already is.
-// receipt.Image, receipt.QRCode,
-// receipt.Barcode, and layout.AlignedAsset (a resolved receipt.Asset,
-// see render/layout.Build's own doc comment and
-// docs/adr/0013-text-and-asset-alignment.md) are all resolved to a
-// layout.GlyphBitmap (scaled to fit doc.WidthDots) by rasterBitmap —
-// decoded via layout.DecodeImageBitmap for Image, generated via
-// layout.GenerateQRCodeBitmap for QRCode and layout.GenerateBarcodeBitmap
-// for Barcode, decoded via layout.DecodeAlignedAssetBitmap for
-// AlignedAsset — then painted with the same paintGlyph primitive text
-// glyphs use: there is exactly one bitmap-painting path, not a parallel
-// one per raster element type (docs/ARCHITECTURE.md §4); like Divider,
-// b.Style is not read for any of them. receipt.Feed and receipt.Cut paint
-// nothing and occupy zero height; each becomes one Canvas.Controls entry
-// instead (docs/adr/0010-printer-control-elements-via-canvas-controls.md).
-// Any other element type returns apperr.KindPermanent rather than being
-// skipped or given placeholder pixels.
+// Paint renders doc's Blocks onto a Canvas using doc.Font, in Block order.
+// There is exactly one rendering pipeline, not a per-type one
+// (docs/ARCHITECTURE.md §4):
 //
-// Paint never inspects receipt.Text/receipt.Heading fields to decide how
-// to style a Block — only Block.Style, already fully resolved by
-// render/layout.Build (docs/ARCHITECTURE.md §3 "Text styling"). This is
-// what makes a receipt.Heading, layout.TableLine, layout.ColumnsLine,
-// layout.ListLine, or layout.BarcodeCaption Block render identically to a
-// receipt.Text Block given the same Style: there is exactly one rendering
-// pipeline, not a per-type one. The type switches below (textContent,
-// blockHeight) exist only to read structural data the frozen
-// receipt.Element interface doesn't expose generically — a
-// Text/Heading/TableLine/ColumnsLine/ListLine/BarcodeCaption's Content, a
-// Spacer's own Height — never to branch on styling.
+//   - Text-bearing Blocks (receipt.Text, receipt.Heading, layout.TableLine,
+//     layout.ColumnsLine, layout.ListLine, layout.BarcodeCaption) occupy one
+//     f.LineHeight()*b.Style.Size line and paint their Content as glyphs
+//     styled per b.Style (styleGlyph), then any underline/strikethrough
+//     (paintDecorations, layered on after glyphs, never folded into a glyph).
+//   - Raster Blocks (receipt.Image, receipt.QRCode, receipt.Barcode,
+//     layout.AlignedAsset) are resolved by rasterBitmap and painted through
+//     the same paintGlyph primitive.
+//   - receipt.Spacer occupies its own Height and paints nothing;
+//     receipt.Divider paints via paintDivider.
+//   - receipt.Feed and receipt.Cut paint nothing and become one
+//     Canvas.Controls entry each
+//     (docs/adr/0010-printer-control-elements-via-canvas-controls.md).
+//   - Any other element type returns apperr.KindPermanent.
 //
-// The Canvas is sized to doc.WidthDots when it's positive (the printer
-// width render/layout.Build resolved the Document against) — content
-// narrower than that still produces a full-width Canvas, and content
-// wider than it is clipped rather than expanding the Canvas or wrapping
-// onto another line (see paintGlyph). When doc.WidthDots is zero — a
-// Document Build produced with no printer.Profile, or one hand-built by
-// a caller that never set it — the Canvas falls back to exactly fitting
-// its painted content, this package's original behavior. Height is
-// always computed from content: a printer.Profile carries no notion of
-// paper length for Paint to target instead (see Document's own doc
-// comment).
+// Divider and raster Blocks don't read b.Style; the type switches below
+// (textContent, blockHeight) read only structural data the frozen
+// receipt.Element interface doesn't expose generically, never styling.
 //
-// Paint assumes doc.Font is set and every Block's Style.Size is >= 1,
-// same as it assumes doc came from Build rather than being hand-built: a
-// Document is always produced with its Font and fully resolved Styles, so
-// there's nothing to validate here (see docs/ARCHITECTURE.md §5 on not
-// blurring Validate-style checks into stages that can trust their input).
+// The Canvas is sized to doc.WidthDots when positive: narrower content
+// still produces a full-width Canvas, wider content is clipped rather than
+// expanding or wrapping (see paintGlyph). When doc.WidthDots is zero (a
+// Document built with no printer.Profile, or hand-built) the Canvas falls
+// back to fitting its content. Height is always computed from content.
+//
+// Paint assumes doc.Font is set and every Style.Size is >= 1: a Document
+// always comes from Build fully resolved, so there is nothing to validate
+// here (docs/ARCHITECTURE.md §5).
 func Paint(doc layout.Document) (*Canvas, error) {
 	f := doc.Font
 	width, height := doc.WidthDots, 0
-	contentFit := width <= 0         // doc.WidthDots itself never changes; capture this once, before width becomes the running content-fit max below.
-	var bitmaps []layout.GlyphBitmap // lazily allocated: most Documents paint no raster (Image/QRCode) Blocks at all
+	contentFit := width <= 0         // capture before width becomes the running content-fit max below.
+	var bitmaps []layout.GlyphBitmap // lazily allocated: most Documents paint no raster Blocks
 	for i, b := range doc.Blocks {
 		var bh int
 		if bmp, ok, err := rasterBitmap(b.Element, doc.WidthDots); ok {
@@ -215,18 +166,11 @@ func Paint(doc layout.Document) (*Canvas, error) {
 	return c, nil
 }
 
-// textContent returns el's text content if el is a receipt.Text,
-// receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine,
-// or layout.BarcodeCaption — the element types Paint paints glyphs for via
-// the same code path (see Paint's painting loop). A TableLine is a
-// receipt.Table's already-composed, already-wrapped output line, a
-// ColumnsLine is a receipt.Columns's, a ListLine is a receipt.List's
-// already-marker-and-indent-composed, already-wrapped output line, and a
-// BarcodeCaption is a receipt.Barcode's caption line, already space-padded
-// to sit roughly centered under the barcode (see render/layout.Build and
-// each type's own doc comment): Paint reads their Content exactly like
-// any other line of text, never anything Table-, Columns-, List-, or
-// Barcode-specific.
+// textContent returns el's text content if el is one of the element types
+// Paint paints glyphs for (receipt.Text, receipt.Heading, and the
+// already-composed, already-wrapped output lines layout.TableLine,
+// layout.ColumnsLine, layout.ListLine, layout.BarcodeCaption). Paint reads
+// their Content exactly like any other line of text.
 func textContent(el receipt.Element) (string, bool) {
 	switch e := el.(type) {
 	case receipt.Text:
@@ -247,17 +191,11 @@ func textContent(el receipt.Element) (string, bool) {
 }
 
 // blockHeight returns b's vertical extent in dots if its Element is a
-// supported type: f.LineHeight() * b.Style.Size for receipt.Text,
-// receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine,
-// and layout.BarcodeCaption alike (the same Style.Size used to scale their
-// glyphs — see Paint; a TableLine's, ColumnsLine's, ListLine's, or
-// BarcodeCaption's Style is always layout.Build's normalStyle, Size 1), the
-// Spacer's own Height (unaffected by Style), layout.DividerThickness times
-// the Divider's own resolved Size for a receipt.Divider (layout.ResolveSize,
-// the same resolution and the same DividerThickness constant layout.Build
-// already advanced Y by, so the two stages can never disagree about how
-// tall a Divider Block is) — or 0 for a receipt.Feed or receipt.Cut, which
-// layout.Build never advances Y for either.
+// supported type: f.LineHeight()*b.Style.Size for the text-bearing types,
+// the Spacer's own Height, layout.DividerThickness*resolved Size for a
+// Divider, or 0 for Feed/Cut. The Divider computation deliberately reuses
+// the same layout.ResolveSize and DividerThickness layout.Build advanced Y
+// by, so the two stages can never disagree about a Divider's height.
 func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 	switch e := b.Element.(type) {
 	case receipt.Text, receipt.Heading, layout.TableLine, layout.ColumnsLine, layout.ListLine, layout.BarcodeCaption:
@@ -274,19 +212,12 @@ func blockHeight(b layout.Block, f layout.Font) (int, bool) {
 }
 
 // paintDecorations draws b's underline and/or strikethrough, if styled,
-// directly onto c across [0, textWidth) — the width of the content
-// paintGlyph already painted for b. Unlike Bold/Italic (styleGlyph),
-// these are decorations layered on after the glyph bitmaps are painted,
-// never folded into the glyph bitmap itself (docs/ARCHITECTURE.md §3
-// "Text styling"): a decoration's shape doesn't depend on what glyphs
-// happen to be under it, only on b's line box, so there's nothing for
-// styleGlyph's per-glyph pipeline to do here.
-//
-// Both lines are positioned and sized (thickness) from b's own resolved
-// line height (blockHeight, the same f.LineHeight() * b.Style.Size
-// every other placement decision in this file uses), so they stay
-// correctly placed and scale naturally as Style.Size grows without Font
-// needing to expose a baseline or x-height concept it doesn't have.
+// across [0, textWidth). Unlike Bold/Italic (styleGlyph), these are
+// layered on after glyphs rather than folded into a glyph's bitmap
+// (docs/ARCHITECTURE.md §3): a decoration's shape depends only on b's line
+// box, not on the glyphs under it. Both are positioned and sized from b's
+// resolved line height (blockHeight), so they scale with Style.Size
+// without Font needing a baseline or x-height concept it doesn't have.
 func (c *Canvas) paintDecorations(b layout.Block, f layout.Font, textWidth int) {
 	if textWidth <= 0 || (!b.Style.Underline && !b.Style.Strikethrough) {
 		return
@@ -302,25 +233,20 @@ func (c *Canvas) paintDecorations(b layout.Block, f layout.Font, textWidth int) 
 }
 
 // dashDots and dashGapDots are a dashed receipt.Divider's repeating
-// on/off pattern, in dots: each dash and gap wide enough to read as
-// distinct segments at typical thermal-printer resolution rather than
-// blurring into a solid or near-invisible line, the same "legible by
-// default" goal docs/adr/0011-divider-thickness-legibility.md and
-// docs/adr/0012-divider-thickness-default-and-scaling.md already apply to
-// divider thickness itself.
+// on/off pattern, in dots: wide enough to read as distinct segments at
+// typical thermal-printer resolution rather than blurring into a solid or
+// near-invisible line, the "legible by default" goal of
+// docs/adr/0011-divider-thickness-legibility.md.
 const (
 	dashDots    = 16
 	dashGapDots = 8
 )
 
-// paintDivider paints one receipt.Divider Block at y: a solid line across
-// the Canvas's full width (paintHLine) for Style "" or "solid", or a
-// repeating dashDots-on/dashGapDots-off pattern for "dashed" — the only
-// two non-empty values receipt.Divider.Validate accepts
-// (docs/ARCHITECTURE.md §3), so there is no default case to handle. Both
-// forms share the same vertical thickness, layout.DividerThickness times
-// d's own resolved Size — Style only changes the horizontal pattern, never
-// the thickness layout.Build already advanced Y by for this Block.
+// paintDivider paints one receipt.Divider Block at y: a solid full-width
+// line for Style "" or "solid", or a dashDots-on/dashGapDots-off pattern
+// for "dashed" — the only values Validate accepts, so no default case is
+// needed. Both share the same thickness (layout.DividerThickness times d's
+// resolved Size); Style changes only the horizontal pattern.
 func (c *Canvas) paintDivider(d receipt.Divider, y int) {
 	thickness := layout.DividerThickness * layout.ResolveSize(d.Size)
 	if d.Style != "dashed" {
@@ -337,10 +263,8 @@ func (c *Canvas) paintDivider(d receipt.Divider, y int) {
 }
 
 // paintHLine sets every pixel in the horizontal band [x0, x1) x
-// [y0, y0+thickness) on c, silently dropping anything outside c's
-// bounds — the same clipping behaviour as paintGlyph, and for the same
-// reason: a Document built against a printer.Profile can specify a
-// width narrower than a decorated line's content.
+// [y0, y0+thickness) on c, silently dropping anything out of bounds — same
+// clipping as paintGlyph, and for the same reason.
 func (c *Canvas) paintHLine(x0, x1, y0, thickness int) {
 	rowBytes := (c.Width + 7) / 8
 	for y := y0; y < y0+thickness; y++ {
@@ -357,13 +281,10 @@ func (c *Canvas) paintHLine(x0, x1, y0, thickness int) {
 }
 
 // paintGlyph copies bmp's set pixels into c, offset by (x, y), silently
-// dropping any pixel that falls outside c's bounds rather than growing c
-// or wrapping onto another line. Before doc.WidthDots existed (Paint
-// always sized the Canvas to fit its content), that could never happen;
-// a Document built against a printer.Profile can now specify a width
-// narrower than some painted line's content, so this guard is load-bearing,
-// not defensive filler — without it, x or y could index past the end of
-// c.Bits.
+// dropping any pixel outside c's bounds rather than growing c or wrapping.
+// The bounds guard is load-bearing, not defensive filler: a Document built
+// against a printer.Profile can specify a width narrower than a painted
+// line's content, so without it px/py could index past the end of c.Bits.
 func (c *Canvas) paintGlyph(x, y int, bmp layout.GlyphBitmap) {
 	rowBytes := (c.Width + 7) / 8
 	srcRowBytes := (bmp.Width + 7) / 8

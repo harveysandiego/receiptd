@@ -6,12 +6,11 @@ import (
 	"strings"
 )
 
-// Bearer returns middleware that protects next behind the
-// "Authorization: Bearer <token>" scheme, checked against the given
-// expected token (typically the result of ResolveToken). A missing,
-// malformed, or incorrect credential gets a 401 response with a
-// WWW-Authenticate: Bearer challenge and never reaches next; the
-// expected token is never included in the response.
+// Bearer returns middleware that protects next behind the "Authorization:
+// Bearer <token>" scheme, checked against the expected token (typically
+// from ResolveToken). A missing, malformed, or incorrect credential gets
+// a 401 with a WWW-Authenticate: Bearer challenge and never reaches next;
+// the expected token is never echoed in the response.
 func Bearer(token string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,14 +25,12 @@ func Bearer(token string) func(next http.Handler) http.Handler {
 }
 
 // Basic returns middleware that protects next behind HTTP Basic
-// Authentication, checked against the same shared token as Bearer
-// (docs/ARCHITECTURE.md §1: Bearer and Basic share "one shared token
-// check"). The password is compared to token; the username is required to
-// be non-empty but is otherwise not checked, matching the common
+// Authentication against the same shared token as Bearer
+// (docs/ARCHITECTURE.md §1). The password is compared to token; the
+// username must be non-empty but is otherwise not checked, matching the
 // token-as-password convention. A missing, malformed, or incorrect
-// credential gets a 401 response with a WWW-Authenticate: Basic challenge
-// and never reaches next; the expected token is never included in the
-// response.
+// credential gets a 401 with a WWW-Authenticate: Basic challenge and
+// never reaches next; the expected token is never echoed in the response.
 func Basic(token string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,12 +57,11 @@ func bearerCredential(r *http.Request) (string, bool) {
 	return credential, true
 }
 
-// tokensEqual reports whether supplied matches expected using a
-// constant-time comparison, so a failed attempt can't be used to probe
-// the expected token via response timing. An empty expected token never
-// matches, so a misconfigured (unresolved) token can't be bypassed with
-// an empty credential. Shared by Bearer and Basic (docs/ARCHITECTURE.md
-// §1).
+// tokensEqual reports whether supplied matches expected in constant time,
+// so a failed attempt can't probe the expected token via response timing.
+// An empty expected token never matches, so a misconfigured (unresolved)
+// token can't be bypassed with an empty credential. Shared by Bearer and
+// Basic.
 func tokensEqual(supplied, expected string) bool {
 	if expected == "" {
 		return false

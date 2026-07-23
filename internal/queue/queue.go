@@ -21,19 +21,17 @@ type Queue struct {
 	// process.go, which New uses as the values here.
 	maxAttempts int
 	baseBackoff time.Duration
-	// sleep waits for one retry backoff, returning early if ctx is
-	// cancelled first; it's a field rather than a direct call to the
-	// package-level sleepCtx so tests can inject a non-blocking, ctx-
-	// agnostic stub instead of waiting out real backoff delays.
+	// sleep waits one retry backoff, returning early if ctx is cancelled;
+	// it's a field rather than a direct sleepCtx call so tests can inject a
+	// non-blocking stub instead of waiting out real backoff delays.
 	sleep func(ctx context.Context, d time.Duration)
 }
 
 // New returns a Queue that persists Jobs via store and processes them with
 // processor, retrying apperr.KindTransient failures up to
 // defaultMaxAttempts times with backoff starting at defaultBaseBackoff.
-// Use NewWithRetry instead when the caller has real configured retry
-// settings (cmd/receiptd's composition root always does — see
-// config.QueueConfig).
+// Use NewWithRetry when the caller has configured retry settings
+// (cmd/receiptd's composition root always does).
 func New(store Store, processor Processor) *Queue {
 	return NewWithRetry(store, processor, defaultMaxAttempts, defaultBaseBackoff)
 }
@@ -70,10 +68,9 @@ func (q *Queue) Enqueue(ctx context.Context, j *Job) error {
 }
 
 // newJobID returns a random 32-character hex string, unique with
-// overwhelming probability. crypto/rand.Read against the default reader
-// only fails on catastrophic OS entropy failure; that failure is reported
-// to the caller rather than panicking, since Enqueue already has a
-// structured way to report it.
+// overwhelming probability. crypto/rand.Read fails only on catastrophic
+// OS entropy failure, reported to the caller rather than panicking since
+// Enqueue already has a structured way to report it.
 func newJobID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

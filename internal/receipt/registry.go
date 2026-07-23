@@ -7,14 +7,11 @@ import (
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
 
-// elementDecoder decodes the raw JSON object for a single Element
-// (including its "type" field, which a decoder is free to ignore) into a
-// concrete Element value. depth is the element's own nesting level within
-// the Receipt (0 for a top-level Receipt.Elements entry) — every decoder
-// accepts it, even the ten that never recurse and simply ignore it,
-// so that Columns (the one type that does recurse, via Column.Elements)
-// can pass it on to decodeElement for its own nested elements without a
-// second, Columns-specific registry mechanism.
+// elementDecoder decodes the raw JSON object for a single Element into a
+// concrete Element value. depth is the element's nesting level (0 for a
+// top-level Receipt.Elements entry); every decoder accepts it, even the
+// ones that ignore it, so Columns (the only recursing type) can pass it on
+// to decodeElement without a separate Columns-specific mechanism.
 type elementDecoder func(data []byte, depth int) (Element, error)
 
 // registry maps a JSON "type" discriminator to the decoder for the
@@ -35,17 +32,13 @@ func registerElement(typ string, decode elementDecoder) {
 	registry[typ] = decode
 }
 
-// maxElementDepth bounds how deeply a Columns may nest another Columns
-// inside its own Column.Elements. Decoding recurses on the Go call stack
-// for each nesting level (decodeElement -> Columns' registered decoder ->
-// Columns.unmarshalJSON -> decodeElement -> ...), and a Go stack overflow
-// is a fatal, unrecoverable process crash — not a panic net/http's
-// ServeMux can recover from — so this has to be enforced structurally
-// during decode itself, rather than left to Validate() or the API's
-// request-body size limit to catch indirectly (a deeply nested payload
-// can be tiny). 32 is far beyond any legitimate receipt layout — Columns
-// nested even two or three deep is already unusual — while leaving huge
-// headroom under the default goroutine stack.
+// maxElementDepth bounds how deeply a Columns may nest another Columns.
+// Decoding recurses on the Go call stack per nesting level, and a stack
+// overflow is a fatal, unrecoverable process crash — not a panic
+// net/http's ServeMux can recover from — so the bound must be enforced
+// during decode itself, not left to Validate() or the request-body size
+// limit (a deeply nested payload can be tiny). 32 is far beyond any
+// legitimate layout while leaving huge headroom under the goroutine stack.
 const maxElementDepth = 32
 
 // decodeElement decodes a single element's raw JSON object by resolving

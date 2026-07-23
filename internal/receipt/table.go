@@ -44,9 +44,8 @@ func (t Table) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes t alongside the "type":"table" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes t with the "type":"table" discriminator the registry
+// polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (t Table) MarshalJSON() ([]byte, error) {
 	type alias Table
 	return json.Marshal(struct {

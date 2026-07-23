@@ -33,11 +33,9 @@ type jobStatusResponse struct {
 }
 
 // JobStatusHandler adapts GET /api/v1/jobs/{id} onto
-// jobStatusService.JobStatus: read the id path value, call JobStatus,
-// encode the result. It holds no business logic of its own — an unknown
-// or missing id is not special-cased here; it flows through to
-// Service.JobStatus and gets the same apperr.KindNotFound treatment as
-// any other unrecognized id.
+// jobStatusService.JobStatus. It holds no business logic of its own — an
+// unknown id flows through to Service.JobStatus and gets the same
+// apperr.KindNotFound treatment as any other.
 type JobStatusHandler struct {
 	Service jobStatusService
 }
@@ -69,13 +67,11 @@ func (h *JobStatusHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // jobFailureMessage replaces a failed Job's raw LastError in API
-// responses. LastError is produced by a background Processor
-// (internal/queue/process.go's ProcessNext, invoked from
-// docs/ARCHITECTURE.md §4's async pipeline) and may embed a filesystem
-// path, a network error, or a printer's hostname/IP — exactly the class
-// of detail this package's trust boundary keeps out of a client-visible
-// response (see doc.go). The full detail is not lost: ProcessNext logs it
-// server-side, and it remains on the stored Job for internal diagnostics.
+// responses. LastError comes from a background Processor
+// (internal/queue/process.go) and may embed a filesystem path, a network
+// error, or a printer's hostname/IP — the class of detail this package's
+// trust boundary keeps out of client responses (see doc.go). The full
+// detail is not lost: ProcessNext logs it and it stays on the stored Job.
 const jobFailureMessage = "job processing failed; see server logs for details"
 
 // sanitizedLastError returns raw unchanged if it's empty (a Job that

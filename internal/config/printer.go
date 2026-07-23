@@ -13,14 +13,14 @@ import (
 )
 
 // PrinterConfig is one configured printer, split from its YAML block
-// (docs/ARCHITECTURE.md §7) into the two frozen printer package types the
-// rest of the system uses separately. config is the only place that
-// performs this split (see docs/ARCHITECTURE.md §1, §7).
+// (docs/ARCHITECTURE.md §7) into the two frozen printer types the rest of
+// the system uses separately — config is the only place that performs
+// this split (§1, §7).
 //
-// Model is the "model:" name this entry resolved Profile from, or "" when
-// Profile came from an explicit "profile:" block instead
-// (docs/adr/0015-printer-model-catalogue.md) — informational only, no
-// code path branches on it after UnmarshalYAML has run.
+// Model is the "model:" name Profile resolved from, or "" when Profile
+// came from an explicit "profile:" block instead
+// (docs/adr/0015-printer-model-catalogue.md) — informational only, nothing
+// branches on it after UnmarshalYAML.
 type PrinterConfig struct {
 	Name       string
 	Model      string
@@ -28,16 +28,14 @@ type PrinterConfig struct {
 	Connection printer.Connection
 }
 
-// UnmarshalYAML decodes a PrinterConfig from its YAML block and splits
-// it into Profile and Connection. Per
-// docs/adr/0015-printer-model-catalogue.md, Profile is resolved from
-// exactly one of two mutually exclusive sources — a "model:" name looked
-// up in printer.ModelProfiles, or an explicit "profile:" block — and this
-// method rejects an entry giving both or neither rather than defining any
-// precedence between them. A "profile:" block's PrintableWidthMM is
-// converted to dots via widthDotsFromMM (dots = round(mm / 25.4 * dpi));
-// a "model:" lookup carries its Profile's WidthDots through unchanged, no
-// conversion involved.
+// UnmarshalYAML decodes a PrinterConfig and splits it into Profile and
+// Connection. Per docs/adr/0015-printer-model-catalogue.md, Profile comes
+// from exactly one of two mutually exclusive sources — a "model:" lookup
+// in printer.ModelProfiles or an explicit "profile:" block — and this
+// rejects an entry giving both or neither rather than defining a
+// precedence. A "profile:" block's PrintableWidthMM is converted to dots
+// via widthDotsFromMM; a "model:" lookup carries its WidthDots through
+// unchanged.
 func (p *PrinterConfig) UnmarshalYAML(value *yaml.Node) error {
 	var raw struct {
 		Name  string `yaml:"name"`
@@ -111,21 +109,19 @@ func knownModelNames() string {
 	return strings.Join(names, ", ")
 }
 
-// widthDotsFromMM converts a printable width in millimeters to dots at
-// the given dots-per-inch density: dots = round(mm / 25.4 * dpi). mm must
-// already be the printhead's printable width (a "profile:" block's
-// printable_width_mm), never a paper roll width — see
-// docs/adr/0015-printer-model-catalogue.md for why this project doesn't
-// derive one from the other.
+// widthDotsFromMM converts a printable width in mm to dots at dpi:
+// dots = round(mm / 25.4 * dpi). mm must be the printhead's printable
+// width, never a paper roll width — see
+// docs/adr/0015-printer-model-catalogue.md for why one isn't derived from
+// the other.
 func widthDotsFromMM(widthMM float64, dpi int) int {
 	return int(math.Round(widthMM / 25.4 * float64(dpi)))
 }
 
-// validate checks the local invariants the frozen schema requires of a
-// single printer entry's resolved Profile and Connection — the same
-// checks regardless of whether Profile came from a "model:" lookup or an
-// explicit "profile:" block. Checking for duplicate names spans the whole
-// printers[] list, so Config.Validate does that, not this method.
+// validate checks the local invariants the frozen schema requires of one
+// printer entry's resolved Profile and Connection. Duplicate-name
+// checking spans the whole printers[] list, so Config.Validate does that,
+// not this method.
 func (p PrinterConfig) validate() error {
 	var errs []error
 
@@ -157,8 +153,8 @@ func (p PrinterConfig) validate() error {
 		errs = append(errs, fmt.Errorf("default_cut must be %q or %q, got %q", "full", "partial", p.Profile.DefaultCut))
 	}
 	// Only "network" is implemented in v0.1; usb/bluetooth/serial are
-	// documented on printer.Connection.Transport as future transports,
-	// not yet valid here (docs/ARCHITECTURE.md §1).
+	// documented as future transports, not yet valid here
+	// (docs/ARCHITECTURE.md §1).
 	if p.Connection.Transport != "network" {
 		errs = append(errs, fmt.Errorf("transport must be %q (usb, bluetooth, serial are not yet supported), got %q", "network", p.Connection.Transport))
 	}

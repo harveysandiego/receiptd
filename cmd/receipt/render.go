@@ -14,14 +14,12 @@ import (
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// newRenderCmd builds the "render" subcommand: an offline path from a
-// Receipt JSON file to a PNG preview that needs no running daemon, using
-// exactly the same layout.Build + canvas.Paint pipeline app.Service uses
-// server-side (docs/ARCHITECTURE.md §4). It has no config or daemon to
-// resolve a real printer.Profile from, so it renders against the
-// zero-value Profile — printer.Profile.WidthDots's documented "no printer
-// configured" case — producing the same content-fit PNG this command has
-// always produced.
+// newRenderCmd builds the "render" subcommand: an offline Receipt-JSON to
+// PNG path needing no daemon, using the same layout.Build + canvas.Paint
+// pipeline app.Service uses server-side (docs/ARCHITECTURE.md §4). With no
+// config to resolve a real printer.Profile from, it renders against the
+// zero-value Profile — printer.Profile.WidthDots's "no printer configured"
+// case.
 func newRenderCmd() *cobra.Command {
 	var out string
 
@@ -60,12 +58,11 @@ func runRender(inPath, outPath string) error {
 		return err
 	}
 
-	// This offline path has no config or daemon to resolve a real
-	// assets.Store from, the same reason it renders against the zero-value
-	// printer.Profile above — an empty in-memory Store means any
-	// receipt.Asset the input Receipt contains fails as apperr.KindNotFound,
-	// the correct outcome for a name this command has no way to resolve,
-	// rather than a nil-pointer panic.
+	// No config or daemon to resolve a real assets.Store, the same reason
+	// the zero-value printer.Profile is used above — an empty in-memory
+	// Store makes any receipt.Asset fail as apperr.KindNotFound (the right
+	// outcome for a name this command can't resolve) rather than a
+	// nil-pointer panic.
 	doc, err := layout.Build(context.Background(), r, printer.Profile{}, layout.EmbeddedFont{}, assets.NewMemoryStore())
 	if err != nil {
 		return err

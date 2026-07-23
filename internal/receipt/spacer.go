@@ -1,10 +1,8 @@
-// Feed and Spacer are two of several structurally-identical Element
-// boilerplate types the registry pattern produces by design (see
-// docs/adr/0001-receipt-model.md) — one struct field, a bound check, and
-// the same Validate/MarshalJSON/init shape every other Element file
-// repeats. A shared abstraction for two ~50-line files would cost more
-// than the duplication it removes (CLAUDE.md: "Three similar lines is
-// better than a premature abstraction").
+// Feed and Spacer are structurally-identical boilerplate the registry
+// pattern produces by design (docs/adr/0001-receipt-model.md). A shared
+// abstraction for two ~50-line files would cost more than the duplication
+// it removes (CLAUDE.md: "Three similar lines is better than a premature
+// abstraction").
 
 //nolint:dupl // see the file comment above
 package receipt
@@ -38,9 +36,8 @@ func (s Spacer) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes s alongside the "type":"spacer" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes s with the "type":"spacer" discriminator the
+// registry polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (s Spacer) MarshalJSON() ([]byte, error) {
 	type alias Spacer
 	return json.Marshal(struct {

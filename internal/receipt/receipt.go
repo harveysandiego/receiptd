@@ -51,12 +51,10 @@ func (r Receipt) Validate() error {
 }
 
 // UnmarshalJSON decodes a Receipt from the discriminated-union JSON shape
-// described in docs/ARCHITECTURE.md §3: each entry in "elements" carries a
-// "type" string that selects the concrete Go type to decode it into,
-// resolved through the registry populated by every Element type's own
-// init(). Marshaling needs no equivalent method — each Element type
-// implements json.Marshaler itself, so the default struct marshaling of
-// Elements already produces the right shape.
+// (docs/ARCHITECTURE.md §3): each "elements" entry's "type" string selects
+// the concrete Go type, resolved through the registry. Marshaling needs no
+// equivalent method — each Element type implements json.Marshaler itself,
+// so default struct marshaling of Elements already produces the right shape.
 func (r *Receipt) UnmarshalJSON(data []byte) error {
 	var wire struct {
 		Version  int               `json:"version"`

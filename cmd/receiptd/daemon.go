@@ -16,29 +16,19 @@ import (
 	"github.com/harveysandiego/receiptd/internal/queue"
 )
 
-// pollInterval is how often the background queue worker checks for a
-// pending Job when idle. The frozen config schema (docs/ARCHITECTURE.md
-// §7) has no field for this yet; queue.ProcessNext already returns
-// immediately once nothing is pending, so a short fixed interval is
-// enough.
+// pollInterval is how often the idle background worker checks for a
+// pending Job. Not yet configurable (docs/ARCHITECTURE.md §7); a short
+// fixed interval suffices since ProcessNext returns immediately when
+// nothing is pending.
 const pollInterval = 1 * time.Second
 
-// HTTP server timeouts. None of these are configurable yet — the frozen
-// config schema (docs/ARCHITECTURE.md §7) has no server-timeout fields —
-// so these are sensible fixed defaults rather than zero (http.Server's own
-// zero value), which would let a slow or stalled client hold a server
-// goroutine open indefinitely:
-//
-//   - readHeaderTimeout bounds how long reading the request headers may
-//     take, the standard mitigation for a Slowloris-style attack.
-//   - readTimeout bounds the whole request (headers *and* body); it must
-//     exceed readHeaderTimeout, and allows for the largest legitimate
-//     body (the api package's own 10 MiB request-body cap, base64
-//     image data) arriving over a slow connection.
-//   - writeTimeout bounds writing the response, generous enough for
-//     PreviewHandler to render and encode a PNG.
-//   - idleTimeout bounds how long a keep-alive connection may sit between
-//     requests.
+// HTTP server timeouts, not yet configurable (docs/ARCHITECTURE.md §7).
+// Fixed non-zero defaults rather than http.Server's zero value, which
+// would let a stalled client hold a goroutine open forever:
+// readHeaderTimeout mitigates a Slowloris-style attack; readTimeout
+// bounds the whole request and must exceed it while allowing the api
+// package's 10 MiB body over a slow link; writeTimeout covers rendering
+// a preview PNG; idleTimeout bounds an idle keep-alive connection.
 const (
 	readHeaderTimeout = 5 * time.Second
 	readTimeout       = 15 * time.Second
@@ -46,10 +36,10 @@ const (
 	idleTimeout       = 120 * time.Second
 )
 
-// daemon is every component serve needs once wiring is complete: an HTTP
-// server ready to bind cfg.Server.Address, and the Queue whose Jobs the
-// background worker drains. Building one performs no network I/O and
-// never blocks — only serve does.
+// daemon is everything serve needs once wiring is complete: an HTTP
+// server ready to bind cfg.Server.Address, and the Queue the background
+// worker drains. Building one performs no network I/O and never blocks —
+// only serve does.
 type daemon struct {
 	srv   *http.Server
 	queue *queue.Queue
@@ -65,11 +55,9 @@ func loadAndBuild(configPath string) (*daemon, error) {
 	return build(cfg)
 }
 
-// build wires together the existing components Receiptd needs: the
-// configured queue Store, app.Service, the versioned API routes, and —
-// when cfg.Auth.Enabled — Bearer middleware in front of them. Every step
-// delegates to an existing constructor; this introduces no new business
-// logic of its own.
+// build wires the components a daemon needs: the configured queue Store,
+// app.Service, the versioned API routes, and — when cfg.Auth.Enabled —
+// Bearer middleware in front of them.
 func build(cfg *config.Config) (*daemon, error) {
 	store, err := buildStore(cfg.Queue)
 	if err != nil {
@@ -82,10 +70,9 @@ func build(cfg *config.Config) (*daemon, error) {
 	}
 
 	// Service and Queue are mutually referential — Service implements
-	// queue.Processor structurally, and Queue needs that Processor at
-	// construction — so Service is built first with its Queue field filled
-	// in one line later, exactly as service.go's own doc comment expects
-	// of a composition root.
+	// queue.Processor structurally and Queue needs that Processor at
+	// construction — so Service is built first and its Queue field filled
+	// in one line later.
 	svc := &app.Service{}
 	q := queue.NewWithRetry(store, svc, cfg.Queue.MaxAttempts, cfg.Queue.RetryBackoff)
 	svc.Queue = q
@@ -125,14 +112,12 @@ func buildStore(cfg config.QueueConfig) (queue.Store, error) {
 	return queue.NewBoltStore(cfg.Path)
 }
 
-// buildPrinters constructs the printer.Printer and resolves the
-// printer.Profile for every configured entry in cfgs, keyed by
-// PrinterConfig.Name — the same key app.Service.Process looks a Job's
-// PrinterName up under (docs/ARCHITECTURE.md §4 step 8a, 8f). Only
-// "network" transport is implemented, so NewNetworkPrinter is the only
-// constructor called here; config.Validate already rejects any
-// Connection.Transport other than "network" before a Config reaches
-// build, so a second case isn't needed yet (docs/ARCHITECTURE.md §11).
+// buildPrinters constructs a printer.Printer and resolves the Profile
+// for every entry in cfgs, keyed by PrinterConfig.Name — the key
+// app.Service.Process looks a Job's PrinterName up under
+// (docs/ARCHITECTURE.md §4 step 8a, 8f). Only "network" transport exists
+// (config.Validate rejects others), so a second case isn't needed yet
+// (docs/ARCHITECTURE.md §11).
 func buildPrinters(cfgs []config.PrinterConfig) (map[string]printer.Printer, map[string]printer.Profile) {
 	printers := make(map[string]printer.Printer, len(cfgs))
 	profiles := make(map[string]printer.Profile, len(cfgs))
@@ -152,11 +137,8 @@ func (d *daemon) serve() error {
 }
 
 // runWorker calls q.ProcessNext on a loop until ctx is cancelled, sleeping
-// pollInterval between calls so an idle queue doesn't busy-loop. This is
-// the "queue worker (background goroutine, independent of the HTTP
-// request...)" docs/ARCHITECTURE.md §4 step 8 describes — ProcessNext
-// already implements everything it does; runWorker only calls it
-// repeatedly.
+// pollInterval between calls so an idle queue doesn't busy-loop — the
+// background queue worker of docs/ARCHITECTURE.md §4 step 8.
 func runWorker(ctx context.Context, q *queue.Queue) {
 	for {
 		select {

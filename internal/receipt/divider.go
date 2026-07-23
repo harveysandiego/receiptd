@@ -6,30 +6,23 @@ import (
 	"fmt"
 )
 
-// Divider is a horizontal rule. Style selects "solid" (the default, a
-// continuous line) or "dashed" (a repeating on/off pattern — see
-// render/canvas.paintDivider); both render distinctly. Size is
-// an integer thickness scale factor, the same "0 or omitted means
-// unscaled" convention Text.Size uses (docs/adr/0007-bitmap-text-styling.md):
-// the rendered line is render/layout.DividerThickness dots at Size 1, or
-// a Size multiple of it for a deliberately heavier rule — see
-// docs/adr/0012-divider-thickness-default-and-scaling.md.
+// Divider is a horizontal rule. Style selects "solid" (default) or
+// "dashed". Size is an integer thickness scale factor ("0 or omitted means
+// unscaled", the Text.Size convention): the line is
+// render/layout.DividerThickness dots at Size 1, or a multiple of it for a
+// heavier rule — see docs/adr/0012-divider-thickness-default-and-scaling.md.
 type Divider struct {
 	Style string `json:"style,omitempty"`
 	Size  int    `json:"size,omitempty"`
 }
 
-// maxDividerSize bounds Size to the same value Text.maxTextSize uses:
-// Size scales render/layout.DividerThickness (2 dots) the same "integer
-// multiple" way Text.Size scales a glyph, so the same rationale — bound
-// far above any legitimate use, but finite, to keep the paint pipeline's
-// arithmetic clear of excessive allocation or overflow — applies here.
+// maxDividerSize bounds Size for the same reason as Text.maxTextSize:
+// keep the paint pipeline's arithmetic clear of excessive allocation or
+// overflow, bounded far above any legitimate use but finite.
 const maxDividerSize = 100
 
 // Validate reports whether d is well-formed: Style must be empty,
-// "solid", or "dashed" — the values docs/ARCHITECTURE.md defines — and
-// Size, if set, must be within [0, maxDividerSize] (the same rule
-// Text.Validate() applies to its own Size).
+// "solid", or "dashed", and Size, if set, must be within [0, maxDividerSize].
 func (d Divider) Validate() error {
 	switch d.Style {
 	case "", "solid", "dashed":
@@ -45,9 +38,8 @@ func (d Divider) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes d alongside the "type":"divider" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes d with the "type":"divider" discriminator the
+// registry polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (d Divider) MarshalJSON() ([]byte, error) {
 	type alias Divider
 	return json.Marshal(struct {

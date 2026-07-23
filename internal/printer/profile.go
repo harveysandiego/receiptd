@@ -7,23 +7,19 @@ package printer
 // receives a Profile.
 type Profile struct {
 	// WidthDots is the printer's paper width, in dots, at DPI.
-	// config.Validate requires every configured printer to have a
-	// positive WidthDots, so zero only ever occurs for a Profile nobody
-	// configured — e.g. the zero-value Profile cmd/receipt's fully
-	// offline `render` command passes, since it has no daemon or config
-	// to resolve a real printer from. render/layout.Build and
-	// render/canvas.Paint treat that case as "no printer width
-	// constraint," sizing the canvas to its painted content instead —
-	// the same "0 = no constraint" convention MaxImageHeightDots below
-	// already uses, so it introduces no new sentinel idiom.
+	// config.Validate requires a positive WidthDots, so zero only occurs
+	// for an unconfigured Profile — e.g. the zero-value Profile
+	// cmd/receipt's offline `render` command passes, having no config to
+	// resolve a real printer from. layout.Build and canvas.Paint treat
+	// that as "no width constraint," sizing the canvas to its content —
+	// the same "0 = no constraint" convention MaxImageHeightDots uses.
 	WidthDots int
 	// DPI is the printer's horizontal/vertical dot density.
 	DPI int
 	// MarginLeftDots and MarginRightDots are unprintable dots reserved on
-	// each side, within WidthDots. Usable content width is derived from
-	// WidthDots minus these margins by a later layout slice — Profile
-	// itself has no width-arithmetic helpers (see docs/ARCHITECTURE.md
-	// §1: capabilities and transport stay data here, not behavior).
+	// each side, within WidthDots. Usable width is derived by a later
+	// layout slice — Profile has no width-arithmetic helpers
+	// (docs/ARCHITECTURE.md §1: capabilities stay data here, not behavior).
 	MarginLeftDots  int
 	MarginRightDots int
 	// SupportsCut reports whether the printer can cut paper at all.

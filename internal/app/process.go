@@ -13,26 +13,17 @@ import (
 	"github.com/harveysandiego/receiptd/internal/render/layout"
 )
 
-// Process resolves the printer.Profile for j.PrinterName, renders
-// j.Receipt against it, encodes the rendered Canvas to ESC/POS bytes
-// against the same Profile, and sends those bytes to the Printer
-// configured for the same PrinterName — the complete Receipt -> Layout ->
-// Canvas -> ESC/POS -> Printer pipeline (docs/ARCHITECTURE.md §4 step 8).
-// It satisfies queue.Processor (docs/ARCHITECTURE.md §2) and is invoked by
+// Process renders j.Receipt against j.PrinterName's Profile, encodes the
+// Canvas to ESC/POS against that same Profile, and sends the bytes to the
+// Printer for that PrinterName — the Receipt -> Layout -> Canvas ->
+// ESC/POS -> Printer pipeline (docs/ARCHITECTURE.md §4 step 8). It
+// satisfies queue.Processor (docs/ARCHITECTURE.md §2) and is invoked by
 // Queue.ProcessNext, which owns every Job state transition — Process
-// itself never reads or writes j.State, j.Attempts, or any other Job
-// field besides Receipt and PrinterName.
+// reads only Receipt and PrinterName, never j.State, j.Attempts, or any
+// other Job field.
 //
-// The Profile is resolved once and reused for both render and
-// escpos.Encode, rather than looked up separately for each — both stages
-// need the same printer's Profile for the same Job, so there is exactly
-// one printer-name lookup per Process call, not two that could in
-// principle disagree.
-//
-// Process is orchestration only: rendering lives in render, encoding in
-// escpos.Encode, delivery in the resolved Printer's Send. Each stage's
-// error is returned exactly as received, so a caller can still branch on
-// its original apperr.Kind.
+// Process is orchestration only; each stage's error is returned exactly
+// as received, so a caller can still branch on its original apperr.Kind.
 func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 	profile, ok := s.Profiles[j.PrinterName]
 	if !ok {
@@ -57,14 +48,11 @@ func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 	return p.Send(ctx, data)
 }
 
-// render turns r into a rendered Canvas by composing the existing
-// rendering pipeline: layout.Build, then canvas.Paint, against profile —
-// see printer.Profile.WidthDots's doc comment for what a zero-value
-// profile means for the resulting Canvas's width. It uses
-// layout.EmbeddedFont, the only Font implementation that exists, and
-// passes ctx and s.Assets straight through to layout.Build — the only
-// stage in this pipeline that performs I/O, to resolve any receipt.Asset
-// r contains (docs/ARCHITECTURE.md §3 "Image vs. Asset").
+// render composes the rendering pipeline (layout.Build then canvas.Paint)
+// against profile — see printer.Profile.WidthDots for what a zero-value
+// profile means for the Canvas width. layout.Build is the only stage that
+// performs I/O, resolving any receipt.Asset r contains via s.Assets
+// (docs/ARCHITECTURE.md §3 "Image vs. Asset").
 func (s *Service) render(ctx context.Context, r receipt.Receipt, profile printer.Profile) (*canvas.Canvas, error) {
 	doc, err := layout.Build(ctx, r, profile, layout.EmbeddedFont{}, s.Assets)
 	if err != nil {

@@ -1,10 +1,8 @@
-// Feed and Spacer are two of several structurally-identical Element
-// boilerplate types the registry pattern produces by design (see
-// docs/adr/0001-receipt-model.md) — one struct field, a bound check, and
-// the same Validate/MarshalJSON/init shape every other Element file
-// repeats. A shared abstraction for two ~50-line files would cost more
-// than the duplication it removes (CLAUDE.md: "Three similar lines is
-// better than a premature abstraction").
+// Feed and Spacer are structurally-identical boilerplate the registry
+// pattern produces by design (docs/adr/0001-receipt-model.md). A shared
+// abstraction for two ~50-line files would cost more than the duplication
+// it removes (CLAUDE.md: "Three similar lines is better than a premature
+// abstraction").
 
 //nolint:dupl // see the file comment above
 package receipt
@@ -15,13 +13,10 @@ import (
 )
 
 // Feed is a printer-control element: an explicit ESC/POS paper feed of
-// Lines print lines, emitted at Feed's position among the Receipt's
-// Elements. Unlike Spacer, Feed reserves no space in the rendered
-// bitmap — feed and cut are two of the three genuine ESC/POS commands
-// this design uses (docs/adr/0002-raster-rendering.md), not Canvas
-// content, so render/layout and render/canvas treat Feed as occupying
-// zero height while render/escpos.Encode is the stage that turns it into
-// bytes at the right position in the output stream.
+// Lines print lines. Unlike Spacer it reserves no space in the rendered
+// bitmap — feed and cut are genuine ESC/POS commands, not Canvas content
+// (docs/adr/0002-raster-rendering.md), so layout and canvas treat Feed as
+// zero height and render/escpos.Encode is the stage that emits its bytes.
 type Feed struct {
 	Lines int `json:"lines"`
 }
@@ -45,9 +40,8 @@ func (f Feed) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes f alongside the "type":"feed" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes f with the "type":"feed" discriminator the registry
+// polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (f Feed) MarshalJSON() ([]byte, error) {
 	type alias Feed
 	return json.Marshal(struct {

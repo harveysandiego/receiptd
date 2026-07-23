@@ -267,6 +267,37 @@ the full design. In practice:
   not a restatement of the name.
 - `docs/ARCHITECTURE.md` is the living design reference; it changes only
   alongside the code it describes, in the same PR.
+
+### Comment length and content
+
+Comments here explain **why**, not **what** — the code already says what it
+does, and a reader can read it. A comment earns its place only when it tells
+the reader something the code cannot: a non-obvious invariant, a safety
+argument, why the obvious alternative was rejected, or a pointer to the ADR
+that settled a decision. Prose that narrates the code below it is not
+documentation; it is a second copy of the code that goes stale silently.
+Apply these rules:
+
+- **A doc comment longer than the function it documents is a smell.** Before
+  writing one, ask what a competent reader genuinely cannot infer from the
+  signature and body, and write only that. `layout.Build`'s job is to say
+  what a `Document` is and what the `nil`-store and error-kind contracts are
+  — not to narrate every `case` of the type switch directly beneath it.
+- **Never restate control flow in prose.** Don't describe what a `switch`,
+  loop, or `if` does when the code is right there. Comment the one branch
+  whose reason is non-obvious, not all of them.
+- **Cite an ADR or architecture section once, at the decision point** — not
+  in every paragraph that touches the decision. Prefer a bare pointer
+  (`see docs/adr/0016-...`) over inlining the ADR's reasoning; the ADR is
+  where that argument lives, so it isn't re-litigated in a code comment.
+- **Keep the load-bearing rationale.** Trimming means cutting restatement and
+  redundant cross-references, *not* deleting the genuine "why" — a
+  shutdown-safety argument, a decompression-bomb bound, an int-overflow
+  guard. When in doubt about a specific sentence, keep it but tighten it;
+  when a whole paragraph only re-describes the code, delete it.
+- This is a documentation cleanup, so it follows the "Refactoring
+  philosophy" rule: its own PR, comment-only, no behavior change in the same
+  diff.
 - `docs/adr/` records *why* a major decision was made, once, so it's never
   re-litigated from scratch — new ADRs are added for new major decisions,
   existing ones are not rewritten after the fact (mark one "Superseded by

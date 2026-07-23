@@ -82,11 +82,10 @@ func (s *boltStore) Get(_ context.Context, id string) (*Job, error) {
 	return j, nil
 }
 
-// List returns every Job in the Store, ordered by ID. bbolt iterates a
-// bucket's keys in ascending byte order, and Job IDs are hex strings, so
-// this ordering falls out of the underlying B+tree for free — no
-// additional sort is needed (contrast memoryStore.List, which sorts
-// explicitly because a Go map has no iteration order).
+// List returns every Job in the Store, ordered by ID. bbolt iterates keys
+// in ascending byte order and Job IDs are hex, so the ordering is free —
+// no explicit sort (contrast memoryStore.List, which must sort because a
+// Go map has no iteration order).
 func (s *boltStore) List(_ context.Context, _ Filter) ([]*Job, error) {
 	var out []*Job
 	err := s.db.View(func(tx *bbolt.Tx) error {
@@ -106,11 +105,9 @@ func (s *boltStore) List(_ context.Context, _ Filter) ([]*Job, error) {
 }
 
 // NextPending returns the first Job (by ID) with State == JobPending, or
-// nil if none exists. It walks the bucket's Cursor — already ID-ordered,
-// same as List — stopping at the first match instead of unmarshaling
-// every Job into a slice first, which is the whole reason this method
-// exists as its own Store operation rather than a caller-side scan over
-// List's result.
+// nil if none exists. It walks the Cursor and stops at the first match
+// instead of unmarshaling every Job into a slice — the reason it's its
+// own Store operation rather than a caller-side scan over List's result.
 func (s *boltStore) NextPending(_ context.Context) (*Job, error) {
 	var next *Job
 	err := s.db.View(func(tx *bbolt.Tx) error {

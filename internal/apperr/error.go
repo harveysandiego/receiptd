@@ -110,11 +110,10 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-// Wrap creates an *Error tagging err with kind and the operation, op,
-// that produced it. Wrap always returns a non-nil *Error, even when err
-// is nil, so it can also be used to construct a fresh leaf error (e.g.
-// apperr.Wrap(apperr.KindNotFound, "assets.Get", nil)) without a second
-// constructor — callers never need to guard against a nil result.
+// Wrap creates an *Error tagging err with kind and the operation op that
+// produced it. It always returns a non-nil *Error, even when err is nil,
+// so it also constructs a fresh leaf error (e.g. apperr.Wrap(KindNotFound,
+// "assets.Get", nil)) — callers never guard against a nil result.
 func Wrap(kind Kind, op string, err error) *Error {
 	return &Error{Kind: kind, Op: op, Err: err}
 }

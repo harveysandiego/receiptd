@@ -11,12 +11,11 @@ import (
 // Asset is a reference to a named, previously-stored image — "look this
 // name up," as opposed to Image's "here are the bytes"
 // (docs/ARCHITECTURE.md §3 "Image vs. Asset"). Name is resolved via
-// assets.Store.Get at layout time, not here: Validate stays fast and
-// local, so it cannot tell whether an asset actually exists (that's I/O,
-// deferred to render/layout.Build). Align is the same closed enum
-// Text.Align uses; Width is the requested rendered width in dots, clamped
-// to the printable page width by render/layout.Build (see
-// docs/adr/0013-text-and-asset-alignment.md).
+// assets.Store.Get at layout time: Validate is fast and local, so it
+// cannot check whether the asset actually exists (that I/O is deferred to
+// render/layout.Build). Align is the closed enum Text.Align uses; Width is
+// the requested rendered width in dots, clamped to the printable page
+// width by render/layout.Build (docs/adr/0013-text-and-asset-alignment.md).
 type Asset struct {
 	Name  string `json:"name"`
 	Width int    `json:"width,omitempty"`
@@ -25,14 +24,11 @@ type Asset struct {
 
 // Validate reports whether a is well-formed: Name must be non-empty,
 // valid UTF-8, and free of path separators or a bare "." / ".." — Name
-// ultimately becomes a lookup key an assets.Store implementation may use
-// to build a filesystem path (see assets.FilesystemStore), so rejecting a
-// name that could traverse outside the store's root is a local,
-// no-I/O-required invariant of Asset itself, the same way Table.Validate()
-// already rejects malformed header/cell content. Align must be "", "left",
-// "center", or "right" (docs/adr/0013-text-and-asset-alignment.md). Width,
-// if set, must not be negative, the same convention Text.Size and
-// Divider.Size already use.
+// becomes a lookup key an assets.Store may turn into a filesystem path
+// (see assets.FilesystemStore), so rejecting a name that could traverse
+// outside the store's root is a local, no-I/O invariant of Asset itself.
+// Align must be "", "left", "center", or "right"; Width, if set, must not
+// be negative.
 func (a Asset) Validate() error {
 	if a.Name == "" {
 		return errors.New("asset: name is required")
@@ -54,9 +50,8 @@ func (a Asset) Validate() error {
 	return nil
 }
 
-// MarshalJSON encodes a alongside the "type":"asset" discriminator the
-// registry-based polymorphism in docs/adr/0001-receipt-model.md relies on
-// to decode it back.
+// MarshalJSON encodes a with the "type":"asset" discriminator the registry
+// polymorphism decodes it back through (docs/adr/0001-receipt-model.md).
 func (a Asset) MarshalJSON() ([]byte, error) {
 	type alias Asset
 	return json.Marshal(struct {
