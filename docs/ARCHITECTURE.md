@@ -1065,6 +1065,20 @@ forces an immediate exit. See the ADR for the full sequence and the
 operator-facing grace-period guidance in the README — there is
 deliberately no config field for the deadline (§7's schema stays frozen).
 
+**Crash recovery** (`cmd/receiptd`, `docs/adr/0017-queue-lifecycle-crash-recovery.md`):
+`(*daemon).run` calls `Queue.Reconcile` once, synchronously, before
+`startWorker` — every Job it finds `JobRunning` is unconditionally orphaned,
+since no worker has claimed anything yet and this project never runs more
+than one `receiptd` process against one `Store`. The interrupted attempt
+counts as one consumed try against `Attempts`/`max_attempts`: still under
+budget, the Job returns to `JobPending` with a fixed, greppable
+`LastError`; budget exhausted, it goes to `JobFailed` instead — either way,
+visible, never stuck in `JobRunning` forever. This is also the backstop for
+a Job the Shutdown paragraph above leaves non-terminal mid-backoff. Making
+this correct required `runClaimedJob` to persist `Attempts` after every
+attempt, not only at the retry loop's start and end, so a crash mid-loop
+no longer undercounts what Reconcile checks against `max_attempts`.
+
 **Idempotent print requests** (`docs/adr/0020-idempotent-print-requests.md`):
 `POST /api/v1/print` accepts an optional `Idempotency-Key` header, threaded
 through to `Service.Print`'s `idempotencyKey` parameter and, if non-empty,

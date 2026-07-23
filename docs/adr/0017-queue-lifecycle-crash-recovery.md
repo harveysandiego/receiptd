@@ -1,6 +1,6 @@
 # 0017. Startup reconciliation for Jobs orphaned by a daemon crash while Running
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

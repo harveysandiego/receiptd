@@ -11,6 +11,13 @@ the 0.x series.
 
 ### Added
 
+- Startup crash recovery: `receiptd` now reconciles any `Job` left
+  `running` by a previous crash or unclean death before it starts
+  processing anything new. A recovered Job is automatically requeued
+  (retried) if it still has retry budget left, or failed visibly with an
+  `interrupted: daemon restarted...` `LastError` if it doesn't — instead of
+  sitting stuck and invisible in `running` forever, per
+  [ADR-0017](docs/adr/0017-queue-lifecycle-crash-recovery.md).
 - Idempotent print requests: `POST /api/v1/print` accepts an optional
   `Idempotency-Key` header. Retrying the same key returns the original
   Job's ID instead of enqueuing a second print, for 24 hours, per

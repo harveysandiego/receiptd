@@ -25,13 +25,22 @@ import (
 // schema is frozen; tune later from real hardware experience.
 const shutdownDeadline = 30 * time.Second
 
-// run starts d serving HTTP and the queue worker, then blocks until
-// either the HTTP server stops on its own or a shutdown signal arrives,
-// draining via shutdownOnSignal in the latter case. Returns the process
-// exit code main should use. d.startWorker runs synchronously, before
-// ListenAndServe's own goroutine starts, so d.workerCancel/d.workers are
-// set before shutdown could ever read them from another goroutine.
+// run reconciles any Job left JobRunning by a previous crash or unclean
+// death, then starts d serving HTTP and the queue worker, then blocks
+// until either the HTTP server stops on its own or a shutdown signal
+// arrives, draining via shutdownOnSignal in the latter case. Returns the
+// process exit code main should use. Reconciliation runs to completion
+// before d.startWorker so no worker can ever claim a Job reconciliation
+// hasn't yet resolved (docs/adr/0017-queue-lifecycle-crash-recovery.md).
+// d.startWorker itself runs synchronously, before ListenAndServe's own
+// goroutine starts, so d.workerCancel/d.workers are set before shutdown
+// could ever read them from another goroutine.
 func (d *daemon) run() int {
+	if _, _, err := d.queue.Reconcile(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "receiptd: reconciling orphaned jobs: %v\n", err)
+		return 1
+	}
+
 	sigCh := make(chan os.Signal, 2)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(sigCh)

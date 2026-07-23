@@ -300,6 +300,11 @@ func TestQueue_ProcessNext_ValidationError_NotRetried(t *testing.T) {
 	}
 }
 
+// TestQueue_ProcessNext_UpdatesTimestampsAcrossRetries also pins
+// docs/adr/0017-queue-lifecycle-crash-recovery.md's supporting-requirement
+// change: runClaimedJob now saves once per attempt (Running-transition,
+// attempt 1 completes transiently, attempt 2 completes/terminal), not once
+// per call — a deliberate behavior change (was 2 saves), not a regression.
 func TestQueue_ProcessNext_UpdatesTimestampsAcrossRetries(t *testing.T) {
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending, UpdatedAt: time.Now().Add(-time.Hour)}}
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
@@ -311,14 +316,17 @@ func TestQueue_ProcessNext_UpdatesTimestampsAcrossRetries(t *testing.T) {
 		t.Fatalf("ProcessNext() error = %v, want nil", err)
 	}
 
-	if len(store.saves) != 2 {
-		t.Fatalf("len(store.saves) = %d, want 2 (Running persist, final persist)", len(store.saves))
+	if len(store.saves) != 3 {
+		t.Fatalf("len(store.saves) = %d, want 3 (Running persist, attempt-1 persist, final persist)", len(store.saves))
 	}
 	if store.saves[0].UpdatedAt.Before(before) {
 		t.Errorf("saves[0] (Running).UpdatedAt = %v, want at or after %v", store.saves[0].UpdatedAt, before)
 	}
 	if store.saves[1].UpdatedAt.Before(store.saves[0].UpdatedAt) {
-		t.Errorf("saves[1] (final).UpdatedAt = %v, want at or after saves[0].UpdatedAt = %v", store.saves[1].UpdatedAt, store.saves[0].UpdatedAt)
+		t.Errorf("saves[1] (attempt 1).UpdatedAt = %v, want at or after saves[0].UpdatedAt = %v", store.saves[1].UpdatedAt, store.saves[0].UpdatedAt)
+	}
+	if store.saves[2].UpdatedAt.Before(store.saves[1].UpdatedAt) {
+		t.Errorf("saves[2] (final).UpdatedAt = %v, want at or after saves[1].UpdatedAt = %v", store.saves[2].UpdatedAt, store.saves[1].UpdatedAt)
 	}
 }
 
@@ -497,5 +505,104 @@ func TestQueue_ProcessNext_RetryBackoff_InterruptedByContextCancellation(t *test
 	}
 	if store.job.State != JobRunning {
 		t.Errorf("job.State = %v, want %v (ADR-0018: a mid-backoff cancellation leaves the Job non-terminal, it is not marked Failed)", store.job.State, JobRunning)
+	}
+}
+
+// --- docs/adr/0017-queue-lifecycle-crash-recovery.md's supporting
+// requirement: Attempts must be durable per attempt, not only per call, so
+// a crash mid-loop doesn't undercount what Reconcile later checks against
+// maxAttempts. ---
+
+// TestQueue_ProcessNext_AttemptsPersistedAfterEachAttempt_NotJustAtEnd pins
+// the crash-durability property itself: after a transient failure that is
+// not the final attempt, the Store already reflects the incremented
+// Attempts (and State still JobRunning) — proving runClaimedJob saves
+// after every attempt, not only once at the end of the whole loop.
+func TestQueue_ProcessNext_AttemptsPersistedAfterEachAttempt_NotJustAtEnd(t *testing.T) {
+	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	// Blocks forever on the second call: if runClaimedJob only persisted at
+	// the loop's end, this test would need to let the whole call finish to
+	// inspect anything, which it deliberately never lets happen.
+	blocked := make(chan struct{})
+	proc := &blockingAfterFirstAttempt{firstErr: transient, block: blocked, started: make(chan struct{})}
+	q := &Queue{store: store, processor: proc, maxAttempts: 3, baseBackoff: time.Millisecond, sleep: noopSleep}
+
+	done := make(chan error, 1)
+	go func() { done <- q.ProcessNext(context.Background()) }()
+
+	select {
+	case <-proc.started:
+	case <-time.After(time.Second):
+		t.Fatal("second Process call never started")
+	}
+
+	// The second attempt is now blocked inside Process, with the first
+	// attempt's failure already having gone through runClaimedJob's loop —
+	// its Save must already be durable.
+	if store.job.Attempts != 1 {
+		t.Errorf("job.Attempts = %d, want 1 (persisted after the first attempt, before the second one even starts)", store.job.Attempts)
+	}
+	if store.job.State != JobRunning {
+		t.Errorf("job.State = %v, want %v (not yet terminal)", store.job.State, JobRunning)
+	}
+
+	close(blocked)
+	if err := <-done; err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+}
+
+// blockingAfterFirstAttempt returns firstErr on its first call, then closes
+// started and blocks until block is closed before returning nil on its
+// second call — giving a test a window to inspect Store state between the
+// two attempts.
+type blockingAfterFirstAttempt struct {
+	firstErr error
+	block    <-chan struct{}
+	started  chan struct{}
+	calls    int
+}
+
+func (p *blockingAfterFirstAttempt) Process(_ context.Context, _ *Job) error {
+	p.calls++
+	if p.calls == 1 {
+		return p.firstErr
+	}
+	close(p.started)
+	<-p.block
+	return nil
+}
+
+// TestQueue_ResumedJobFromReconcile_OnlyGetsRemainingAttemptBudget is the
+// correctness property docs/adr/0017-queue-lifecycle-crash-recovery.md's
+// whole per-attempt-persistence requirement exists for: a Job whose
+// Attempts was already bumped by Reconcile (simulating a crash mid-retry)
+// must run only its remaining budget when reclaimed, not a fresh
+// maxAttempts. Against the pre-ADR-0017 loop (a fresh `for attempt := 1;
+// attempt <= q.maxAttempts` counter checked against attempt, not
+// next.Attempts) this would run maxAttempts more real attempts instead of
+// the remaining one and fail the Attempts/proc.calls assertions below.
+func TestQueue_ResumedJobFromReconcile_OnlyGetsRemainingAttemptBudget(t *testing.T) {
+	const maxAttempts = 3
+	// Attempts already at 2 (of 3) — as Reconcile would leave a Job that
+	// crashed on its second attempt and still had one left.
+	store := &retryStore{job: &Job{ID: "job-1", State: JobPending, Attempts: 2}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	proc := &scriptedProcessor{errs: []error{transient}}
+	q := &Queue{store: store, processor: proc, maxAttempts: maxAttempts, baseBackoff: time.Millisecond, sleep: noopSleep}
+
+	if err := q.ProcessNext(context.Background()); err != nil {
+		t.Fatalf("ProcessNext() error = %v, want nil", err)
+	}
+
+	if proc.calls != 1 {
+		t.Errorf("proc.calls = %d, want 1 (only the remaining attempt, not a fresh %d-attempt budget)", proc.calls, maxAttempts)
+	}
+	if store.job.Attempts != maxAttempts {
+		t.Errorf("job.Attempts = %d, want %d", store.job.Attempts, maxAttempts)
+	}
+	if store.job.State != JobFailed {
+		t.Errorf("job.State = %v, want %v (budget exhausted on the one remaining attempt)", store.job.State, JobFailed)
 	}
 }

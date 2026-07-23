@@ -77,39 +77,51 @@ func (q *Queue) ProcessNextForPrinter(ctx context.Context, printerName string) e
 }
 
 // runClaimedJob runs the retry/backoff loop for a Job its caller already
-// transitioned to JobRunning and persisted, then persists the resulting
-// terminal state — the shared body of ProcessNext and
-// ProcessNextForPrinter, which differ only in how they claim next.
+// transitioned to JobRunning and persisted — the shared body of
+// ProcessNext and ProcessNextForPrinter, which differ only in how they
+// claim next. It persists next once per attempt, immediately after that
+// attempt's Process call returns, rather than only once at the very end:
+// docs/adr/0017-queue-lifecycle-crash-recovery.md's reconciliation pass
+// depends on Attempts being durable even if the process dies mid-loop, not
+// just at the loop's start and finish. Checking next.Attempts (not a fresh
+// per-call counter) against q.maxAttempts is what lets a Job resumed by
+// Reconcile with Attempts already partway to the budget correctly run only
+// its remaining attempts, not a fresh full budget.
 func (q *Queue) runClaimedJob(ctx context.Context, next *Job) error {
 	var procErr error
 	backoff := q.baseBackoff
-	for attempt := 1; attempt <= q.maxAttempts; attempt++ {
+	for {
 		next.Attempts++
 		procErr = q.callProcessor(ctx, next)
-		if procErr == nil || !apperr.Is(procErr, apperr.KindTransient) || attempt == q.maxAttempts {
-			break
+
+		done := procErr == nil || !apperr.Is(procErr, apperr.KindTransient) || next.Attempts >= q.maxAttempts
+		if done {
+			if procErr != nil {
+				next.State = JobFailed
+				next.LastError = procErr.Error()
+				// Logged in full here: internal/api.JobStatusHandler only returns
+				// LastError sanitized, since it may embed a path or printer address.
+				log.Printf("queue: job %s failed: %v", next.ID, procErr)
+			} else {
+				next.State = JobDone
+			}
 		}
+		next.UpdatedAt = time.Now()
+		if err := q.store.Save(ctx, next); err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+
 		q.sleep(ctx, backoff)
 		if ctx.Err() != nil {
 			// Cut short by cancellation, not exhausted attempts: leave the
-			// Job JobRunning, not Failed (docs/adr/0018-graceful-shutdown.md).
+			// Job JobRunning, exactly as just persisted (docs/adr/0018-graceful-shutdown.md).
 			return nil
 		}
 		backoff *= 2
 	}
-
-	if procErr != nil {
-		next.State = JobFailed
-		next.LastError = procErr.Error()
-		// Logged in full here: internal/api.JobStatusHandler only returns
-		// LastError sanitized, since it may embed a path or printer address.
-		log.Printf("queue: job %s failed: %v", next.ID, procErr)
-	} else {
-		next.State = JobDone
-	}
-	next.UpdatedAt = time.Now()
-
-	return q.store.Save(ctx, next)
 }
 
 // sleepCtx blocks for d, or until ctx is cancelled, whichever comes
