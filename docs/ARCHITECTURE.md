@@ -333,20 +333,29 @@ const (
 )
 
 type Job struct {
-    ID          string
-    PrinterName string
-    Receipt     receipt.Receipt
-    State       JobState
-    Attempts    int
-    LastError   string
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+    ID             string
+    PrinterName    string
+    Receipt        receipt.Receipt
+    State          JobState
+    Attempts       int
+    LastError      string
+    CreatedAt      time.Time
+    UpdatedAt      time.Time
+    IdempotencyKey string // optional; "" means no key supplied — see docs/adr/0020
 }
 
 type Store interface {
     Save(ctx context.Context, j *Job) error
     Get(ctx context.Context, id string) (*Job, error)
     List(ctx context.Context, f Filter) ([]*Job, error)
+    NextPending(ctx context.Context) (*Job, error)
+
+    // EnqueueIdempotent atomically looks up newJob.IdempotencyKey, decides
+    // whether to create, return an existing match, reject a mismatch, or
+    // reactivate a Failed match, and persists that decision — one
+    // operation with respect to any other concurrent call for the same
+    // key. See docs/adr/0020-idempotent-print-requests.md.
+    EnqueueIdempotent(ctx context.Context, newJob *Job, now time.Time) (job *Job, created bool, err error)
 }
 
 func NewBoltStore(path string) (Store, error) // store_bolt.go
@@ -359,6 +368,7 @@ type Processor interface {
 type Queue struct { /* Store + Processor, retry/backoff (apperr.KindTransient only), cancellation */ }
 
 func (q *Queue) Enqueue(ctx context.Context, j *Job) error
+func (q *Queue) EnqueueIdempotent(ctx context.Context, j *Job, key string) (jobID string, err error)
 func (q *Queue) Cancel(ctx context.Context, id string) error
 ```
 
@@ -428,7 +438,7 @@ type Service struct {
     Templates *templates.Registry
 }
 
-func (s *Service) Print(ctx context.Context, r receipt.Receipt, printerName string) (jobID string, err error)
+func (s *Service) Print(ctx context.Context, r receipt.Receipt, printerName, idempotencyKey string) (jobID string, err error)
 func (s *Service) Preview(ctx context.Context, r receipt.Receipt, printerName string) ([]byte, error) // PNG only for now
 func (s *Service) RunTemplate(ctx context.Context, name string, p templates.Params) (receipt.Receipt, error)
 func (s *Service) JobStatus(ctx context.Context, id string) (*queue.Job, error)
@@ -982,14 +992,113 @@ This maps cleanly onto every consumer you listed:
 
 ## 6. Job system
 
-Unchanged from the previous revision, now stated in terms of `apperr`:
-states `pending -> running -> {done|failed}` plus `pending -> cancelled`
+States `pending -> running -> {done|failed}` plus `pending -> cancelled`
 (cancelling a `running` job returns an "already in progress" error, it
 can't un-print). Retries: bounded attempts (default 3), exponential
 backoff (default 5s base), gated strictly on `apperr.KindTransient`.
 Persistence: `bbolt` by default (`queue.NewBoltStore`), in-memory available
 as an explicit opt-out (`queue.NewMemoryStore`) — both now plain files in
 the `queue` package rather than subpackages (§11).
+
+**Worker topology: one worker per configured printer**
+(`docs/adr/0016-queue-concurrency-per-printer-workers.md`). `cmd/receiptd`
+starts one background goroutine per entry in the configured printer set
+(`buildPrinters`'s own key set), each running `runWorker`, which loops
+calling `queue.Queue.ProcessNextForPrinter(ctx, printerName)` and sleeping
+`pollInterval` between calls — scoped to exactly one printer's Jobs, never
+more than one worker per printer name. With today's typical single-printer
+deployment this is exactly one worker, doing exactly what the daemon did
+before this decision. The difference only appears once a second printer is
+configured: a slow or offline printer's worker can retry with backoff
+indefinitely without blocking any other printer's worker from claiming and
+sending its own Jobs — the problem a single global worker had, since every
+printer funneled through the same goroutine and the same retry/backoff
+state machine.
+
+**Atomic per-printer claim.** `queue.Store` gained
+`ClaimNextPending(ctx, printerName) (*Job, error)`, which atomically finds
+the lowest-ID `Pending` Job for `printerName`, transitions it to `Running`,
+and persists that transition in one step — `boltStore` inside one
+`db.Update` call, `memoryStore` inside one `s.mu.Lock()` critical section.
+No two concurrent callers, for the same printer name or a different one,
+can ever be handed the same Job. This is what makes one worker per printer
+safe: same-printer concurrency is still structurally impossible (exactly
+one worker ever drains one printer's lane), and the atomic claim is
+defense in depth for that guarantee rather than its primary source.
+`queue.Queue.ProcessNextForPrinter` is the entry point built on top of it,
+sharing its retry/backoff/error-handling logic with `ProcessNext` via a
+private helper; `ProcessNext` and `Store.NextPending` (the old,
+non-atomic, printer-unaware lookup) are both unchanged and remain
+available for a caller that genuinely wants the old global, single-Job-
+at-a-time behavior — a worker just doesn't use them anymore.
+
+**What this does not promise.** Job IDs are random hex, so even within one
+printer's lane, claim order is arbitrary with respect to enqueue order —
+true before this decision and unchanged by it. What *is* new: there is no
+longer a single global claim order across all printers either. A Job for
+printer B can now complete before an earlier-enqueued Job for printer A,
+if A's worker happens to be busy retrying — by design, since that is
+exactly the head-of-line blocking this decision exists to remove. Nothing
+in this design promises ordering within or across printers; a caller that
+needs it must serialize its own requests.
+
+**Shutdown** (`cmd/receiptd`, `docs/adr/0018-graceful-shutdown.md`):
+`SIGTERM`/`SIGINT` stop the HTTP server accepting new requests and stop
+every per-printer worker claiming a new `Job` immediately (all at the same
+instant — none waits on another), but let a `Job` already inside `Process`
+(in particular, an in-progress `Printer.Send`) finish naturally rather than
+cutting it off mid-transmission — there is no defined "resume a partial
+raster image" command (`docs/adr/0002-raster-rendering.md`), so a stream
+cut short there is worse than simply waiting for it. A worker instead
+asleep in a retry's backoff wait (nothing physical in flight) *is*
+interrupted immediately; the `Job` it was retrying is left `running`, not
+`failed` — synthesizing a permanent failure for a retry the shutdown chose
+not to wait out would misrepresent what happened, and a `Job` found
+`running` at the next startup is exactly what
+`docs/adr/0017-queue-lifecycle-crash-recovery.md`'s reconciliation pass
+already has to handle for a crash, so shutdown reuses that one mechanism
+rather than a second one. The whole drain (every in-flight HTTP request
+and every printer's worker together, not per-request or per-worker) is
+bounded by one fixed internal deadline (`shutdownDeadline`, initially
+30s); reaching it, or a second shutdown signal while already draining,
+forces an immediate exit. See the ADR for the full sequence and the
+operator-facing grace-period guidance in the README — there is
+deliberately no config field for the deadline (§7's schema stays frozen).
+
+**Idempotent print requests** (`docs/adr/0020-idempotent-print-requests.md`):
+`POST /api/v1/print` accepts an optional `Idempotency-Key` header, threaded
+through to `Service.Print`'s `idempotencyKey` parameter and, if non-empty,
+stamped onto the `Job` as `Job.IdempotencyKey`. An empty key (the header
+omitted, today's every-existing-client behavior) is always a new `Job` —
+identical to calling `Queue.Enqueue` directly, which `Service.Print` in fact
+does in that case. A non-empty key instead calls the new
+`Queue.EnqueueIdempotent`, which delegates atomically to
+`Store.EnqueueIdempotent`:
+
+- No non-expired `Job` recorded under the key: a fresh `Job` is created
+  and persisted, keeping the key, exactly like `Enqueue` otherwise would.
+- A non-expired match exists but its `Receipt` or `PrinterName` differ from
+  the incoming request: `apperr.KindValidation`, nothing persisted or
+  mutated — this is a client key-reuse bug, not a legitimate retry.
+- A non-expired match exists and agrees on `Receipt`/`PrinterName`: if its
+  `State` is `Pending`, `Running`, or `Done`, nothing is created and that
+  Job's ID is returned unchanged. If its `State` is `Failed`, it is
+  reactivated **in place** — the one `failed -> pending` transition this
+  ADR adds beyond the state machine above, gated specifically on a
+  same-key client retry — with `Attempts` reset to 0 and `LastError`
+  cleared, rather than being replaced by a second `Job`.
+
+"Atomically" means the whole "look up by key, decide, persist" sequence
+runs as one operation with respect to any other concurrent call for the
+same key (one `bbolt` `db.Update` in `boltStore`, one `memoryStore.mu`
+critical section) — the same check-then-act discipline
+`docs/adr/0016-queue-concurrency-per-printer-workers.md` requires for
+atomic Job claiming, reused here rather than re-derived. A key is valid
+for `queue.IdempotencyKeyTTL` (24 hours) from the `Job`'s `CreatedAt`;
+expiry is enforced lazily, only at lookup time inside
+`EnqueueIdempotent` — there is no active sweep or deletion of expired
+keys, and an expired match is simply treated as if no `Job` had ever been
+recorded under that key.
 
 ---
 

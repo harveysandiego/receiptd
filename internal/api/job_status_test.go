@@ -266,7 +266,7 @@ func TestJobStatusHandler_RealService_ExistingJob_ReflectsQueueState(t *testing.
 	h := api.NewJobStatusHandler(svc)
 	ctx := context.Background()
 
-	jobID, err := svc.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := svc.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}
@@ -298,7 +298,7 @@ func TestJobStatusHandler_RealService_DoesNotModifyQueueState(t *testing.T) {
 	h := api.NewJobStatusHandler(svc)
 	ctx := context.Background()
 
-	jobID, err := svc.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := svc.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}
@@ -325,7 +325,7 @@ func TestJobStatusHandler_RealService_NeverInvokesProcessor(t *testing.T) {
 	h := api.NewJobStatusHandler(svc)
 	ctx := context.Background()
 
-	jobID, err := svc.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := svc.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}
@@ -363,7 +363,7 @@ func TestJobStatusHandler_RealService_TransientPrinterFailure_DoesNotLeakAddress
 	svc.Queue = queue.NewWithRetry(queue.NewMemoryStore(), svc, 1, time.Millisecond)
 
 	ctx := context.Background()
-	jobID, err := svc.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := svc.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}

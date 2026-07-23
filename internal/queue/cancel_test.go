@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/queue"
@@ -146,4 +147,12 @@ func (f *fakeCancelStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job,
 
 func (f *fakeCancelStore) NextPending(_ context.Context) (*queue.Job, error) {
 	return nil, nil
+}
+
+func (f *fakeCancelStore) ClaimNextPending(_ context.Context, _ string) (*queue.Job, error) {
+	return nil, nil
+}
+
+func (f *fakeCancelStore) EnqueueIdempotent(_ context.Context, _ *queue.Job, _ time.Time) (*queue.Job, bool, error) {
+	return nil, false, nil
 }

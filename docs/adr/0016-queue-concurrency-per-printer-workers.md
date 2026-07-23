@@ -1,6 +1,6 @@
 # 0016. Per-printer worker concurrency and atomic Job claiming
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

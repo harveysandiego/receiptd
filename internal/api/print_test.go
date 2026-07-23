@@ -23,15 +23,17 @@ type fakePrintService struct {
 	jobID string
 	err   error
 
-	calls      int
-	gotReceipt receipt.Receipt
-	gotPrinter string
+	calls          int
+	gotReceipt     receipt.Receipt
+	gotPrinter     string
+	gotIdempotency string
 }
 
-func (f *fakePrintService) Print(_ context.Context, r receipt.Receipt, printerName string) (string, error) {
+func (f *fakePrintService) Print(_ context.Context, r receipt.Receipt, printerName, idempotencyKey string) (string, error) {
 	f.calls++
 	f.gotReceipt = r
 	f.gotPrinter = printerName
+	f.gotIdempotency = idempotencyKey
 	return f.jobID, f.err
 }
 
@@ -97,6 +99,80 @@ func TestPrintHandler_Success_PassesPrinterAndReceiptToService(t *testing.T) {
 	}
 	if text.Content != "hello" {
 		t.Errorf("Content = %q, want %q", text.Content, "hello")
+	}
+}
+
+// TestPrintHandler_NoIdempotencyKeyHeader_PassesEmptyString proves an
+// absent Idempotency-Key header (today's request shape, unchanged) is
+// passed through as "" — Service.Print's documented signal for "always
+// create, never dedup" — rather than some other sentinel.
+func TestPrintHandler_NoIdempotencyKeyHeader_PassesEmptyString(t *testing.T) {
+	svc := &fakePrintService{jobID: "abc123"}
+	h := api.NewPrintHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(validPrintRequestBody()))
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if svc.gotIdempotency != "" {
+		t.Errorf("idempotencyKey = %q, want \"\" when the Idempotency-Key header is absent", svc.gotIdempotency)
+	}
+}
+
+// TestPrintHandler_IdempotencyKeyHeader_PassedThroughToService proves the
+// Idempotency-Key request header (docs/adr/0020-idempotent-print-requests.md)
+// reaches Service.Print verbatim.
+func TestPrintHandler_IdempotencyKeyHeader_PassedThroughToService(t *testing.T) {
+	svc := &fakePrintService{jobID: "abc123"}
+	h := api.NewPrintHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(validPrintRequestBody()))
+	req.Header.Set("Idempotency-Key", "client-key-1")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if svc.gotIdempotency != "client-key-1" {
+		t.Errorf("idempotencyKey = %q, want %q", svc.gotIdempotency, "client-key-1")
+	}
+}
+
+// TestPrintHandler_RealService_IdempotencyKeyHeader_RetryReturnsSameJobID
+// runs the header through the real app.Service end to end, proving a
+// retried POST with the same Idempotency-Key gets back the same job_id
+// instead of enqueuing a second Job.
+func TestPrintHandler_RealService_IdempotencyKeyHeader_RetryReturnsSameJobID(t *testing.T) {
+	store := queue.NewMemoryStore()
+	svc := app.New(queue.New(store, &noopProcessor{}))
+	h := api.NewPrintHandler(svc)
+
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(validPrintRequestBody()))
+	first.Header.Set("Idempotency-Key", "client-key-1")
+	firstRec := httptest.NewRecorder()
+	h.ServeHTTP(firstRec, first)
+
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewReader(validPrintRequestBody()))
+	second.Header.Set("Idempotency-Key", "client-key-1")
+	secondRec := httptest.NewRecorder()
+	h.ServeHTTP(secondRec, second)
+
+	var firstBody, secondBody struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.NewDecoder(firstRec.Body).Decode(&firstBody); err != nil {
+		t.Fatalf("decode first response body: %v", err)
+	}
+	if err := json.NewDecoder(secondRec.Body).Decode(&secondBody); err != nil {
+		t.Fatalf("decode second response body: %v", err)
+	}
+
+	if secondBody.JobID != firstBody.JobID {
+		t.Errorf("second job_id = %q, want the same as the first, %q", secondBody.JobID, firstBody.JobID)
+	}
+
+	jobs, err := store.List(context.Background(), queue.Filter{})
+	if err != nil {
+		t.Fatalf("store.List() error = %v, want nil", err)
+	}
+	if len(jobs) != 1 {
+		t.Errorf("len(store.List()) = %d, want 1 (a retried Idempotency-Key must not enqueue a second Job)", len(jobs))
 	}
 }
 

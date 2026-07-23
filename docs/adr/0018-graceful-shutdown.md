@@ -1,6 +1,6 @@
 # 0018. Bounded graceful shutdown on SIGTERM/SIGINT, without interrupting an in-flight print
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

@@ -123,7 +123,10 @@ philosophy, and the reasoning behind each decision, lives in
   (bulleted, numbered, checkbox), feed, cut
 - **PNG preview** before anything hits paper
 - **Async, persistent print queue** with retry/backoff for transient
-  printer failures
+  printer failures, one independent worker per configured printer so a
+  slow or offline printer never blocks another
+- **Idempotent print requests** via an optional `Idempotency-Key` header,
+  so a retried request never prints twice
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
@@ -293,6 +296,35 @@ no architecture-specific assumptions, so
 `docker buildx build --platform linux/arm64 .` cross-builds an ARM64
 image from an amd64 machine without changes.
 
+### Graceful shutdown and restart grace periods
+
+On `SIGTERM` or `SIGINT`, `receiptd` stops accepting new HTTP requests and
+new queue Jobs immediately, but lets anything already in flight — in
+particular, a print Job already streaming raster bytes to a printer —
+finish naturally rather than cutting it off mid-transmission, which could
+otherwise leave a printer holding a partially fed or garbled receipt. This
+drain is bounded by a fixed internal deadline, currently **30 seconds**
+(see [ADR-0018](docs/adr/0018-graceful-shutdown.md)): if something is
+still in flight when the deadline is reached, or a second `SIGTERM`/
+`SIGINT` arrives while already draining, `receiptd` exits immediately
+regardless.
+
+Because of that internal deadline, **the external grace period your
+orchestrator waits before sending `SIGKILL` must be set comfortably longer
+than 30 seconds**, or the orchestrator's own kill races — and likely
+preempts — this clean shutdown, silently turning every restart back into
+an abrupt kill:
+
+- **Docker**: the default 10-second grace period is too short — raise it,
+  e.g. `docker stop --time 40 receiptd`, or `stop_grace_period: 40s` in a
+  Compose file.
+- **systemd**: set `TimeoutStopSec=40s` (or higher) in the unit file;
+  systemd's own default (90s) is already safe, but setting it explicitly
+  is worth doing rather than relying on the default going unnoticed.
+
+If the internal 30-second deadline is ever retuned, the recommended grace
+period above should move with it — see the ADR for the full reasoning.
+
 ### Reverse proxy and TLS
 
 Receiptd speaks plain HTTP only — it never terminates TLS itself, and has
@@ -355,10 +387,25 @@ curl -X POST http://receiptd.local:8080/api/v1/print \
   -H "Content-Type: application/json" \
   -d '{"printer": "front-desk", "receipt": {"version": 1, "elements": [{"type": "text", "content": "Hello"}]}}'
 
+# Print a Receipt idempotently — retrying with the same key (e.g. after a
+# timeout) returns the original job_id instead of printing a second time
+curl -X POST http://receiptd.local:8080/api/v1/print \
+  -H "Authorization: Bearer $RECEIPTD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 2026-07-23-front-desk-order-42" \
+  -d '{"printer": "front-desk", "receipt": {"version": 1, "elements": [{"type": "text", "content": "Hello"}]}}'
+
 # Check job status
 curl http://receiptd.local:8080/api/v1/jobs/<job-id> \
   -H "Authorization: Bearer $RECEIPTD_TOKEN"
 ```
+
+`/print` accepts an optional `Idempotency-Key` header (unrelated to the
+`printer` field): supplying the same key on a retry returns the original
+request's `job_id` instead of enqueuing a second print, for 24 hours from
+the first request. Omitting it (every client that predates this feature)
+enqueues a new Job every time, exactly as before — see
+[ADR-0020](docs/adr/0020-idempotent-print-requests.md).
 
 A `Receipt`'s top-level `copies` field is decoded and round-tripped, but
 nothing in the render/print pipeline reads it yet — every Job prints

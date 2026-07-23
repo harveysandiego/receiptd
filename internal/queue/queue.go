@@ -67,6 +67,23 @@ func (q *Queue) Enqueue(ctx context.Context, j *Job) error {
 	return q.store.Save(ctx, j)
 }
 
+// EnqueueIdempotent stamps key onto j.IdempotencyKey and delegates
+// atomically to Store.EnqueueIdempotent, returning the ID of whichever
+// Job the Store decides is authoritative for key — fresh, existing, or
+// reactivated from Failed (docs/adr/0020-idempotent-print-requests.md).
+// Unlike Enqueue, it doesn't assign j's ID/State/timestamps itself; the
+// Store owns that. Service.Print calls Enqueue directly when key == "",
+// to keep that path provably identical to this feature not existing.
+func (q *Queue) EnqueueIdempotent(ctx context.Context, j *Job, key string) (jobID string, err error) {
+	j.IdempotencyKey = key
+
+	result, _, err := q.store.EnqueueIdempotent(ctx, j, time.Now())
+	if err != nil {
+		return "", err
+	}
+	return result.ID, nil
+}
+
 // newJobID returns a random 32-character hex string, unique with
 // overwhelming probability. crypto/rand.Read fails only on catastrophic
 // OS entropy failure, reported to the caller rather than panicking since

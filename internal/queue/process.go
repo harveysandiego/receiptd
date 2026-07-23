@@ -25,16 +25,20 @@ const (
 )
 
 // ProcessNext locates one pending Job, marks it JobRunning (persisting
-// that), then invokes the Queue's Processor. A KindTransient failure is
-// retried with exponential backoff starting at q.baseBackoff, up to
-// q.maxAttempts total; any other kind fails the Job immediately. A ctx
-// cancellation interrupts a backoff wait and fails the Job with the last
-// Processor error, the same outcome as exhausting every attempt. The
-// final JobDone/JobFailed transition is persisted. If no Job is pending,
-// it returns nil without invoking the Processor. A Processor error is
-// recorded on the Job (State, LastError), not returned — it's a
-// business-level outcome, not a queue failure; only Store errors are
-// returned. At most one Job (including its retries) is processed per call.
+// that), then invokes the Queue's Processor via runClaimedJob. A
+// KindTransient failure retries with exponential backoff starting at
+// q.baseBackoff, up to q.maxAttempts total; any other kind fails the Job
+// immediately. If a backoff wait is cut short by ctx cancellation, the Job
+// is left JobRunning rather than marked Failed — see runClaimedJob and
+// docs/adr/0018-graceful-shutdown.md. A Processor error is recorded on the
+// Job (State, LastError), not returned — it's a business-level outcome,
+// not a queue failure; only Store errors are returned. At most one Job
+// (including its retries) is processed per call.
+//
+// ProcessNext selects globally via NextPending, non-atomically — safe
+// today only because it's the sole caller of that path; cmd/receiptd's
+// per-printer workers instead use ProcessNextForPrinter
+// (docs/adr/0016-queue-concurrency-per-printer-workers.md).
 func (q *Queue) ProcessNext(ctx context.Context) error {
 	next, err := q.store.NextPending(ctx)
 	if err != nil {
@@ -50,6 +54,33 @@ func (q *Queue) ProcessNext(ctx context.Context) error {
 		return err
 	}
 
+	return q.runClaimedJob(ctx, next)
+}
+
+// ProcessNextForPrinter behaves exactly like ProcessNext, except it
+// atomically selects and claims its Job via
+// q.store.ClaimNextPending(ctx, printerName) instead of NextPending plus a
+// manual transition-and-save — what makes it safe to run one of these per
+// configured printer concurrently (docs/adr/
+// 0016-queue-concurrency-per-printer-workers.md). This is what
+// cmd/receiptd's per-printer worker goroutines call.
+func (q *Queue) ProcessNextForPrinter(ctx context.Context, printerName string) error {
+	next, err := q.store.ClaimNextPending(ctx, printerName)
+	if err != nil {
+		return err
+	}
+	if next == nil {
+		return nil
+	}
+
+	return q.runClaimedJob(ctx, next)
+}
+
+// runClaimedJob runs the retry/backoff loop for a Job its caller already
+// transitioned to JobRunning and persisted, then persists the resulting
+// terminal state — the shared body of ProcessNext and
+// ProcessNextForPrinter, which differ only in how they claim next.
+func (q *Queue) runClaimedJob(ctx context.Context, next *Job) error {
 	var procErr error
 	backoff := q.baseBackoff
 	for attempt := 1; attempt <= q.maxAttempts; attempt++ {
@@ -60,7 +91,9 @@ func (q *Queue) ProcessNext(ctx context.Context) error {
 		}
 		q.sleep(ctx, backoff)
 		if ctx.Err() != nil {
-			break
+			// Cut short by cancellation, not exhausted attempts: leave the
+			// Job JobRunning, not Failed (docs/adr/0018-graceful-shutdown.md).
+			return nil
 		}
 		backoff *= 2
 	}
@@ -68,11 +101,8 @@ func (q *Queue) ProcessNext(ctx context.Context) error {
 	if procErr != nil {
 		next.State = JobFailed
 		next.LastError = procErr.Error()
-		// Logged here, not just persisted on the Job: LastError is
-		// returned to API clients only in sanitized form (see
-		// internal/api.JobStatusHandler) because a Processor failure may
-		// embed a filesystem path or a printer's hostname/IP, so the full
-		// detail needs a home an operator can still reach.
+		// Logged in full here: internal/api.JobStatusHandler only returns
+		// LastError sanitized, since it may embed a path or printer address.
 		log.Printf("queue: job %s failed: %v", next.ID, procErr)
 	} else {
 		next.State = JobDone

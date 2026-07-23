@@ -3,7 +3,9 @@
 // app.Service — including a printer.Printer and printer.Profile per
 // configured printer.Connection — registers the versioned API routes,
 // applies Bearer-token middleware when configured, and starts the
-// background queue worker alongside the HTTP server.
+// background queue worker alongside the HTTP server. A SIGTERM or SIGINT
+// begins a bounded graceful shutdown rather than killing the process
+// outright — see docs/adr/0018-graceful-shutdown.md and (*daemon).run.
 //
 // It is the only place in the codebase that ever constructs a
 // printer.Connection — see docs/ARCHITECTURE.md §1.
@@ -36,8 +38,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := d.serve(); err != nil {
-		fmt.Fprintf(os.Stderr, "receiptd: %v\n", err)
-		os.Exit(1)
-	}
+	// run blocks until the HTTP server stops on its own or a SIGTERM/
+	// SIGINT begins docs/adr/0018-graceful-shutdown.md's shutdown
+	// sequence; see run's own doc comment (cmd/receiptd/shutdown.go) for
+	// the full behavior.
+	os.Exit(d.run())
 }

@@ -9,6 +9,33 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Added
+
+- Idempotent print requests: `POST /api/v1/print` accepts an optional
+  `Idempotency-Key` header. Retrying the same key returns the original
+  Job's ID instead of enqueuing a second print, for 24 hours, per
+  [ADR-0020](docs/adr/0020-idempotent-print-requests.md). Omitting the
+  header keeps today's behavior unchanged.
+- Graceful shutdown: `receiptd` now handles `SIGTERM`/`SIGINT` by stopping
+  new HTTP requests and queue claims immediately, letting in-flight work
+  (in particular a Job already streaming raster bytes to a printer) finish
+  naturally, bounded by a 30-second internal deadline, per
+  [ADR-0018](docs/adr/0018-graceful-shutdown.md). Operators must raise
+  their `SIGTERM`→`SIGKILL` grace period above this deadline — see the
+  README's "Graceful shutdown and restart grace periods" section.
+
+### Changed
+
+- Each configured printer now has its own background worker, so a slow or
+  offline printer can no longer block Jobs queued for a different, healthy
+  printer, per
+  [ADR-0016](docs/adr/0016-queue-concurrency-per-printer-workers.md). For
+  the common single-printer deployment this is no observable change. With
+  multiple printers configured, there is no longer a single global claim
+  order across all of them — only per-printer ordering is guaranteed
+  (already arbitrary with respect to enqueue order, as Job IDs are random
+  hex, not time-ordered).
+
 ### Fixed
 
 - The background queue worker no longer crashes the whole daemon if

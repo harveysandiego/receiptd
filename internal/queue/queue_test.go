@@ -121,3 +121,11 @@ func (f *fakeStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job, error
 func (f *fakeStore) NextPending(_ context.Context) (*queue.Job, error) {
 	return nil, nil
 }
+
+func (f *fakeStore) ClaimNextPending(_ context.Context, _ string) (*queue.Job, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) EnqueueIdempotent(_ context.Context, _ *queue.Job, _ time.Time) (*queue.Job, bool, error) {
+	return nil, false, nil
+}

@@ -1,6 +1,6 @@
 # 0020. Idempotent print requests via a client-supplied key, deduped at enqueue time
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

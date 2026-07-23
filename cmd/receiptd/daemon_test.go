@@ -16,6 +16,8 @@ import (
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/config"
 	"github.com/harveysandiego/receiptd/internal/printer"
+	"github.com/harveysandiego/receiptd/internal/queue"
+	"github.com/harveysandiego/receiptd/internal/receipt"
 )
 
 // validConfig returns a minimal, valid *config.Config for build/loadAndBuild
@@ -91,13 +93,16 @@ func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *test
 		},
 	}
 
-	printers, profiles := buildPrinters(cfgs)
+	printers, profiles, names := buildPrinters(cfgs)
 
 	if len(printers) != len(cfgs) {
 		t.Errorf("len(printers) = %d, want %d", len(printers), len(cfgs))
 	}
 	if len(profiles) != len(cfgs) {
 		t.Errorf("len(profiles) = %d, want %d", len(profiles), len(cfgs))
+	}
+	if len(names) != len(cfgs) {
+		t.Errorf("len(names) = %d, want %d", len(names), len(cfgs))
 	}
 	for _, c := range cfgs {
 		if _, ok := printers[c.Name]; !ok {
@@ -107,15 +112,26 @@ func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *test
 			t.Errorf("profiles[%q] = %+v, want %+v", c.Name, got, c.Profile)
 		}
 	}
+	// names must be exactly the same set of printer names as printers/
+	// profiles are keyed by — all three come from the same loop over cfgs,
+	// so they can never disagree; this pins that they don't.
+	for _, name := range names {
+		if _, ok := printers[name]; !ok {
+			t.Errorf("names contains %q, which is not a key of printers", name)
+		}
+	}
 }
 
 func TestBuildPrinters_NoConfiguredPrinters_ReturnsEmptyMaps(t *testing.T) {
-	printers, profiles := buildPrinters(nil)
+	printers, profiles, names := buildPrinters(nil)
 	if len(printers) != 0 {
 		t.Errorf("len(printers) = %d, want 0", len(printers))
 	}
 	if len(profiles) != 0 {
 		t.Errorf("len(profiles) = %d, want 0", len(profiles))
+	}
+	if len(names) != 0 {
+		t.Errorf("len(names) = %d, want 0", len(names))
 	}
 }
 
@@ -129,6 +145,166 @@ func TestBuild_ValidConfig_Succeeds(t *testing.T) {
 	}
 	if d.queue == nil {
 		t.Error("queue is nil")
+	}
+}
+
+// TestBuild_PrinterNamesMatchConfiguredPrinters pins build()'s wiring of
+// daemon.printerNames from cfg.Printers: serve starts one worker per entry
+// of this slice (docs/adr/0016-queue-concurrency-per-printer-workers.md),
+// so it must contain exactly the configured printer names, no more and no
+// fewer — an empty or wrong set here would silently mean some printer's
+// Jobs are never claimed by any worker.
+func TestBuild_PrinterNamesMatchConfiguredPrinters(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Printers = []config.PrinterConfig{
+		{
+			Name:       "front-desk",
+			Connection: printer.Connection{Transport: "network", Address: "127.0.0.1:9100"},
+			Profile:    printer.Profile{WidthDots: 576, DPI: 203},
+		},
+		{
+			Name:       "kitchen",
+			Connection: printer.Connection{Transport: "network", Address: "127.0.0.1:9101"},
+			Profile:    printer.Profile{WidthDots: 384, DPI: 203},
+		},
+	}
+	d := buildDaemon(t, cfg)
+
+	want := map[string]bool{"front-desk": true, "kitchen": true}
+	if len(d.printerNames) != len(want) {
+		t.Fatalf("len(printerNames) = %d, want %d (printerNames = %v)", len(d.printerNames), len(want), d.printerNames)
+	}
+	for _, name := range d.printerNames {
+		if !want[name] {
+			t.Errorf("printerNames contains unexpected name %q", name)
+		}
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Errorf("printerNames is missing %v", want)
+	}
+}
+
+// TestBuild_SinglePrinterConfig_HasExactlyOnePrinterName pins the common
+// homelab deployment shape this ADR promises stays behaviorally unchanged:
+// one configured printer means serve starts exactly one worker, same as
+// before this ADR (docs/adr/0016-queue-concurrency-per-printer-workers.md).
+func TestBuild_SinglePrinterConfig_HasExactlyOnePrinterName(t *testing.T) {
+	d := buildDaemon(t, validConfig(t))
+	if len(d.printerNames) != 1 {
+		t.Fatalf("len(printerNames) = %d, want 1 (validConfig configures exactly \"preview-printer\")", len(d.printerNames))
+	}
+	if d.printerNames[0] != "preview-printer" {
+		t.Errorf("printerNames = %v, want [\"preview-printer\"]", d.printerNames)
+	}
+}
+
+// TestBuild_NoConfiguredPrinters_HasNoPrinterNames proves the edge of this
+// ADR's "one worker per configured printer" rule: zero configured printers
+// means zero workers started, not a single global fallback worker.
+func TestBuild_NoConfiguredPrinters_HasNoPrinterNames(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Printers = nil
+	d := buildDaemon(t, cfg)
+	if len(d.printerNames) != 0 {
+		t.Errorf("len(printerNames) = %d, want 0", len(d.printerNames))
+	}
+}
+
+// TestDaemon_Workers_OnePrinterOffline_DoesNotBlockAnotherPrinterWorker
+// exercises this ADR's central guarantee through real production wiring —
+// build()'s printerNames and runWorker, not a fake Store/Processor
+// (docs/adr/0016-queue-concurrency-per-printer-workers.md). "kitchen" is
+// an offline printer whose worker retries with backoff for a few hundred
+// ms; "front-desk"'s Job must still reach JobDone well within that
+// window, proving one printer's stuck retries never delay another's.
+func TestDaemon_Workers_OnePrinterOffline_DoesNotBlockAnotherPrinterWorker(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, conn)
+			_ = conn.Close()
+		}
+	}()
+
+	// A listener opened and immediately closed refuses new connections
+	// instantly (no accept queue) — see TestBuild_HonoursConfiguredQueue
+	// RetrySettings's own comment for why this is a fast, reliable way to
+	// simulate an offline printer without depending on an unbound port.
+	offlineLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	offlineAddr := offlineLn.Addr().String()
+	if err := offlineLn.Close(); err != nil {
+		t.Fatalf("offlineLn.Close() error = %v", err)
+	}
+
+	cfg := validConfig(t)
+	cfg.Queue.MaxAttempts = 3
+	cfg.Queue.RetryBackoff = 100 * time.Millisecond
+	cfg.Printers = []config.PrinterConfig{
+		{
+			Name:       "front-desk",
+			Connection: printer.Connection{Transport: "network", Address: ln.Addr().String()},
+			Profile:    printer.Profile{WidthDots: 576, DPI: 203, DefaultCut: "full"},
+		},
+		{
+			Name:       "kitchen",
+			Connection: printer.Connection{Transport: "network", Address: offlineAddr},
+			Profile:    printer.Profile{WidthDots: 384, DPI: 203, DefaultCut: "full"},
+		},
+	}
+	d := buildDaemon(t, cfg)
+
+	r := receipt.Receipt{Elements: []receipt.Element{receipt.Text{Content: "hello"}}}
+
+	// A backlog of kitchen Jobs, not just one: with only one, a buggy
+	// ClaimNextPending that ignored printerName could still pass by
+	// coincidence. A backlog makes that coincidence vanishingly unlikely.
+	const kitchenBacklog = 8
+	for i := 0; i < kitchenBacklog; i++ {
+		if err := d.queue.Enqueue(context.Background(), &queue.Job{PrinterName: "kitchen", Receipt: r}); err != nil {
+			t.Fatalf("Enqueue(kitchen #%d) error = %v, want nil", i, err)
+		}
+	}
+	frontDeskJob := &queue.Job{PrinterName: "front-desk", Receipt: r}
+	if err := d.queue.Enqueue(context.Background(), frontDeskJob); err != nil {
+		t.Fatalf("Enqueue(front-desk) error = %v, want nil", err)
+	}
+
+	workerCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, name := range d.printerNames {
+		go runWorker(workerCtx, d.queue, name)
+	}
+
+	// front-desk succeeds on its first attempt, with nothing to wait on;
+	// kitchen needs at least ~300ms of backoff before it can fail. A 150ms
+	// deadline for front-desk to finish is generous for the former and
+	// impossible to hit if front-desk's worker were somehow stuck behind
+	// kitchen's.
+	deadline := time.Now().Add(150 * time.Millisecond)
+	for {
+		got, err := d.queue.Get(context.Background(), frontDeskJob.ID)
+		if err != nil {
+			t.Fatalf("queue.Get(front-desk) error = %v, want nil", err)
+		}
+		if got.State == queue.JobDone {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("front-desk Job did not reach JobDone within %v (state = %v) — kitchen's offline retries may have blocked front-desk's worker", 150*time.Millisecond, got.State)
+		}
+		time.Sleep(2 * time.Millisecond)
 	}
 }
 
@@ -427,10 +603,10 @@ func TestDaemon_Serve_ListenFailure_ReturnsError(t *testing.T) {
 
 	d := buildDaemon(t, cfg)
 
-	// Calling ListenAndServe directly (rather than d.serve()) exercises the
-	// same startup-failure path without also starting the background queue
-	// worker, which has no cancellation in this slice and would otherwise
-	// leak past the end of the test.
+	// Calling ListenAndServe directly (rather than d.run(), which also
+	// calls d.startWorker) exercises the same startup-failure path
+	// without also starting the background queue worker, which would
+	// otherwise leak past the end of the test with nothing to cancel it.
 	if err := d.srv.ListenAndServe(); err == nil {
 		t.Fatal("ListenAndServe: expected error for an address already in use, got nil")
 	}

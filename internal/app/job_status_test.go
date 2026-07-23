@@ -15,7 +15,7 @@ func TestService_JobStatus_ExistingJob_ReturnsJob(t *testing.T) {
 	s := app.New(queue.New(store, &noopProcessor{}))
 	ctx := context.Background()
 
-	jobID, err := s.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := s.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}
@@ -60,7 +60,7 @@ func TestService_JobStatus_DoesNotModifyQueueState(t *testing.T) {
 	s := app.New(queue.New(store, &noopProcessor{}))
 	ctx := context.Background()
 
-	jobID, err := s.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := s.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}
@@ -88,7 +88,7 @@ func TestService_JobStatus_DoesNotInvokeProcessor(t *testing.T) {
 	s := app.New(queue.New(store, proc))
 	ctx := context.Background()
 
-	jobID, err := s.Print(ctx, validReceipt(), "front-desk")
+	jobID, err := s.Print(ctx, validReceipt(), "front-desk", "")
 	if err != nil {
 		t.Fatalf("Print() error = %v, want nil", err)
 	}

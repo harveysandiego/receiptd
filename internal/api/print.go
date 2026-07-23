@@ -14,7 +14,7 @@ import (
 // wiring a real Queue. See docs/ARCHITECTURE.md §9 ("api: httptest
 // against a fake app.Service").
 type printService interface {
-	Print(ctx context.Context, r receipt.Receipt, printerName string) (jobID string, err error)
+	Print(ctx context.Context, r receipt.Receipt, printerName, idempotencyKey string) (jobID string, err error)
 }
 
 // printRequest is the wire shape of a POST /api/v1/print request body.
@@ -54,7 +54,14 @@ func (h *PrintHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID, err := h.Service.Print(r.Context(), req.Receipt, req.Printer)
+	// Idempotency-Key is the now-common convention this project isn't
+	// inventing from scratch (popularized by Stripe's API) — optional, so
+	// an absent header (idempotencyKey == "") is passed straight through
+	// as "" and gets exactly today's always-create behavior from
+	// Service.Print. See docs/adr/0020-idempotent-print-requests.md.
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+
+	jobID, err := h.Service.Print(r.Context(), req.Receipt, req.Printer, idempotencyKey)
 	if err != nil {
 		writeError(w, statusForError(err, http.StatusInternalServerError), err)
 		return

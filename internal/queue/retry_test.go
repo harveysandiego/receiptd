@@ -62,12 +62,38 @@ func (s *retryStore) NextPending(_ context.Context) (*Job, error) {
 	return &cp, nil
 }
 
+// ClaimNextPending mirrors what a real Store's atomic claim does — filter
+// by printerName, transition to JobRunning, persist via Save (so the
+// existing saveCalls/saves bookkeeping stays accurate for any test that
+// exercises it) — scoped to retryStore's single-job model. No existing
+// test in this file calls ProcessNextForPrinter; this exists so retryStore
+// keeps satisfying the Store interface.
+func (s *retryStore) ClaimNextPending(ctx context.Context, printerName string) (*Job, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	if s.job == nil || s.job.State != JobPending || s.job.PrinterName != printerName {
+		return nil, nil
+	}
+	claimed := *s.job
+	claimed.State = JobRunning
+	claimed.UpdatedAt = time.Now()
+	if err := s.Save(ctx, &claimed); err != nil {
+		return nil, err
+	}
+	return &claimed, nil
+}
+
 func (s *retryStore) Get(_ context.Context, id string) (*Job, error) {
 	if s.job == nil || s.job.ID != id {
 		return nil, apperr.Wrap(apperr.KindNotFound, "retryStore.Get", errors.New("not found"))
 	}
 	cp := *s.job
 	return &cp, nil
+}
+
+func (s *retryStore) EnqueueIdempotent(_ context.Context, _ *Job, _ time.Time) (*Job, bool, error) {
+	return nil, false, nil
 }
 
 // scriptedProcessor returns each error in errs in sequence, one per call,
@@ -171,6 +197,61 @@ func TestQueue_ProcessNext_RetriesExhausted_ResultsInJobFailed(t *testing.T) {
 	}
 	if store.job.LastError != transient.Error() {
 		t.Errorf("job.LastError = %q, want %q", store.job.LastError, transient.Error())
+	}
+	if len(slept) != defaultMaxAttempts-1 {
+		t.Errorf("len(slept) = %d, want %d (one fewer than maxAttempts: no sleep after the final attempt)", len(slept), defaultMaxAttempts-1)
+	}
+}
+
+// --- ProcessNextForPrinter shares runClaimedJob with ProcessNext (see
+// process.go), so its retry/backoff behavior for an already-claimed Job
+// must be identical — these two tests exercise that shared loop through
+// the new entry point instead of duplicating every ProcessNext retry case
+// above. ---
+
+func TestQueue_ProcessNextForPrinter_TransientError_RetriesUntilSuccess(t *testing.T) {
+	store := &retryStore{job: &Job{ID: "job-1", PrinterName: "front-desk", State: JobPending}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	proc := &scriptedProcessor{errs: []error{transient, nil}}
+	var slept []time.Duration
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
+
+	if err := q.ProcessNextForPrinter(context.Background(), "front-desk"); err != nil {
+		t.Fatalf("ProcessNextForPrinter() error = %v, want nil", err)
+	}
+	if proc.calls != 2 {
+		t.Errorf("proc.calls = %d, want 2", proc.calls)
+	}
+	if store.job.State != JobDone {
+		t.Errorf("job.State = %v, want %v", store.job.State, JobDone)
+	}
+	if store.job.Attempts != 2 {
+		t.Errorf("job.Attempts = %d, want 2", store.job.Attempts)
+	}
+	wantSlept := []time.Duration{defaultBaseBackoff}
+	if !reflect.DeepEqual(slept, wantSlept) {
+		t.Errorf("slept = %v, want %v", slept, wantSlept)
+	}
+}
+
+func TestQueue_ProcessNextForPrinter_RetriesExhausted_ResultsInJobFailed(t *testing.T) {
+	store := &retryStore{job: &Job{ID: "job-1", PrinterName: "front-desk", State: JobPending}}
+	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
+	proc := &scriptedProcessor{errs: []error{transient, transient, transient}}
+	var slept []time.Duration
+	q := &Queue{store: store, processor: proc, maxAttempts: defaultMaxAttempts, baseBackoff: defaultBaseBackoff, sleep: recordingSleep(&slept)}
+
+	if err := q.ProcessNextForPrinter(context.Background(), "front-desk"); err != nil {
+		t.Fatalf("ProcessNextForPrinter() error = %v, want nil", err)
+	}
+	if proc.calls != defaultMaxAttempts {
+		t.Errorf("proc.calls = %d, want %d", proc.calls, defaultMaxAttempts)
+	}
+	if store.job.State != JobFailed {
+		t.Errorf("job.State = %v, want %v", store.job.State, JobFailed)
+	}
+	if store.job.Attempts != defaultMaxAttempts {
+		t.Errorf("job.Attempts = %d, want %d", store.job.Attempts, defaultMaxAttempts)
 	}
 	if len(slept) != defaultMaxAttempts-1 {
 		t.Errorf("len(slept) = %d, want %d (one fewer than maxAttempts: no sleep after the final attempt)", len(slept), defaultMaxAttempts-1)
@@ -381,6 +462,12 @@ func TestSleepCtx_ReturnsEarlyWhenContextCancelledMidWait(t *testing.T) {
 	}
 }
 
+// TestQueue_ProcessNext_RetryBackoff_InterruptedByContextCancellation pins
+// docs/adr/0018-graceful-shutdown.md's Decision: a backoff wait cut short
+// by ctx cancellation must leave the Job JobRunning, not JobFailed —
+// marking it Failed would misrepresent a shutdown as the Job's own retry
+// policy having been exhausted. Before ADR-0018 this asserted JobFailed;
+// that was the behavior being changed, not a regression.
 func TestQueue_ProcessNext_RetryBackoff_InterruptedByContextCancellation(t *testing.T) {
 	store := &retryStore{job: &Job{ID: "job-1", State: JobPending}}
 	transient := apperr.Wrap(apperr.KindTransient, "test", errors.New("printer offline"))
@@ -408,7 +495,7 @@ func TestQueue_ProcessNext_RetryBackoff_InterruptedByContextCancellation(t *test
 	if proc.calls != 1 {
 		t.Errorf("proc.calls = %d, want 1 (retrying must stop once ctx is cancelled during the backoff wait)", proc.calls)
 	}
-	if store.job.State != JobFailed {
-		t.Errorf("job.State = %v, want %v", store.job.State, JobFailed)
+	if store.job.State != JobRunning {
+		t.Errorf("job.State = %v, want %v (ADR-0018: a mid-backoff cancellation leaves the Job non-terminal, it is not marked Failed)", store.job.State, JobRunning)
 	}
 }

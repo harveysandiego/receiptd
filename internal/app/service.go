@@ -42,15 +42,25 @@ func New(q *queue.Queue) *Service {
 // Print validates r, constructs a Job for it targeting printerName, and
 // enqueues it via the Service's Queue. It returns the enqueued Job's ID.
 // Print only enqueues work — it never processes it.
-func (s *Service) Print(ctx context.Context, r receipt.Receipt, printerName string) (jobID string, err error) {
+//
+// idempotencyKey is the optional client-supplied Idempotency-Key
+// (docs/adr/0020-idempotent-print-requests.md). Empty calls Queue.Enqueue,
+// provably identical to before this feature existed; non-empty calls
+// Queue.EnqueueIdempotent instead, which may return an existing Job's ID
+// or an apperr.KindValidation error rather than creating a new one.
+func (s *Service) Print(ctx context.Context, r receipt.Receipt, printerName, idempotencyKey string) (jobID string, err error) {
 	if err := r.Validate(); err != nil {
 		return "", err
 	}
 
 	j := &queue.Job{PrinterName: printerName, Receipt: r}
-	if err := s.Queue.Enqueue(ctx, j); err != nil {
-		return "", err
+
+	if idempotencyKey == "" {
+		if err := s.Queue.Enqueue(ctx, j); err != nil {
+			return "", err
+		}
+		return j.ID, nil
 	}
 
-	return j.ID, nil
+	return s.Queue.EnqueueIdempotent(ctx, j, idempotencyKey)
 }
