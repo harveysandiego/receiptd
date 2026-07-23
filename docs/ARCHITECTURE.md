@@ -850,11 +850,13 @@ Unchanged — discriminated union via `type`, same shape as Slack's Block Kit:
 `copies` (`receipt.Receipt.Copies`) controls how many physical copies
 `app.Service.Process` prints for one Job: `layout`, `canvas`, and `escpos`
 each run exactly once, and only the final `Printer.Send` repeats, once per
-copy, on the same encoded byte slice. Zero is treated as one; negative is
-rejected by `Receipt.Validate()`. A `Send` failure on any copy fails the
-whole `Process` call, so the queue retries the entire Job per
-[0019](adr/0019-retry-pipeline-granularity.md) — a retry after a partial
-copy run can print duplicates, which is expected rather than a defect.
+copy, on the same encoded byte slice. Zero is treated as one; negative or
+over 100 (`maxCopies`, guarding against one request monopolizing a
+printer's worker) is rejected by `Receipt.Validate()`. A `Send` failure on
+any copy fails the whole `Process` call, so the queue retries the entire
+Job per [0019](adr/0019-retry-pipeline-granularity.md) — a retry after a
+partial copy run can print duplicates, which is expected rather than a
+defect.
 
 ### Polymorphism and validation in Go
 

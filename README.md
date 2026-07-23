@@ -20,7 +20,7 @@ appliance on your home network.
 > auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
 > multi-arch image publishing, release pipeline) are implemented and
 > tested — Receiptd has printed to real hardware, and
-> [v0.3.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.3.0)
+> [v0.4.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.4.0)
 > is tagged and published, including multi-arch images at
 > `ghcr.io/harveysandiego/receiptd`. See [Current status](#current-status)
 > before trying to run this.
@@ -129,6 +129,10 @@ philosophy, and the reasoning behind each decision, lives in
   so a retried request never prints twice
 - **Multi-copy printing** via `Receipt.copies` — one render/encode, sent
   to the printer that many times
+- **Graceful shutdown** on `SIGTERM`/`SIGINT`, letting an in-flight print
+  finish rather than cutting it off mid-stream
+- **Startup crash recovery** for any Job left `running` by a previous
+  crash or unclean death
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
@@ -412,9 +416,9 @@ enqueues a new Job every time, exactly as before — see
 A `Receipt`'s top-level `copies` field controls how many physical copies
 one Job prints: the render → layout → encode pipeline runs once, and the
 resulting ESC/POS bytes are sent to the printer `copies` times. Omitting
-`copies` (or setting it to `0`) prints exactly one copy; a negative value
-is rejected at validation time. A transient send failure partway through
-fails the whole Job for the queue to retry as one unit
+`copies` (or setting it to `0`) prints exactly one copy; a negative value,
+or one over 100, is rejected at validation time. A transient send failure
+partway through fails the whole Job for the queue to retry as one unit
 (docs/adr/0019-retry-pipeline-granularity.md), so a retry after a partial
 copy run can produce duplicate physical copies — expected, not a bug.
 

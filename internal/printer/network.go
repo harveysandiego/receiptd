@@ -12,11 +12,13 @@ import (
 // networkTimeout bounds both dialing a printer and, via conn's write
 // deadline, delivering the encoded bytes to it. Without the latter, a
 // printer that accepts the connection but never reads would block Send's
-// Write forever; since the queue worker processes one Job at a time (see
-// runWorker), that one printer would wedge the entire queue indefinitely.
-// 30s is generous for a receipt's raster bytes to a LAN-local thermal
-// printer while bounding the worst case to "one stuck job blocks the
-// queue for 30s," not forever.
+// Write forever; each configured printer has its own worker goroutine
+// (docs/adr/0016-queue-concurrency-per-printer-workers.md), so a hung
+// Write only stalls that one printer's Jobs, not every printer's — but
+// still indefinitely, with no visible failure, if left unbounded. 30s is
+// generous for a receipt's raster bytes to a LAN-local thermal printer
+// while bounding the worst case to "one stuck send blocks that printer
+// for 30s," not forever.
 const networkTimeout = 30 * time.Second
 
 // networkPrinter sends already-encoded bytes to a printer over TCP,
@@ -49,6 +51,13 @@ func NewNetworkPrinter(conn Connection) Printer {
 // implements, applied directly to net.Conn here. One p.timeout deadline
 // covers the whole loop, not each Write — see networkTimeout for why an
 // unbounded Write is unacceptable.
+//
+// ctx is only consulted by the dial below, never again once the write
+// loop starts: a graceful shutdown's worker-context cancellation
+// (docs/adr/0018-graceful-shutdown.md) can therefore reach a Send already
+// mid-write, but the loop keeps going regardless, bounded only by
+// p.timeout — deliberately, since a raster stream to physical hardware
+// has no safe "abort partway" outcome (docs/adr/0002-raster-rendering.md).
 func (p *networkPrinter) Send(ctx context.Context, data []byte) error {
 	conn, err := p.dial(ctx, "tcp", p.address)
 	if err != nil {

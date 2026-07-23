@@ -9,12 +9,16 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-23
+
 ### Added
 
 - `Receipt.copies` is now implemented: a Job prints that many physical
   copies, rendering and encoding once and repeating only the final send to
   the printer. Previously the field was decoded and round-tripped but had
   no effect — every Job printed exactly once regardless of its value.
+  `copies` must be within `[0, 100]`; a value over 100 is rejected at
+  validation time, so one request can't monopolize a printer.
 - Startup crash recovery: `receiptd` now reconciles any `Job` left
   `running` by a previous crash or unclean death before it starts
   processing anything new. A recovered Job is automatically requeued
@@ -154,7 +158,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/harveysandiego/receiptd/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/harveysandiego/receiptd/compare/v0.1.1...v0.2.0

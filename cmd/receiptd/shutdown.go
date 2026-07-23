@@ -97,12 +97,14 @@ func (d *daemon) shutdownOnSignal(sigCh <-chan os.Signal) int {
 
 // shutdown performs ADR-0018's Phase 1 (stop accepting: d.srv.Shutdown
 // and cancel d.workerCancel, concurrently) and Phase 2 (wait for both to
-// finish, bounded by ctx as a whole). It deliberately never touches the
-// context of a Process call already in progress — an in-flight
-// Printer.Send is left to finish naturally, this ADR's central safety
-// argument. Returns nil on a clean drain, or ctx.Err() if the deadline
-// (or an early cancel from shutdownOnSignal) wins first; never calls
-// os.Exit itself.
+// finish, bounded by ctx as a whole). Cancelling d.workerCancel does
+// reach a Process call already in progress — it's the same shared
+// context — but this ADR's central safety argument holds anyway, because
+// networkPrinter.Send only consults ctx before dialing and ignores it for
+// the rest of the write (see printer/network.go): an in-flight Send
+// finishes naturally rather than aborting mid-stream. Returns nil on a
+// clean drain, or ctx.Err() if the deadline (or an early cancel from
+// shutdownOnSignal) wins first; never calls os.Exit itself.
 func (d *daemon) shutdown(ctx context.Context) error {
 	if d.workerCancel != nil {
 		d.workerCancel()

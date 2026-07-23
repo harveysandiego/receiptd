@@ -72,6 +72,8 @@ func TestReceiptValidate(t *testing.T) {
 		{"zero copies", receipt.Receipt{Version: 1, Copies: 0}, false},
 		{"positive copies", receipt.Receipt{Version: 1, Copies: 3}, false},
 		{"negative copies", receipt.Receipt{Version: 1, Copies: -1}, true},
+		{"copies at the max", receipt.Receipt{Version: 1, Copies: 100}, false},
+		{"copies over the max", receipt.Receipt{Version: 1, Copies: 101}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,6 +114,15 @@ func TestReceiptValidate_NegativeCopies_ReturnsValidationError(t *testing.T) {
 	}
 }
 
+func TestReceiptValidate_CopiesOverMax_ReturnsValidationError(t *testing.T) {
+	r := receipt.Receipt{Version: 1, Copies: 101}
+
+	err := r.Validate()
+	if !apperr.Is(err, apperr.KindValidation) {
+		t.Fatalf("Validate() error = %v, want apperr.KindValidation", err)
+	}
+}
+
 func TestReceipt_EffectiveCopies(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -122,6 +133,8 @@ func TestReceipt_EffectiveCopies(t *testing.T) {
 		{"one stays one", 1, 1},
 		{"positive passes through", 3, 3},
 		{"negative treated as one", -1, 1},
+		{"at the max passes through", 100, 100},
+		{"over the max clamps to max", 101, 100},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

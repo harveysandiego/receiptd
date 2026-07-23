@@ -22,19 +22,33 @@ type Element interface {
 type Receipt struct {
 	Version int `json:"version"`
 	// Copies is how many physical copies app.Service.Process sends to the
-	// printer for one queued Job. Negative is rejected by Validate below;
-	// see EffectiveCopies for how zero is interpreted.
+	// printer for one queued Job. Must be within [0, maxCopies]; negative
+	// or over that bound is rejected by Validate below. See
+	// EffectiveCopies for how zero is interpreted.
 	Copies   int       `json:"copies"`
 	Elements []Element `json:"elements"`
 }
 
+// maxCopies bounds Receipt.Copies. app.Service.Process sends the same
+// encoded bytes to the printer once per copy, so an unbounded value would
+// let a single authenticated request occupy one printer's worker
+// (docs/adr/0016-queue-concurrency-per-printer-workers.md) indefinitely.
+// 100 is far beyond any legitimate multi-copy scenario (a handful of
+// copies at most — e.g. merchant and customer) but finite.
+const maxCopies = 100
+
 // EffectiveCopies is how many times app.Service.Process should send a
-// rendered Receipt to the printer. Zero is treated as one, not rejected:
-// a Receipt built before Copies existed, or one that simply omits it,
-// must keep printing exactly once.
+// rendered Receipt to the printer. A Copies below 1 (omitted, or a Receipt
+// predating the field) means one. maxCopies is clamped here, not only
+// rejected by Validate, so the send loop stays bounded for a Job that
+// reached Process without Validate — one requeued by reconciliation, or
+// built in-process by a future template.
 func (r Receipt) EffectiveCopies() int {
 	if r.Copies < 1 {
 		return 1
+	}
+	if r.Copies > maxCopies {
+		return maxCopies
 	}
 	return r.Copies
 }
@@ -46,6 +60,9 @@ func (r Receipt) Validate() error {
 	var errs []error
 	if r.Copies < 0 {
 		errs = append(errs, fmt.Errorf("copies must not be negative, got %d", r.Copies))
+	}
+	if r.Copies > maxCopies {
+		errs = append(errs, fmt.Errorf("copies must not exceed %d, got %d", maxCopies, r.Copies))
 	}
 	for _, el := range r.Elements {
 		if el == nil {
