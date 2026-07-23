@@ -3,6 +3,7 @@ package receipt
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
@@ -20,13 +21,22 @@ type Element interface {
 // resolved server-side, by printer name, at render time.
 type Receipt struct {
 	Version int `json:"version"`
-	// Copies is decoded and round-tripped through the API and CLI, but
-	// nothing in the render/print pipeline reads it yet — every Job
-	// prints exactly once regardless of its value. Multi-copy printing is
-	// unimplemented, not silently broken; see the README's REST API
-	// examples section.
+	// Copies is how many physical copies app.Service.Process sends to the
+	// printer for one queued Job. Negative is rejected by Validate below;
+	// see EffectiveCopies for how zero is interpreted.
 	Copies   int       `json:"copies"`
 	Elements []Element `json:"elements"`
+}
+
+// EffectiveCopies is how many times app.Service.Process should send a
+// rendered Receipt to the printer. Zero is treated as one, not rejected:
+// a Receipt built before Copies existed, or one that simply omits it,
+// must keep printing exactly once.
+func (r Receipt) EffectiveCopies() int {
+	if r.Copies < 1 {
+		return 1
+	}
+	return r.Copies
 }
 
 // Validate aggregates every Element's Validate() via errors.Join and
@@ -34,6 +44,9 @@ type Receipt struct {
 // itself a validation failure rather than a panic.
 func (r Receipt) Validate() error {
 	var errs []error
+	if r.Copies < 0 {
+		errs = append(errs, fmt.Errorf("copies must not be negative, got %d", r.Copies))
+	}
 	for _, el := range r.Elements {
 		if el == nil {
 			errs = append(errs, errors.New("receipt: nil element"))

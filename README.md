@@ -127,6 +127,8 @@ philosophy, and the reasoning behind each decision, lives in
   slow or offline printer never blocks another
 - **Idempotent print requests** via an optional `Idempotency-Key` header,
   so a retried request never prints twice
+- **Multi-copy printing** via `Receipt.copies` — one render/encode, sent
+  to the printer that many times
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
@@ -407,11 +409,14 @@ the first request. Omitting it (every client that predates this feature)
 enqueues a new Job every time, exactly as before — see
 [ADR-0020](docs/adr/0020-idempotent-print-requests.md).
 
-A `Receipt`'s top-level `copies` field is decoded and round-tripped, but
-nothing in the render/print pipeline reads it yet — every Job prints
-exactly once regardless of its value. Multi-copy printing is
-unimplemented, not configurable; omit `copies` until this is documented
-here as supported.
+A `Receipt`'s top-level `copies` field controls how many physical copies
+one Job prints: the render → layout → encode pipeline runs once, and the
+resulting ESC/POS bytes are sent to the printer `copies` times. Omitting
+`copies` (or setting it to `0`) prints exactly one copy; a negative value
+is rejected at validation time. A transient send failure partway through
+fails the whole Job for the queue to retry as one unit
+(docs/adr/0019-retry-pipeline-granularity.md), so a retry after a partial
+copy run can produce duplicate physical copies — expected, not a bug.
 
 Template-backed convenience endpoints (e.g. `/api/v1/templates/weather`)
 are planned for Milestone 6 and don't exist yet — see the

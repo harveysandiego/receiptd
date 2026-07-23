@@ -213,7 +213,7 @@ type Element interface {
 
 type Receipt struct {
     Version  int       `json:"version"`
-    Copies   int       `json:"copies"` // decoded, not yet acted on — see §3
+    Copies   int       `json:"copies"` // physical copies per Job; 0 == 1 — see §3
     Elements []Element `json:"elements"`
 }
 
@@ -847,11 +847,14 @@ Unchanged — discriminated union via `type`, same shape as Slack's Block Kit:
 }
 ```
 
-`copies` is decoded and round-tripped (`receipt.Receipt.Copies`), but no
-stage of the pipeline — `layout`, `canvas`, `escpos`, `printer` — reads it
-yet; every Job prints exactly once regardless of its value. Multi-copy
-printing has no milestone assigned; treat the field as reserved, not
-functional.
+`copies` (`receipt.Receipt.Copies`) controls how many physical copies
+`app.Service.Process` prints for one Job: `layout`, `canvas`, and `escpos`
+each run exactly once, and only the final `Printer.Send` repeats, once per
+copy, on the same encoded byte slice. Zero is treated as one; negative is
+rejected by `Receipt.Validate()`. A `Send` failure on any copy fails the
+whole `Process` call, so the queue retries the entire Job per
+[0019](adr/0019-retry-pipeline-granularity.md) — a retry after a partial
+copy run can print duplicates, which is expected rather than a defect.
 
 ### Polymorphism and validation in Go
 

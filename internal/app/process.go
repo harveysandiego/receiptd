@@ -14,13 +14,18 @@ import (
 )
 
 // Process renders j.Receipt against j.PrinterName's Profile, encodes the
-// Canvas to ESC/POS against that same Profile, and sends the bytes to the
-// Printer for that PrinterName — the Receipt -> Layout -> Canvas ->
-// ESC/POS -> Printer pipeline (docs/ARCHITECTURE.md §4 step 8). It
-// satisfies queue.Processor (docs/ARCHITECTURE.md §2) and is invoked by
-// Queue.ProcessNext, which owns every Job state transition — Process
-// reads only Receipt and PrinterName, never j.State, j.Attempts, or any
-// other Job field.
+// Canvas to ESC/POS, and sends the resulting bytes to the Printer for
+// that PrinterName — the Receipt -> Layout -> Canvas -> ESC/POS ->
+// Printer pipeline (docs/ARCHITECTURE.md §4 step 8). It satisfies
+// queue.Processor and is invoked by Queue.ProcessNext, which owns every
+// Job state transition — Process reads only Receipt and PrinterName,
+// never j.State, j.Attempts, or any other Job field.
+//
+// j.Receipt.EffectiveCopies repeats only the final Send, on the one
+// rendered and encoded byte stream — never render or encode. A Send
+// failure on any copy fails the whole call, so queue.ProcessNext retries
+// the entire Job (docs/adr/0019-retry-pipeline-granularity.md); a retry
+// after a partial copy run can therefore duplicate physical copies.
 //
 // Process is orchestration only; each stage's error is returned exactly
 // as received, so a caller can still branch on its original apperr.Kind.
@@ -45,7 +50,12 @@ func (s *Service) Process(ctx context.Context, j *queue.Job) error {
 		return apperr.Wrap(apperr.KindNotFound, "app.Process", fmt.Errorf("printer %q not configured", j.PrinterName))
 	}
 
-	return p.Send(ctx, data)
+	for i := 0; i < j.Receipt.EffectiveCopies(); i++ {
+		if err := p.Send(ctx, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // render composes the rendering pipeline (layout.Build then canvas.Paint)

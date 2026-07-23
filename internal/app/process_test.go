@@ -38,16 +38,22 @@ func (unsupportedElement) Validate() error { return nil }
 // they return fixed, uninteresting values.
 type fakePrinter struct {
 	sendErr error
-	sent    []byte
-	calls   int
+	// failOnCall, if non-zero, limits sendErr to that one Send call
+	// (1-indexed) instead of every call — how copies tests simulate a
+	// transient failure partway through a multi-copy print.
+	failOnCall int
+	sent       []byte
+	sentCalls  [][]byte
+	calls      int
 }
 
 func (p *fakePrinter) Send(_ context.Context, data []byte) error {
 	p.calls++
-	if p.sendErr != nil {
+	if p.sendErr != nil && (p.failOnCall == 0 || p.calls == p.failOnCall) {
 		return p.sendErr
 	}
 	p.sent = append([]byte(nil), data...)
+	p.sentCalls = append(p.sentCalls, append([]byte(nil), data...))
 	return nil
 }
 
@@ -331,5 +337,114 @@ func TestService_Process_ReReadsAssetOnEachCall(t *testing.T) {
 
 	if bytes.Equal(first.sent, second.sent) {
 		t.Error("Process() sent identical bytes after the asset changed between calls, want each call to re-resolve and re-render the asset's current content")
+	}
+}
+
+// countingAssetStore wraps an assets.Store to count Get calls, letting
+// tests observe that Process resolves an Asset element once per call
+// regardless of Receipt.Copies, without depending on layout/canvas
+// internals.
+type countingAssetStore struct {
+	assets.Store
+	getCalls int
+}
+
+func (s *countingAssetStore) Get(ctx context.Context, name string) ([]byte, error) {
+	s.getCalls++
+	return s.Store.Get(ctx, name)
+}
+
+func TestService_Process_CopiesOne_SendsExactlyOnce(t *testing.T) {
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Copies: 1, Elements: validReceipt().Elements}}
+
+	if err := s.Process(context.Background(), j); err != nil {
+		t.Fatalf("Process() error = %v, want nil", err)
+	}
+	if fp.calls != 1 {
+		t.Errorf("printer.Send was called %d times, want exactly 1", fp.calls)
+	}
+}
+
+func TestService_Process_CopiesZero_TreatedAsOne(t *testing.T) {
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Copies: 0, Elements: validReceipt().Elements}}
+
+	if err := s.Process(context.Background(), j); err != nil {
+		t.Fatalf("Process() error = %v, want nil", err)
+	}
+	if fp.calls != 1 {
+		t.Errorf("printer.Send was called %d times, want exactly 1 (zero copies treated as one)", fp.calls)
+	}
+}
+
+func TestService_Process_CopiesThree_SendsThreeIdenticalCopies(t *testing.T) {
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Copies: 3, Elements: validReceipt().Elements}}
+
+	if err := s.Process(context.Background(), j); err != nil {
+		t.Fatalf("Process() error = %v, want nil", err)
+	}
+	if fp.calls != 3 {
+		t.Fatalf("printer.Send was called %d times, want exactly 3", fp.calls)
+	}
+	for i, sent := range fp.sentCalls {
+		if !bytes.Equal(sent, fp.sentCalls[0]) {
+			t.Errorf("copy %d bytes differ from copy 0, want every copy byte-identical", i)
+		}
+	}
+}
+
+func TestService_Process_TransientFailureDuringSecondCopy_Propagates(t *testing.T) {
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	sendErr := apperr.Wrap(apperr.KindTransient, "printer.Send", errors.New("connection refused"))
+	fp := &fakePrinter{sendErr: sendErr, failOnCall: 2}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Copies: 3, Elements: validReceipt().Elements}}
+
+	err := s.Process(context.Background(), j)
+	if !apperr.Is(err, apperr.KindTransient) {
+		t.Fatalf("Process() error = %v, want apperr.KindTransient", err)
+	}
+	if !errors.Is(err, sendErr) {
+		t.Errorf("Process() error = %v, want it to be sendErr unmodified", err)
+	}
+	if fp.calls != 2 {
+		t.Errorf("printer.Send was called %d times, want exactly 2 (stop at the failing copy, don't attempt copy 3)", fp.calls)
+	}
+}
+
+func TestService_Process_MultipleCopies_RendersAndEncodesExactlyOnce(t *testing.T) {
+	ctx := context.Background()
+	store := &countingAssetStore{Store: assets.NewMemoryStore()}
+	if err := store.Put(ctx, "logo.png", solidPNG(t, 4, 2, color.Black)); err != nil {
+		t.Fatalf("Put() error = %v, want nil", err)
+	}
+
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	s.Assets = store
+	fp := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": fp}
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Copies: 3, Elements: []receipt.Element{receipt.Asset{Name: "logo.png"}}}}
+
+	if err := s.Process(ctx, j); err != nil {
+		t.Fatalf("Process() error = %v, want nil", err)
+	}
+	if fp.calls != 3 {
+		t.Fatalf("printer.Send was called %d times, want exactly 3", fp.calls)
+	}
+	if store.getCalls != 1 {
+		t.Errorf("assets.Store.Get was called %d times, want exactly 1 (render/encode must run once regardless of copy count)", store.getCalls)
 	}
 }

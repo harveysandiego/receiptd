@@ -11,6 +11,10 @@ the 0.x series.
 
 ### Added
 
+- `Receipt.copies` is now implemented: a Job prints that many physical
+  copies, rendering and encoding once and repeating only the final send to
+  the printer. Previously the field was decoded and round-tripped but had
+  no effect — every Job printed exactly once regardless of its value.
 - Startup crash recovery: `receiptd` now reconciles any `Job` left
   `running` by a previous crash or unclean death before it starts
   processing anything new. A recovered Job is automatically requeued

@@ -69,6 +69,9 @@ func TestReceiptValidate(t *testing.T) {
 			}},
 			true,
 		},
+		{"zero copies", receipt.Receipt{Version: 1, Copies: 0}, false},
+		{"positive copies", receipt.Receipt{Version: 1, Copies: 3}, false},
+		{"negative copies", receipt.Receipt{Version: 1, Copies: -1}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,6 +100,36 @@ func TestReceiptValidate_WrapsAsApperrValidation(t *testing.T) {
 	}
 	if target.Op != "receipt.Validate" {
 		t.Errorf("Op = %q, want %q", target.Op, "receipt.Validate")
+	}
+}
+
+func TestReceiptValidate_NegativeCopies_ReturnsValidationError(t *testing.T) {
+	r := receipt.Receipt{Version: 1, Copies: -1}
+
+	err := r.Validate()
+	if !apperr.Is(err, apperr.KindValidation) {
+		t.Fatalf("Validate() error = %v, want apperr.KindValidation", err)
+	}
+}
+
+func TestReceipt_EffectiveCopies(t *testing.T) {
+	tests := []struct {
+		name   string
+		copies int
+		want   int
+	}{
+		{"zero treated as one", 0, 1},
+		{"one stays one", 1, 1},
+		{"positive passes through", 3, 3},
+		{"negative treated as one", -1, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := receipt.Receipt{Copies: tt.copies}
+			if got := r.EffectiveCopies(); got != tt.want {
+				t.Errorf("EffectiveCopies() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
