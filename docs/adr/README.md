@@ -31,6 +31,11 @@ does without reopening a discussion that already happened.
 | [0019](0019-retry-pipeline-granularity.md) | Retry the whole render→encode→send pipeline, not just Send |
 | [0020](0020-idempotent-print-requests.md) | Idempotent print requests via a client-supplied key, deduped at enqueue time |
 | [0021](0021-transport-security-via-reverse-proxy.md) | TLS termination is a deployment concern, handled by a reverse proxy, not the application |
+| [0022](0022-webui-server-rendered-html-template.md) | Web UI is server-rendered `html/template`, not a JS SPA |
+| [0023](0023-webui-authentication-reuses-shared-token.md) | Web UI reuses the existing shared-token Bearer/Basic auth, no sessions |
+| [0024](0024-printer-settings-screen-is-read-only.md) | Web UI's printer settings screen is read-only |
+| [0025](0025-dashboard-updates-via-polling.md) | Dashboard state via periodic client-side polling, not SSE/WebSockets |
+| [0026](0026-asset-upload-multipart-form-data.md) | Asset uploads via `multipart/form-data`, not JSON+base64 |
 
 ## Conventions
 
