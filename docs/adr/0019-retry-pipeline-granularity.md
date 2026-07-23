@@ -1,6 +1,6 @@
 # 0019. Retry the whole render→encode→send pipeline, not just Send
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

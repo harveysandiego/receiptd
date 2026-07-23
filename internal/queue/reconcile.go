@@ -16,11 +16,16 @@ import (
 // orphaned. It returns how many Jobs were retried vs. failed, and
 // propagates the first Store error without reconciling past it.
 func (q *Queue) Reconcile(ctx context.Context) (retried, failed int, err error) {
+	// A full List scan, not a Running-only lookup — an accepted trade-off
+	// per the ADR's Consequences section, not an oversight.
 	jobs, err := q.store.List(ctx, Filter{})
 	if err != nil {
 		return 0, 0, err
 	}
 
+	// One timestamp for every Job here, not a fresh time.Now() per Job:
+	// reconciliation is one operation resolving Jobs orphaned by the same
+	// restart.
 	now := time.Now()
 	for _, j := range jobs {
 		if j.State != JobRunning {

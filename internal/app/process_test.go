@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/assets"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/receipt"
@@ -272,5 +276,60 @@ func TestService_Process_PrinterSendError_DoesNotMutateJob(t *testing.T) {
 
 	if !reflect.DeepEqual(*j, before) {
 		t.Errorf("Process() mutated the Job on a send error: got %+v, want unchanged %+v", *j, before)
+	}
+}
+
+// solidPNG returns the encoded bytes of a width x height PNG filled with c.
+func solidPNG(t *testing.T, width, height int, c color.Color) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("png.Encode() error = %v, want nil", err)
+	}
+	return buf.Bytes()
+}
+
+// TestService_Process_ReReadsAssetOnEachCall pins
+// docs/adr/0019-retry-pipeline-granularity.md's decision: Process caches
+// nothing across calls, so a retry (a second Process call for the same
+// Job, exactly what queue.runClaimedJob does) always re-resolves a
+// receipt.Asset's current content rather than reusing what an earlier
+// call saw.
+func TestService_Process_ReReadsAssetOnEachCall(t *testing.T) {
+	ctx := context.Background()
+	store := assets.NewMemoryStore()
+	if err := store.Put(ctx, "logo.png", solidPNG(t, 4, 2, color.Black)); err != nil {
+		t.Fatalf("Put() error = %v, want nil", err)
+	}
+
+	s := app.New(queue.New(queue.NewMemoryStore(), &noopProcessor{}))
+	s.Assets = store
+	s.Profiles = map[string]printer.Profile{"front-desk": {}}
+	j := &queue.Job{PrinterName: "front-desk", Receipt: receipt.Receipt{Elements: []receipt.Element{receipt.Asset{Name: "logo.png"}}}}
+
+	first := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": first}
+	if err := s.Process(ctx, j); err != nil {
+		t.Fatalf("Process() (first) error = %v, want nil", err)
+	}
+
+	if err := store.Put(ctx, "logo.png", solidPNG(t, 8, 2, color.Black)); err != nil {
+		t.Fatalf("Put() (overwrite) error = %v, want nil", err)
+	}
+
+	second := &fakePrinter{}
+	s.Printers = map[string]printer.Printer{"front-desk": second}
+	if err := s.Process(ctx, j); err != nil {
+		t.Fatalf("Process() (second) error = %v, want nil", err)
+	}
+
+	if bytes.Equal(first.sent, second.sent) {
+		t.Error("Process() sent identical bytes after the asset changed between calls, want each call to re-resolve and re-render the asset's current content")
 	}
 }

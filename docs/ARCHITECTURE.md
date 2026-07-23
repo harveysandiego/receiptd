@@ -1114,6 +1114,15 @@ expiry is enforced lazily, only at lookup time inside
 keys, and an expired match is simply treated as if no `Job` had ever been
 recorded under that key.
 
+**Retry granularity** (`docs/adr/0019-retry-pipeline-granularity.md`): a
+retry re-runs the whole render→encode→send pipeline, not just `Send` —
+`queue.Job` caches no rendered `Canvas` or encoded bytes between attempts.
+A deliberate decision, not an oversight: only `Printer.Send` ever produces
+`apperr.KindTransient`, so a retry is cheap at this project's scale, and
+caching would only trade that simplicity for a narrower correctness
+problem (a mutable `receipt.Asset` resolved differently between attempts)
+without actually solving it.
+
 ---
 
 ## 7. Configuration
