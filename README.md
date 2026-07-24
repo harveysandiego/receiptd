@@ -137,7 +137,8 @@ philosophy, and the reasoning behind each decision, lives in
 - **Web UI** (opt-in via `web.enabled`): a dashboard (printer/asset/queue
   counts), a read-only printer settings screen, asset management
   (upload/list/delete), a receipt preview form, and a quick-print form —
-  see [Web UI](#web-ui) below
+  CSRF-protected, with a set of defensive security headers on every
+  response; see [Web UI](#web-ui) below
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
 
 Planned but not yet implemented — see [Roadmap](#roadmap):
@@ -156,9 +157,11 @@ encoding, network printer transport, every Milestone 3 Element type
 server-rendered Web UI (dashboard, printer settings, assets, preview,
 quick print) whose dashboard refreshes its printer/queue counts live via
 client-side polling ([ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md)),
-and multi-architecture container images published automatically on
-tagged releases. Receiptd has printed successfully to real hardware (an
-Epson TM-m30II). Track progress via the
+hardened with CSRF protection
+([ADR-0027](docs/adr/0027-webui-csrf-protection-via-per-process-hmac-token.md))
+and a defensive set of security headers, and multi-architecture container
+images published automatically on tagged releases. Receiptd has printed
+successfully to real hardware (an Epson TM-m30II). Track progress via the
 [roadmap](#roadmap) below and the
 [milestones](https://github.com/harveysandiego/receiptd/milestones) on
 GitHub. See [VERSIONING.md](VERSIONING.md) and
@@ -451,10 +454,18 @@ talking to the [REST API](#rest-api-examples) above; the two are
 independent surfaces over the same `app.Service`, and nothing here
 changes or deprecates the API.
 
+Every state-changing form (Quick Print, Asset Upload, Asset Delete) is
+CSRF-protected — a per-process signed token embedded as a hidden field,
+no session or cookie involved
+([ADR-0027](docs/adr/0027-webui-csrf-protection-via-per-process-hmac-token.md))
+— and every response carries a defensive set of security headers
+(Content-Security-Policy, X-Frame-Options, X-Content-Type-Options,
+Referrer-Policy).
+
 | Page | Path | Notes |
 |---|---|---|
 | Dashboard | `/` | Printer/asset/queue counts; Printers/Queue cards refresh live via polling |
-| Printers | `/printers` | Name, transport, address, profile, live status — read-only; edit `config.yaml` and restart to change a printer ([ADR-0024](docs/adr/0024-printer-settings-screen-is-read-only.md)) |
+| Printers | `/printers` | Name, transport, address, profile, live status — read-only; edit `config.yaml` and restart to change a printer ([ADR-0024](docs/adr/0024-printer-settings-screen-is-read-only.md)). Status checks run concurrently with a per-printer timeout, so one slow or offline printer never delays the rest; a printer's raw connection error is logged server-side, not shown in the browser. |
 | Assets | `/assets` | Upload (`multipart/form-data`), list, and delete named assets |
 | Preview | `/preview` | Paste a Receipt as JSON, render it as a PNG against a chosen printer's profile — never prints |
 | Print | `/print` | Paste a Receipt as JSON, submit it — creates a print Job on the queue, same as `POST /api/v1/print` |
@@ -464,7 +475,9 @@ small client-side script polling `GET /status`, a JSON endpoint owned by
 the Web UI itself — no round-trip through the REST API
 ([ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md)). Between
 polls it shows the last-fetched state; there's no guarantee of
-sub-poll-interval freshness.
+sub-poll-interval freshness. Polling never overlaps itself (the next
+request only starts once the current one finishes) and pauses while the
+browser tab isn't visible, resuming as soon as it is again.
 
 ```yaml
 web:

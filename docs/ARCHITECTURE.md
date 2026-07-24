@@ -1299,10 +1299,13 @@ image upload, asset management, printer settings.
 
 `internal/webui` landed across seven slices (Infrastructure, Service Seam,
 Dashboard, Printers, Assets, Preview, Quick Print), plus a follow-up slice
-implementing docs/adr/0025's client-side polling. This is the as-built
-shape, recorded here because every `webui` handler's doc comment points
-at "this section" for the route table and the shared patterns below —
-this is that reference, not just the roadmap blurb above it.
+implementing docs/adr/0025's client-side polling, plus a release-hardening
+pass (reliability and security fixes ahead of v0.5.0 — Milestone 4 was
+never part of the already-tagged v0.4.0, covered inline below). This is
+the as-built shape, recorded here because every `webui` handler's doc
+comment points at "this section" for the route table and the shared
+patterns below — this is that reference, not just the roadmap blurb
+above it.
 
 **Route table** (`internal/webui/router.go`):
 
@@ -1311,10 +1314,10 @@ this is that reference, not just the roadmap blurb above it.
 | GET | `/{$}` | `DashboardHandler` | printer/asset/queue counts, refreshed live via client-side polling (docs/adr/0025) |
 | GET | `/status` | `StatusHandler` | JSON poll target for the dashboard (docs/adr/0025) |
 | GET | `/printers` | `PrintersHandler` | read-only (docs/adr/0024) |
-| GET, POST | `/assets` | `AssetsHandler.List`/`Upload` | multipart upload (docs/adr/0026) |
-| POST | `/assets/{name}/delete` | `AssetsHandler.Delete` | |
-| GET, POST | `/preview` | `PreviewHandler.Show`/`Generate` | never enqueues a Job (docs/adr/0006) |
-| GET, POST | `/print` | `PrintHandler.Show`/`Submit` | always enqueues a Job on success |
+| GET, POST | `/assets` | `AssetsHandler.List`/`Upload` | multipart upload (docs/adr/0026); POST is CSRF-protected (docs/adr/0027) |
+| POST | `/assets/{name}/delete` | `AssetsHandler.Delete` | CSRF-protected (docs/adr/0027) |
+| GET, POST | `/preview` | `PreviewHandler.Show`/`Generate` | never enqueues a Job (docs/adr/0006); not CSRF-protected — it never mutates state |
+| GET, POST | `/print` | `PrintHandler.Show`/`Submit` | always enqueues a Job on success; POST is CSRF-protected (docs/adr/0027) |
 | GET | `/static/` | static file server | serves the Web UI's embedded CSS/JS assets |
 
 **Shared patterns every page follows:**
@@ -1333,10 +1336,33 @@ this is that reference, not just the roadmap blurb above it.
   in exactly one of these two calls; `render` executes the page's own
   template (cloned from `baseTemplate`, since `html/template` treats
   redefining a block name as last-write-wins across a shared parse —
-  see `render.go`); `renderError` maps an `apperr.Kind` to an HTTP status
-  and shows a generic message, never the underlying error string, the same
-  trust boundary `internal/api/job_status.go` applies to a Job's
-  `LastError`.
+  see `render.go`) into an in-memory buffer first, and only commits
+  headers/status once execution succeeds, so a template bug can't leave a
+  response half-written with the wrong status already sent; `renderError`
+  maps an `apperr.Kind` to an HTTP status and shows a generic message,
+  never the underlying error string, the same trust boundary
+  `internal/api/job_status.go` applies to a Job's `LastError`.
+- **CSRF protection (docs/adr/0027).** Every state-changing route
+  (`POST /print`, `/assets`, `/assets/{name}/delete`) requires a
+  per-process HMAC-signed token (`csrf.go`), embedded as each protected
+  form's hidden `csrf_token` field and checked in constant time before any
+  handler logic runs — no session, no cookie, nothing `docs/adr/0023`
+  already ruled out. `POST /preview` is the deliberate exception: it never
+  mutates state, so it sits outside this decision's scope.
+- **Security headers.** The whole router is wrapped in a
+  `securityHeaders` middleware (`router.go`) applying a fixed
+  Content-Security-Policy, `X-Frame-Options`, `X-Content-Type-Options`,
+  and `Referrer-Policy` to every response — HTML pages, the `/status`
+  JSON, and static assets alike.
+- **Concurrent, timeout-bounded printer status.** `app.Service.ListPrinters`
+  (backing both `/printers` and the dashboard/`/status`) checks every
+  configured printer's `Printer.Status` concurrently, one goroutine each,
+  bounded by a 5s `printerStatusTimeout` well under `cmd/receiptd`'s 30s
+  HTTP `WriteTimeout` — a slow or offline printer delays only its own
+  result, never the others', and results stay sorted by name regardless
+  of completion order. A printer's raw `StatusDetail` (a transport-level
+  dial error) is logged server-side but never rendered on the Printers
+  page, which shows only Online/Offline.
 - **POST/redirect/GET for anything that mutates state.** Asset upload,
   asset delete, and print submission all redirect (303) to a GET on
   success rather than rendering a body directly, so a reload of the
@@ -1372,7 +1398,11 @@ this is that reference, not just the roadmap blurb above it.
   technique used for `"content"`) that only `dashboard.tmpl` overrides —
   no other page loads or runs it. Every `/status` response carries
   `Cache-Control: no-store`, so neither the browser nor a reverse proxy
-  in front of it (docs/adr/0021) ever serves a stale poll.
+  in front of it (docs/adr/0021) ever serves a stale poll. Polling
+  self-schedules its next request only once the current one settles,
+  rather than a fixed timer, so overlapping requests are structurally
+  impossible; it also pauses while the tab is hidden
+  (`document.hidden`), resuming on `visibilitychange`.
 
 **Milestone 5 — Packaging**
 Multi-stage Dockerfile (`CGO_ENABLED=0`), `buildx` multi-arch (amd64/arm64),

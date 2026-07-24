@@ -36,15 +36,54 @@ the 0.x series.
   reload, per
   [ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md).
 
+### Changed
+
+- Web UI printer status checks (backing the dashboard, `/printers`, and
+  `/status`) now run concurrently, one goroutine per configured printer,
+  each bounded by a 5s timeout well under the HTTP server's 30s
+  `WriteTimeout` — a slow or offline printer can no longer delay the
+  others or the whole request; results stay sorted by name regardless of
+  completion order.
+- `internal/webui`'s shared `render()` now buffers template execution and
+  only commits headers/status once it succeeds, so a template bug can no
+  longer leave a response half-written with the wrong status already
+  sent.
+- `web/static/dashboard.js`'s polling now self-schedules its next request
+  only once the current one finishes, rather than a fixed timer, making
+  overlapping requests structurally impossible, and pauses while the
+  browser tab is hidden, resuming on `visibilitychange`.
+
+### Security
+
+- CSRF protection for every state-changing Web UI route (`POST /print`,
+  `/assets`, `/assets/{name}/delete`): a per-process HMAC-signed token
+  embedded as each protected form's hidden field, verified in constant
+  time — no session, no cookie, per
+  [ADR-0027](docs/adr/0027-webui-csrf-protection-via-per-process-hmac-token.md).
+  `POST /preview` is unaffected — it never mutates state.
+- Every Web UI response now carries a defensive set of security headers
+  (Content-Security-Policy, `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy`), applied uniformly by a middleware wrapping the
+  whole router.
+- `POST /preview` and `POST /print` now apply the same request body size
+  limit asset uploads already had, preventing an oversized body from
+  consuming excessive memory.
+- The Printers page no longer shows a printer's raw connection error
+  (transport-level dial failure text) to the browser — it's logged
+  server-side for an administrator instead, with the page showing a
+  plain Online/Offline.
+
 ### Documentation
 
 - `docs/ARCHITECTURE.md` §10 gained a "Milestone 4 as built" section
   documenting the Web UI's route table and the shared handler/page-model/
   PRG patterns every page follows, replacing several `internal/webui`
   code comments' previously-unfulfilled references to "the route table"
-  in that section.
-- ADR-0022 through ADR-0026 are all marked `Accepted` after confirming
-  each decision's implementation, including ADR-0025's dashboard polling.
+  in that section; that section now also covers CSRF protection, security
+  headers, and concurrent printer status.
+- ADR-0022 through ADR-0027 are all marked `Accepted` after confirming
+  each decision's implementation, including ADR-0025's dashboard polling
+  and the new ADR-0027 (Web UI CSRF protection).
 
 ## [0.4.0] - 2026-07-23
 
