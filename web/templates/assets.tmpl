@@ -1,0 +1,34 @@
+{{define "content"}}
+<h2>Assets</h2>
+
+<form method="post" action="/assets" enctype="multipart/form-data" class="upload-form">
+<label>Name <input type="text" name="name" required></label>
+<label>File <input type="file" name="file" required></label>
+<button type="submit">Upload</button>
+</form>
+
+{{if .Assets}}
+<table class="assets">
+<thead>
+<tr>
+<th>Name</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+{{range .Assets}}
+<tr>
+<td>{{.Name}}</td>
+<td>
+<form method="post" action="/assets/{{.Name}}/delete" class="delete-form">
+<button type="submit">Delete</button>
+</form>
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p>No assets stored.</p>
+{{end}}
+{{end}}

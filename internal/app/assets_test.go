@@ -92,3 +92,79 @@ func TestService_ListAssets_StoreErrorPropagates(t *testing.T) {
 		t.Fatalf("ListAssets() error = %v, want apperr.KindPermanent", err)
 	}
 }
+
+func TestService_UploadAsset_StoresRetrievableBytes(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	if err := s.UploadAsset(ctx, "logo.png", []byte("fake-png-bytes")); err != nil {
+		t.Fatalf("UploadAsset() error = %v, want nil", err)
+	}
+
+	got, err := s.Assets.Get(ctx, "logo.png")
+	if err != nil {
+		t.Fatalf("Assets.Get() error = %v, want nil", err)
+	}
+	if string(got) != "fake-png-bytes" {
+		t.Errorf("Assets.Get() = %q, want %q", got, "fake-png-bytes")
+	}
+}
+
+func TestService_UploadAsset_ExistingName_Overwrites(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	if err := s.UploadAsset(ctx, "logo.png", []byte("first")); err != nil {
+		t.Fatalf("UploadAsset() error = %v, want nil", err)
+	}
+	if err := s.UploadAsset(ctx, "logo.png", []byte("second")); err != nil {
+		t.Fatalf("UploadAsset() error = %v, want nil", err)
+	}
+
+	got, err := s.Assets.Get(ctx, "logo.png")
+	if err != nil {
+		t.Fatalf("Assets.Get() error = %v, want nil", err)
+	}
+	if string(got) != "second" {
+		t.Errorf("Assets.Get() = %q, want the second upload to have replaced the first", got)
+	}
+}
+
+func TestService_UploadAsset_InvalidName_ReturnsValidationError(t *testing.T) {
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	err := s.UploadAsset(context.Background(), "", []byte("data"))
+	if !apperr.Is(err, apperr.KindValidation) {
+		t.Fatalf("UploadAsset(\"\") error = %v, want apperr.KindValidation", err)
+	}
+}
+
+func TestService_DeleteAsset_RemovesStoredAsset(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+	if err := s.Assets.Put(ctx, "logo.png", []byte("data")); err != nil {
+		t.Fatalf("Put() error = %v, want nil", err)
+	}
+
+	if err := s.DeleteAsset(ctx, "logo.png"); err != nil {
+		t.Fatalf("DeleteAsset() error = %v, want nil", err)
+	}
+
+	if _, err := s.Assets.Get(ctx, "logo.png"); !apperr.Is(err, apperr.KindNotFound) {
+		t.Errorf("Assets.Get() after delete: error = %v, want apperr.KindNotFound", err)
+	}
+}
+
+func TestService_DeleteAsset_MissingName_ReturnsNotFound(t *testing.T) {
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	err := s.DeleteAsset(context.Background(), "does-not-exist.png")
+	if !apperr.Is(err, apperr.KindNotFound) {
+		t.Fatalf("DeleteAsset() error = %v, want apperr.KindNotFound", err)
+	}
+}

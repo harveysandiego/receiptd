@@ -64,3 +64,28 @@ table.printers td {
   padding: 0.5rem;
   text-align: left;
 }
+
+table.assets {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.assets th,
+table.assets td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.upload-form {
+  margin-bottom: 1rem;
+}
+
+.upload-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.delete-form {
+  display: inline;
+}

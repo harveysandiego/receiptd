@@ -596,15 +596,13 @@ func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
 // webUIStubRoutes is every route in the Milestone 4 routing contract
 // (docs/ARCHITECTURE.md §10) still awaiting its own slice, shared by the
 // auth-disabled and auth-enabled coverage tests below so both exercise
-// exactly the same route list. GET / (Dashboard) and GET /printers
-// (Printers) are covered separately by the tests below, since those
-// slices have replaced their stubs and no longer answer 501.
+// exactly the same route list. GET / (Dashboard), GET /printers
+// (Printers), and the Assets routes are covered separately by the tests
+// below, since those slices have replaced their stubs and no longer
+// answer 501.
 func webUIStubRoutes() []struct{ method, path string } {
 	return []struct{ method, path string }{
 		{http.MethodGet, "/status"},
-		{http.MethodGet, "/assets"},
-		{http.MethodPost, "/assets"},
-		{http.MethodPost, "/assets/logo.png/delete"},
 		{http.MethodGet, "/preview"},
 		{http.MethodPost, "/preview"},
 		{http.MethodGet, "/print"},
@@ -737,6 +735,60 @@ func TestBuild_WebEnabled_AuthEnabled_Printers_RequiresBasicThenRendersOK(t *tes
 	d.srv.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// TestBuild_WebEnabled_AuthDisabled_Assets_RendersOK proves GET /assets
+// now reaches the real Assets handler (docs/ARCHITECTURE.md §10) rather
+// than the stub — its own slice has landed, so it no longer belongs in
+// webUIStubRoutes' 501 coverage above.
+func TestBuild_WebEnabled_AuthDisabled_Assets_RendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// TestBuild_WebEnabled_AuthEnabled_Assets_RequiresBasicThenRendersOK
+// proves the Assets routes stay Basic-protected the same way every other
+// Web UI route does: GET /assets now answers with real content instead
+// of a 501 stub, and both mutating routes (POST /assets, POST
+// /assets/{name}/delete) still require the same credential before
+// reaching AssetsHandler at all.
+func TestBuild_WebEnabled_AuthEnabled_Assets_RequiresBasicThenRendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: GET /assets status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/assets", nil)
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: GET /assets status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	for _, rt := range []struct{ method, path string }{
+		{http.MethodPost, "/assets"},
+		{http.MethodPost, "/assets/logo.png/delete"},
+	} {
+		rec := httptest.NewRecorder()
+		d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("missing credential: %s %s status = %d, want %d", rt.method, rt.path, rec.Code, http.StatusUnauthorized)
+		}
 	}
 }
 
