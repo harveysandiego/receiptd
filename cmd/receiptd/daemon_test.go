@@ -61,10 +61,10 @@ func printRequest() *http.Request {
 	return httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewBufferString(body))
 }
 
-func writeTokenFile(t *testing.T, contents string) string {
+func writeTokenFile(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("secret-token"), 0o600); err != nil {
 		t.Fatalf("os.WriteFile: %v", err)
 	}
 	return path
@@ -551,7 +551,7 @@ func TestBuild_HonoursConfiguredQueueRetrySettings(t *testing.T) {
 
 func TestBuild_AuthEnabled_RequiresBearerToken(t *testing.T) {
 	cfg := validConfig(t)
-	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t, "secret-token")}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
 
 	d := buildDaemon(t, cfg)
 
@@ -593,13 +593,14 @@ func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
 	}
 }
 
-// webUIRoutes is every route in the Milestone 4 routing contract
-// (docs/ARCHITECTURE.md §10), shared by the auth-disabled and
-// auth-enabled coverage tests below so both exercise exactly the same
-// route list.
-func webUIRoutes() []struct{ method, path string } {
+// webUIStubRoutes is every route in the Milestone 4 routing contract
+// (docs/ARCHITECTURE.md §10) still awaiting its own slice, shared by the
+// auth-disabled and auth-enabled coverage tests below so both exercise
+// exactly the same route list. GET / (Dashboard) is covered separately by
+// the Dashboard-specific tests below it, since its slice has replaced the
+// stub and it no longer answers 501.
+func webUIStubRoutes() []struct{ method, path string } {
 	return []struct{ method, path string }{
-		{http.MethodGet, "/"},
 		{http.MethodGet, "/status"},
 		{http.MethodGet, "/printers"},
 		{http.MethodGet, "/assets"},
@@ -617,7 +618,7 @@ func TestBuild_WebEnabled_AuthDisabled_EveryRoute_ReachesStub(t *testing.T) {
 	cfg.Web = config.WebConfig{Enabled: true}
 	d := buildDaemon(t, cfg)
 
-	for _, rt := range webUIRoutes() {
+	for _, rt := range webUIStubRoutes() {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
@@ -636,10 +637,10 @@ func TestBuild_WebEnabled_AuthDisabled_EveryRoute_ReachesStub(t *testing.T) {
 func TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
-	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t, "secret-token")}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
 	d := buildDaemon(t, cfg)
 
-	for _, rt := range webUIRoutes() {
+	for _, rt := range webUIStubRoutes() {
 		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
@@ -658,6 +659,47 @@ func TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub(t 
 	}
 }
 
+// TestBuild_WebEnabled_AuthDisabled_Dashboard_RendersOK proves GET / now
+// reaches the real Dashboard handler (docs/ARCHITECTURE.md §10) rather
+// than the stub — its own slice has landed, so it no longer belongs in
+// webUIStubRoutes' 501 coverage above.
+func TestBuild_WebEnabled_AuthDisabled_Dashboard_RendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// TestBuild_WebEnabled_AuthEnabled_Dashboard_RequiresBasicThenRendersOK
+// proves the Dashboard route stays Basic-protected the same way every
+// other Web UI route does, now that it answers with real content instead
+// of a 501 stub.
+func TestBuild_WebEnabled_AuthEnabled_Dashboard_RequiresBasicThenRendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 // TestBuild_WebEnabled_APIRoutesStayBearerProtected proves mounting the
 // Web UI behind auth.Basic on "/" doesn't loosen or replace /api/v1's
 // existing Bearer requirement — the two subtrees keep independent
@@ -665,7 +707,7 @@ func TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub(t 
 func TestBuild_WebEnabled_APIRoutesStayBearerProtected(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
-	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t, "secret-token")}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
 	d := buildDaemon(t, cfg)
 
 	rec := httptest.NewRecorder()

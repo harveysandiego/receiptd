@@ -1,0 +1,28 @@
+{{define "content"}}
+<h2>Dashboard</h2>
+
+<section class="summary">
+<div class="card">
+<h3>Printers</h3>
+<p class="metric">{{.PrintersOnline}} / {{.PrinterCount}} online</p>
+<p>{{.StatusMessage}}</p>
+</div>
+
+<div class="card">
+<h3>Assets</h3>
+<p class="metric">{{.AssetCount}} stored</p>
+</div>
+
+<div class="card">
+<h3>Queue</h3>
+<ul>
+<li>Pending: {{.QueuePending}}</li>
+<li>Running: {{.QueueRunning}}</li>
+<li>Done: {{.QueueDone}}</li>
+<li>Failed: {{.QueueFailed}}</li>
+<li>Cancelled: {{.QueueCancelled}}</li>
+</ul>
+<p class="metric">{{.QueueTotal}} total</p>
+</div>
+</section>
+{{end}}

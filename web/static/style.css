@@ -33,3 +33,22 @@ main {
   padding: 1.5rem;
   max-width: 60rem;
 }
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.summary .card {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 1rem;
+  min-width: 12rem;
+}
+
+.summary .metric {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin: 0.25rem 0;
+}
