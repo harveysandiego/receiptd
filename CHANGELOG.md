@@ -9,6 +9,27 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-25
+
+### Fixed
+
+- The published `v0.5.0` container image build was broken: `.dockerignore`
+  excluded `web/` entirely and the `Dockerfile` never copied it into the
+  build stage, both predating Milestone 4, from before `internal/webui`
+  embedded `web/`'s templates and static assets via `//go:embed`. `go
+  build`/`go test` outside Docker were never affected (this checkout
+  always has `web/` on disk), which is why it went unnoticed until the
+  actual release build ran. `v0.5.0`'s binaries and GitHub Release are
+  unaffected and remain as published; `v0.5.0` has no container image —
+  use `v0.5.1` or later for `ghcr.io/harveysandiego/receiptd`.
+- A pre-existing, intermittent data race in
+  `TestDaemon_Run_ReconcilesOrphanedRunningJobBeforeAnyWorkerStarts`
+  (`cmd/receiptd`): the test read `daemon.workerCancel` from its main
+  goroutine without waiting for a proper synchronization point back to
+  the goroutine running `daemon.run()`, which sets it. No production
+  code was affected — `run()`/`startWorker()` already have no such race
+  in the real (non-test) code path.
+
 ## [0.5.0] - 2026-07-24
 
 ### Added
@@ -236,7 +257,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/harveysandiego/receiptd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/harveysandiego/receiptd/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...v0.3.1
