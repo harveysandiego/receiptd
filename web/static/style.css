@@ -112,3 +112,12 @@ table.assets td {
 .validation-message {
   color: #a00;
 }
+
+.print-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.confirmation-message {
+  color: #070;
+}

@@ -77,6 +77,21 @@ func webuiPreviewFormRequest() *http.Request {
 	return req
 }
 
+// webuiPrintFormRequest builds a form-encoded POST /print request against
+// "preview-printer" — the one printer validConfig actually configures —
+// the Web UI's own request shape (distinct from printRequest's JSON body
+// against /api/v1/print). See internal/webui/print_test.go for the same
+// helper's use in non-daemon tests.
+func webuiPrintFormRequest() *http.Request {
+	form := url.Values{
+		"printer": {"preview-printer"},
+		"receipt": {`{"version":1,"elements":[{"type":"text","content":"hi"}]}`},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/print", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
+}
+
 func writeTokenFile(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "token")
@@ -613,14 +628,12 @@ func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
 // (docs/ARCHITECTURE.md §10) still awaiting its own slice, shared by the
 // auth-disabled and auth-enabled coverage tests below so both exercise
 // exactly the same route list. GET / (Dashboard), GET /printers
-// (Printers), the Assets routes, and the Preview routes are covered
-// separately by the tests below, since those slices have replaced their
-// stubs and no longer answer 501.
+// (Printers), the Assets routes, the Preview routes, and the Print routes
+// are covered separately by the tests below, since those slices have
+// replaced their stubs and no longer answer 501.
 func webUIStubRoutes() []struct{ method, path string } {
 	return []struct{ method, path string }{
 		{http.MethodGet, "/status"},
-		{http.MethodGet, "/print"},
-		{http.MethodPost, "/print"},
 	}
 }
 
@@ -851,6 +864,54 @@ func TestBuild_WebEnabled_AuthEnabled_Preview_RequiresBasicThenRendersOK(t *test
 	d.srv.Handler.ServeHTTP(rec, webuiPreviewFormRequest())
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("missing credential: POST /preview status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestBuild_WebEnabled_AuthDisabled_Print_RendersOK proves GET /print now
+// reaches the real Print handler (docs/ARCHITECTURE.md §10) rather than
+// the stub — its own slice has landed, so it no longer belongs in
+// webUIStubRoutes' 501 coverage above.
+func TestBuild_WebEnabled_AuthDisabled_Print_RendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/print", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// TestBuild_WebEnabled_AuthEnabled_Print_RequiresBasicThenRendersOK
+// proves the Print routes stay Basic-protected the same way every other
+// Web UI route does: GET /print now answers with real content instead of
+// a 501 stub, and POST /print still requires the same credential before
+// reaching PrintHandler at all.
+func TestBuild_WebEnabled_AuthEnabled_Print_RequiresBasicThenRendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/print", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: GET /print status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/print", nil)
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: GET /print status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, webuiPrintFormRequest())
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: POST /print status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

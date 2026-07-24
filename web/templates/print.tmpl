@@ -1,0 +1,19 @@
+{{define "content"}}
+<h2>Print</h2>
+
+<p>Submit a receipt to print it now. This creates a print job on the selected printer's queue.</p>
+
+{{if .JobID}}
+<p class="confirmation-message">Receipt accepted: print job {{.JobID}} created and queued. The queue will print it.</p>
+{{end}}
+
+{{if .Message}}
+<p class="validation-message">{{.Message}}</p>
+{{end}}
+
+<form method="post" action="/print" class="print-form">
+<label>Printer <input type="text" name="printer" value="{{.Printer}}" required></label>
+<label>Receipt JSON <textarea name="receipt" class="json-editor" rows="12" required>{{.ReceiptJSON}}</textarea></label>
+<button type="submit">Print</button>
+</form>
+{{end}}
