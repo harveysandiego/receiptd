@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +61,20 @@ func previewRequest() *http.Request {
 func printRequest() *http.Request {
 	body := `{"printer":"front-desk","receipt":{"elements":[{"type":"text","content":"hi"}]}}`
 	return httptest.NewRequest(http.MethodPost, "/api/v1/print", bytes.NewBufferString(body))
+}
+
+// webuiPreviewFormRequest builds a form-encoded POST /preview request, the
+// Web UI's own request shape (distinct from previewRequest's JSON body
+// against /api/v1/preview) — see internal/webui/preview_test.go for the
+// same helper's use in non-daemon tests.
+func webuiPreviewFormRequest() *http.Request {
+	form := url.Values{
+		"printer": {"preview-printer"},
+		"receipt": {`{"version":1,"elements":[{"type":"text","content":"hi"}]}`},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/preview", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
 }
 
 func writeTokenFile(t *testing.T) string {
@@ -597,14 +613,12 @@ func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
 // (docs/ARCHITECTURE.md §10) still awaiting its own slice, shared by the
 // auth-disabled and auth-enabled coverage tests below so both exercise
 // exactly the same route list. GET / (Dashboard), GET /printers
-// (Printers), and the Assets routes are covered separately by the tests
-// below, since those slices have replaced their stubs and no longer
-// answer 501.
+// (Printers), the Assets routes, and the Preview routes are covered
+// separately by the tests below, since those slices have replaced their
+// stubs and no longer answer 501.
 func webUIStubRoutes() []struct{ method, path string } {
 	return []struct{ method, path string }{
 		{http.MethodGet, "/status"},
-		{http.MethodGet, "/preview"},
-		{http.MethodPost, "/preview"},
 		{http.MethodGet, "/print"},
 		{http.MethodPost, "/print"},
 	}
@@ -789,6 +803,54 @@ func TestBuild_WebEnabled_AuthEnabled_Assets_RequiresBasicThenRendersOK(t *testi
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("missing credential: %s %s status = %d, want %d", rt.method, rt.path, rec.Code, http.StatusUnauthorized)
 		}
+	}
+}
+
+// TestBuild_WebEnabled_AuthDisabled_Preview_RendersOK proves GET /preview
+// now reaches the real Preview handler (docs/ARCHITECTURE.md §10) rather
+// than the stub — its own slice has landed, so it no longer belongs in
+// webUIStubRoutes' 501 coverage above.
+func TestBuild_WebEnabled_AuthDisabled_Preview_RendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/preview", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// TestBuild_WebEnabled_AuthEnabled_Preview_RequiresBasicThenRendersOK
+// proves the Preview routes stay Basic-protected the same way every other
+// Web UI route does: GET /preview now answers with real content instead
+// of a 501 stub, and POST /preview still requires the same credential
+// before reaching PreviewHandler at all.
+func TestBuild_WebEnabled_AuthEnabled_Preview_RequiresBasicThenRendersOK(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/preview", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: GET /preview status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/preview", nil)
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: GET /preview status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, webuiPreviewFormRequest())
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: POST /preview status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

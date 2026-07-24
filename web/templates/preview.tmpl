@@ -1,0 +1,21 @@
+{{define "content"}}
+<h2>Preview</h2>
+
+{{if .Message}}
+<p class="validation-message">{{.Message}}</p>
+{{end}}
+
+<form method="post" action="/preview" class="preview-form">
+<label>Printer <input type="text" name="printer" value="{{.Printer}}" required></label>
+<label>Receipt JSON <textarea name="receipt" class="json-editor" rows="12" required>{{.ReceiptJSON}}</textarea></label>
+<button type="submit">Generate preview</button>
+</form>
+
+<div class="preview-area">
+{{if .ImageDataURI}}
+<img src="{{.ImageDataURI}}" alt="Receipt preview">
+{{else}}
+<p>No preview generated yet. Submit the form above to render one.</p>
+{{end}}
+</div>
+{{end}}

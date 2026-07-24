@@ -89,3 +89,26 @@ table.assets td {
 .delete-form {
   display: inline;
 }
+
+.preview-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.json-editor {
+  width: 100%;
+  font-family: monospace;
+}
+
+.preview-area {
+  margin-top: 1rem;
+}
+
+.preview-area img {
+  max-width: 100%;
+  border: 1px solid #ccc;
+}
+
+.validation-message {
+  color: #a00;
+}
