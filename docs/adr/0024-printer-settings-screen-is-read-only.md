@@ -1,6 +1,6 @@
 # 0024. The Web UI's printer settings screen is read-only
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

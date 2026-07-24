@@ -9,6 +9,43 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Added
+
+- Web UI (Milestone 4): a server-rendered `html/template` frontend in
+  `internal/webui`, opt-in via `web.enabled` and mounted alongside the
+  REST API behind the same shared-token auth (`auth.Basic` in place of
+  `auth.Bearer`) — no login page, no session, no framework, per
+  [ADR-0022](docs/adr/0022-webui-server-rendered-html-template.md) and
+  [ADR-0023](docs/adr/0023-webui-authentication-reuses-shared-token.md).
+  Pages: a dashboard (printer/asset/queue counts), a read-only printer
+  settings screen
+  ([ADR-0024](docs/adr/0024-printer-settings-screen-is-read-only.md)),
+  asset management (`multipart/form-data` upload, list, delete, per
+  [ADR-0026](docs/adr/0026-asset-upload-multipart-form-data.md)), a
+  receipt preview form (renders a PNG, never prints), and a quick-print
+  form (submits a Receipt, always creating a Job on success — the same
+  `app.Service.Print` path `POST /api/v1/print` already uses). Every
+  state-changing action (asset upload/delete, quick print) redirects to
+  a GET after succeeding (POST/redirect/GET), so reloading the result
+  page never repeats the action. See the README's
+  [Web UI](README.md#web-ui) section.
+- Dashboard client-side polling: `GET /status` serves a JSON snapshot of
+  the same printer/queue counts the dashboard renders, and
+  `web/static/dashboard.js` — the Web UI's one script — polls it every 5
+  seconds to refresh the dashboard's Printers/Queue cards without a page
+  reload, per
+  [ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md).
+
+### Documentation
+
+- `docs/ARCHITECTURE.md` §10 gained a "Milestone 4 as built" section
+  documenting the Web UI's route table and the shared handler/page-model/
+  PRG patterns every page follows, replacing several `internal/webui`
+  code comments' previously-unfulfilled references to "the route table"
+  in that section.
+- ADR-0022 through ADR-0026 are all marked `Accepted` after confirming
+  each decision's implementation, including ADR-0025's dashboard polling.
+
 ## [0.4.0] - 2026-07-23
 
 ### Added

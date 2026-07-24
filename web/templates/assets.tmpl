@@ -11,8 +11,8 @@
 <table class="assets">
 <thead>
 <tr>
-<th>Name</th>
-<th></th>
+<th scope="col">Name</th>
+<th scope="col">Actions</th>
 </tr>
 </thead>
 <tbody>
@@ -21,7 +21,7 @@
 <td>{{.Name}}</td>
 <td>
 <form method="post" action="/assets/{{.Name}}/delete" class="delete-form">
-<button type="submit">Delete</button>
+<button type="submit" aria-label="Delete {{.Name}}">Delete</button>
 </form>
 </td>
 </tr>

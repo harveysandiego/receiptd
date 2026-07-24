@@ -53,23 +53,14 @@ main {
   margin: 0.25rem 0;
 }
 
-table.printers {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-table.printers th,
-table.printers td {
-  border: 1px solid #ccc;
-  padding: 0.5rem;
-  text-align: left;
-}
-
+table.printers,
 table.assets {
   border-collapse: collapse;
   width: 100%;
 }
 
+table.printers th,
+table.printers td,
 table.assets th,
 table.assets td {
   border: 1px solid #ccc;
@@ -81,16 +72,13 @@ table.assets td {
   margin-bottom: 1rem;
 }
 
-.upload-form label {
-  display: block;
-  margin-bottom: 0.5rem;
-}
-
 .delete-form {
   display: inline;
 }
 
-.preview-form label {
+.upload-form label,
+.preview-form label,
+.print-form label {
   display: block;
   margin-bottom: 0.5rem;
 }
@@ -111,11 +99,6 @@ table.assets td {
 
 .validation-message {
   color: #a00;
-}
-
-.print-form label {
-  display: block;
-  margin-bottom: 0.5rem;
 }
 
 .confirmation-message {

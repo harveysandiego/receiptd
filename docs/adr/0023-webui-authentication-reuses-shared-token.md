@@ -1,6 +1,6 @@
 # 0023. Web UI authentication reuses the existing shared-token middleware
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

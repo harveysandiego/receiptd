@@ -1,6 +1,6 @@
 # 0025. Dashboard reflects printer/job state via client-side polling, not a push channel
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

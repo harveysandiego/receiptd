@@ -1,6 +1,6 @@
 # 0022. Web UI is server-rendered `html/template`, not a JS SPA
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

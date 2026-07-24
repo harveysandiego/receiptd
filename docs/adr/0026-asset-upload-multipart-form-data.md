@@ -1,6 +1,6 @@
 # 0026. Asset uploads use `multipart/form-data`, not JSON+base64
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

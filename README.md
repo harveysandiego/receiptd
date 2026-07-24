@@ -16,10 +16,10 @@ appliance on your home network.
 [![Go Version](https://img.shields.io/github/go-mod/go-version/harveysandiego/receiptd)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Status:** pre-alpha. Milestones 1–3 (local render, REST API + queue +
-> auth, real ESC/POS printer support) and Milestone 5 (Docker packaging,
-> multi-arch image publishing, release pipeline) are implemented and
-> tested — Receiptd has printed to real hardware, and
+> **Status:** pre-alpha. Milestones 1–5 (local render, REST API + queue +
+> auth, real ESC/POS printer support, a server-rendered Web UI, and Docker
+> packaging/multi-arch image publishing) are implemented and tested —
+> Receiptd has printed to real hardware, and
 > [v0.4.0](https://github.com/harveysandiego/receiptd/releases/tag/v0.4.0)
 > is tagged and published, including multi-arch images at
 > `ghcr.io/harveysandiego/receiptd`. See [Current status](#current-status)
@@ -30,8 +30,7 @@ appliance on your home network.
 ## Screenshots
 
 _Coming soon — a printed receipt example (Receiptd already prints to real
-hardware) and a Web UI dashboard screenshot once Milestone 4 (Web UI)
-lands. See the [roadmap](#roadmap)._
+hardware) and a Web UI dashboard screenshot. See the [roadmap](#roadmap)._
 
 <!--
 ![Web UI dashboard](docs/img/webui-dashboard.png)
@@ -135,26 +134,31 @@ philosophy, and the reasoning behind each decision, lives in
   crash or unclean death
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
+- **Web UI** (opt-in via `web.enabled`): a dashboard (printer/asset/queue
+  counts), a read-only printer settings screen, asset management
+  (upload/list/delete), a receipt preview form, and a quick-print form —
+  see [Web UI](#web-ui) below
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
 
-Planned but not yet implemented — see [Roadmap](#roadmap): a **Web UI**
-(Milestone 4) and **server-side templates**, e.g. a daily weather receipt
-(Milestone 6).
+Planned but not yet implemented — see [Roadmap](#roadmap):
+**server-side templates**, e.g. a daily weather receipt (Milestone 6).
 
 ## Current status
 
 Receiptd's architecture is frozen (see
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §11) and implementation is
 proceeding milestone by milestone, using test-driven development.
-Milestones 1, 2, 3, and 5 are done: the `receipt`/`render` pipeline, the
+Milestones 1, 2, 3, 4, and 5 are done: the `receipt`/`render` pipeline, the
 REST API (`preview`, `print`, job status), the persistent job queue,
-Bearer-token auth (on by default; Basic auth exists in `auth` too, ready
-for Milestone 4's Web UI), a CLI that talks to the API, ESC/POS encoding,
-network printer transport, every Milestone 3 Element type (Image, Asset,
-QRCode, Barcode, Columns, Table, Feed, Cut), and multi-architecture
-container images published automatically on tagged releases. Receiptd
-has printed successfully to real hardware (an Epson TM-m30II). Milestone
-4 (Web UI) is still outstanding. Track progress via the
+Bearer/Basic auth (on by default), a CLI that talks to the API, ESC/POS
+encoding, network printer transport, every Milestone 3 Element type
+(Image, Asset, QRCode, Barcode, Columns, Table, Feed, Cut), a
+server-rendered Web UI (dashboard, printer settings, assets, preview,
+quick print) whose dashboard refreshes its printer/queue counts live via
+client-side polling ([ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md)),
+and multi-architecture container images published automatically on
+tagged releases. Receiptd has printed successfully to real hardware (an
+Epson TM-m30II). Track progress via the
 [roadmap](#roadmap) below and the
 [milestones](https://github.com/harveysandiego/receiptd/milestones) on
 GitHub. See [VERSIONING.md](VERSIONING.md) and
@@ -426,6 +430,47 @@ Template-backed convenience endpoints (e.g. `/api/v1/templates/weather`)
 are planned for Milestone 6 and don't exist yet — see the
 [roadmap](#roadmap).
 
+## Web UI
+
+Set `web.enabled: true` in `config.yaml` to serve a browser-facing HTML
+UI alongside the REST API, on the same `server.address`/port. It's
+server-rendered `html/template` with no separate build step, no bundler,
+and no framework ([ADR-0022](docs/adr/0022-webui-server-rendered-html-template.md))
+— the one script it ships is a small, dependency-free dashboard polling
+timer (see the Dashboard row below). It sits behind the same
+shared-token auth as the REST API — `auth.Basic` in place of
+`auth.Bearer`, so a browser gets its native credential prompt instead of
+a `curl -H Authorization` header
+([ADR-0023](docs/adr/0023-webui-authentication-reuses-shared-token.md)).
+There is no login page and no logout button; closing the browser (or
+rotating the token) is the only way to end a session.
+
+The Web UI is for a human operator working in a browser. Anything
+programmatic — scripts, automations, other services — should keep
+talking to the [REST API](#rest-api-examples) above; the two are
+independent surfaces over the same `app.Service`, and nothing here
+changes or deprecates the API.
+
+| Page | Path | Notes |
+|---|---|---|
+| Dashboard | `/` | Printer/asset/queue counts; Printers/Queue cards refresh live via polling |
+| Printers | `/printers` | Name, transport, address, profile, live status — read-only; edit `config.yaml` and restart to change a printer ([ADR-0024](docs/adr/0024-printer-settings-screen-is-read-only.md)) |
+| Assets | `/assets` | Upload (`multipart/form-data`), list, and delete named assets |
+| Preview | `/preview` | Paste a Receipt as JSON, render it as a PNG against a chosen printer's profile — never prints |
+| Print | `/print` | Paste a Receipt as JSON, submit it — creates a print Job on the queue, same as `POST /api/v1/print` |
+
+The dashboard's Printers and Queue cards refresh every 5 seconds via a
+small client-side script polling `GET /status`, a JSON endpoint owned by
+the Web UI itself — no round-trip through the REST API
+([ADR-0025](docs/adr/0025-dashboard-updates-via-polling.md)). Between
+polls it shows the last-fetched state; there's no guarantee of
+sub-poll-interval freshness.
+
+```yaml
+web:
+  enabled: true
+```
+
 ## Roadmap
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#10-roadmap) for full
@@ -436,7 +481,8 @@ detail on each milestone's scope.
 - [x] **Milestone 2** — REST API, job queue, auth (fake printer sink)
 - [x] **Milestone 3** — Real printer support (ESC/POS encoding, network
       transport, remaining Element types) — first physical print
-- [ ] **Milestone 4** — Web UI
+- [x] **Milestone 4** — Web UI (dashboard, printers, assets, preview,
+      quick print)
 - [x] **Milestone 5** — Packaging (Docker, multi-arch, release pipeline)
 - [ ] **Milestone 6** — First real template + provider (weather)
 

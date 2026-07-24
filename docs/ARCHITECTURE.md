@@ -1295,6 +1295,85 @@ tall Canvas into raster bands no taller than `profile.MaxImageHeightDots`
 this just uses it. Printer status, quick actions, preview, text printing,
 image upload, asset management, printer settings.
 
+### Milestone 4 as built
+
+`internal/webui` landed across seven slices (Infrastructure, Service Seam,
+Dashboard, Printers, Assets, Preview, Quick Print), plus a follow-up slice
+implementing docs/adr/0025's client-side polling. This is the as-built
+shape, recorded here because every `webui` handler's doc comment points
+at "this section" for the route table and the shared patterns below —
+this is that reference, not just the roadmap blurb above it.
+
+**Route table** (`internal/webui/router.go`):
+
+| Method | Path | Handler | Notes |
+|---|---|---|---|
+| GET | `/{$}` | `DashboardHandler` | printer/asset/queue counts, refreshed live via client-side polling (docs/adr/0025) |
+| GET | `/status` | `StatusHandler` | JSON poll target for the dashboard (docs/adr/0025) |
+| GET | `/printers` | `PrintersHandler` | read-only (docs/adr/0024) |
+| GET, POST | `/assets` | `AssetsHandler.List`/`Upload` | multipart upload (docs/adr/0026) |
+| POST | `/assets/{name}/delete` | `AssetsHandler.Delete` | |
+| GET, POST | `/preview` | `PreviewHandler.Show`/`Generate` | never enqueues a Job (docs/adr/0006) |
+| GET, POST | `/print` | `PrintHandler.Show`/`Submit` | always enqueues a Job on success |
+| GET | `/static/` | static file server | serves the Web UI's embedded CSS/JS assets |
+
+**Shared patterns every page follows:**
+
+- **Handler → `app.Service` only.** No `webui` handler imports `printer`,
+  `render/*`, `escpos`, or `queue` — every read or write goes through the
+  same `app.Service` methods `internal/api` calls. `queue.Store`/
+  `printer.Printer` never appear in this package's imports.
+- **Page-owned presentation model.** Each page has its own `*Page` struct
+  (`dashboardPage`, `printerRow`/`printersPage`, `assetRow`/`assetsPage`,
+  `previewPage`, `printPage`) with plain fields — never an embedded
+  `app`-layer type. A future field added to an `app` summary type for some
+  other caller's benefit doesn't silently appear on a page's template
+  without a deliberate choice to add it there too.
+- **`render`/`renderError` (`render.go`/`errors.go`).** Every handler ends
+  in exactly one of these two calls; `render` executes the page's own
+  template (cloned from `baseTemplate`, since `html/template` treats
+  redefining a block name as last-write-wins across a shared parse —
+  see `render.go`); `renderError` maps an `apperr.Kind` to an HTTP status
+  and shows a generic message, never the underlying error string, the same
+  trust boundary `internal/api/job_status.go` applies to a Job's
+  `LastError`.
+- **POST/redirect/GET for anything that mutates state.** Asset upload,
+  asset delete, and print submission all redirect (303) to a GET on
+  success rather than rendering a body directly, so a reload of the
+  resulting page never resubmits the form. Quick Print's `job` query
+  parameter on that redirect is confirmation text only, never a Queue
+  lookup (`internal/webui/print.go`'s `printPage.JobID`) — this page
+  confirms submission, not the Job's live state.
+- **Preview vs. Print is the one deliberate asymmetry.** `PreviewHandler`
+  never creates a Job — `Service.Preview` is a pure render, gated on
+  resolving a `Profile` synchronously (docs/adr/0006). `PrintHandler`
+  always creates a Job on a successful submission — `Service.Print`
+  validates and enqueues, with no synchronous printer-existence check,
+  exactly mirroring `internal/api`'s existing `POST /api/v1/print`. Their
+  request-decoding shape (parse form → decode JSON → malformed-JSON
+  re-render) looks similar, but no shared helper was extracted: the two
+  diverge immediately afterward (Preview embeds a PNG; Print redirects
+  after enqueueing), so a shared abstraction would cost more in
+  indirection than the handful of duplicated lines it would save.
+- **Auth and mounting.** The whole `webui` router is mounted only when
+  `cfg.Web.Enabled`, wrapped in `auth.Basic` when `cfg.Auth.Enabled`
+  (`cmd/receiptd/daemon.go`), never sharing middleware with `/api/v1/`'s
+  `auth.Bearer` (docs/adr/0023).
+- **Dashboard client-side polling (docs/adr/0025).** `StatusHandler`
+  serves `GET /status`, a JSON snapshot of the same printer/queue counts
+  `DashboardHandler` renders into HTML — read through the identical
+  `Service.ListPrinters`/`Service.QueueSummary` calls, so there is no
+  second code path, and no JSON round-trip through `internal/api`
+  (docs/adr/0022). `web/static/dashboard.js`, the Web UI's only script, is
+  a small dependency-free poller: it fetches `/status` once immediately
+  and then every five seconds, rewriting the dashboard's card text in
+  place via `getElementById`. It is wired in through a `"scripts"` block
+  in `base.tmpl` (defaulting to empty, the same last-write-wins-per-clone
+  technique used for `"content"`) that only `dashboard.tmpl` overrides —
+  no other page loads or runs it. Every `/status` response carries
+  `Cache-Control: no-store`, so neither the browser nor a reverse proxy
+  in front of it (docs/adr/0021) ever serves a stale poll.
+
 **Milestone 5 — Packaging**
 Multi-stage Dockerfile (`CGO_ENABLED=0`), `buildx` multi-arch (amd64/arm64),
 release pipeline.
