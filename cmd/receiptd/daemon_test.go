@@ -568,6 +568,109 @@ func TestBuild_AuthDisabled_NoCredentialRequired(t *testing.T) {
 	}
 }
 
+func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: false}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d (web.enabled is false, so no Web UI route should be mounted)", rec.Code, http.StatusNotFound)
+	}
+}
+
+// webUIRoutes is every route in the Milestone 4 routing contract
+// (docs/ARCHITECTURE.md §10), shared by the auth-disabled and
+// auth-enabled coverage tests below so both exercise exactly the same
+// route list.
+func webUIRoutes() []struct{ method, path string } {
+	return []struct{ method, path string }{
+		{http.MethodGet, "/"},
+		{http.MethodGet, "/status"},
+		{http.MethodGet, "/printers"},
+		{http.MethodGet, "/assets"},
+		{http.MethodPost, "/assets"},
+		{http.MethodPost, "/assets/logo.png/delete"},
+		{http.MethodGet, "/preview"},
+		{http.MethodPost, "/preview"},
+		{http.MethodGet, "/print"},
+		{http.MethodPost, "/print"},
+	}
+}
+
+func TestBuild_WebEnabled_AuthDisabled_EveryRoute_ReachesStub(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	for _, rt := range webUIRoutes() {
+		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
+			if rec.Code != http.StatusNotImplemented {
+				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotImplemented, rec.Body)
+			}
+		})
+	}
+}
+
+// TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub
+// proves the routing contract's full coverage: every documented route is
+// both mounted and protected — a missing credential is 401 and never
+// reaches a handler, a valid one reaches the (still-stub) handler and
+// gets 501, for every route, not just one representative path.
+func TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t, "secret-token")}
+	d := buildDaemon(t, cfg)
+
+	for _, rt := range webUIRoutes() {
+		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("missing credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+
+			req := httptest.NewRequest(rt.method, rt.path, nil)
+			req.SetBasicAuth("operator", "secret-token")
+			rec = httptest.NewRecorder()
+			d.srv.Handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotImplemented {
+				t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusNotImplemented, rec.Body)
+			}
+		})
+	}
+}
+
+// TestBuild_WebEnabled_APIRoutesStayBearerProtected proves mounting the
+// Web UI behind auth.Basic on "/" doesn't loosen or replace /api/v1's
+// existing Bearer requirement — the two subtrees keep independent
+// middleware even though they now share one *http.Server.
+func TestBuild_WebEnabled_APIRoutesStayBearerProtected(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t, "secret-token")}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, previewRequest())
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing Bearer credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := previewRequest()
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("Basic credential against /api/v1: status = %d, want %d (API only accepts Bearer)", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestLoadAndBuild_MissingConfigFile_Propagates(t *testing.T) {
 	_, err := loadAndBuild(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
 	if err == nil {

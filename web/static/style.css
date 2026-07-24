@@ -1,0 +1,35 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #ccc;
+}
+
+header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+nav a {
+  margin-right: 1rem;
+  color: #0645ad;
+  text-decoration: none;
+}
+
+nav a:hover {
+  text-decoration: underline;
+}
+
+main {
+  padding: 1.5rem;
+  max-width: 60rem;
+}

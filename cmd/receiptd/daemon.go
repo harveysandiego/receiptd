@@ -15,6 +15,7 @@ import (
 	"github.com/harveysandiego/receiptd/internal/config"
 	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
+	"github.com/harveysandiego/receiptd/internal/webui"
 )
 
 // pollInterval is how often the idle background worker checks for a
@@ -73,8 +74,10 @@ func loadAndBuild(configPath string) (*daemon, error) {
 }
 
 // build wires the components a daemon needs: the configured queue Store,
-// app.Service, the versioned API routes, and — when cfg.Auth.Enabled —
-// Bearer middleware in front of them.
+// app.Service, the versioned API routes (Bearer-protected when
+// cfg.Auth.Enabled), and, when cfg.Web.Enabled, the Web UI's routes
+// (Basic-protected when cfg.Auth.Enabled) mounted separately from
+// /api/v1.
 func build(cfg *config.Config) (*daemon, error) {
 	store, err := buildStore(cfg.Queue)
 	if err != nil {
@@ -97,15 +100,32 @@ func build(cfg *config.Config) (*daemon, error) {
 	svc.Printers, svc.Profiles, printerNames = buildPrinters(cfg.Printers)
 	svc.Assets = assets.NewFilesystemStore(cfg.Assets.Path)
 
+	apiMux := http.NewServeMux()
+	apiMux.Handle("POST /api/v1/print", api.NewPrintHandler(svc))
+	apiMux.Handle("POST /api/v1/preview", api.NewPreviewHandler(svc))
+	apiMux.Handle("GET /api/v1/jobs/{id}", api.NewJobStatusHandler(svc))
+
+	var apiHandler http.Handler = apiMux
+	if cfg.Auth.Enabled {
+		apiHandler = auth.Bearer(token)(apiMux)
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("POST /api/v1/print", api.NewPrintHandler(svc))
-	mux.Handle("POST /api/v1/preview", api.NewPreviewHandler(svc))
-	mux.Handle("GET /api/v1/jobs/{id}", api.NewJobStatusHandler(svc))
+	mux.Handle("/api/v1/", apiHandler)
+
+	// The Web UI is mounted separately from /api/v1, behind auth.Basic
+	// rather than Bearer (docs/adr/0023-webui-authentication-reuses-shared-token.md),
+	// and only when an operator has opted in via web.enabled — it is not
+	// part of the API mux and never shares its middleware.
+	if cfg.Web.Enabled {
+		webHandler := webui.NewRouter(svc)
+		if cfg.Auth.Enabled {
+			webHandler = auth.Basic(token)(webHandler)
+		}
+		mux.Handle("/", webHandler)
+	}
 
 	var handler http.Handler = mux
-	if cfg.Auth.Enabled {
-		handler = auth.Bearer(token)(mux)
-	}
 
 	return &daemon{
 		srv: &http.Server{
