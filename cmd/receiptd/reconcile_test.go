@@ -87,17 +87,28 @@ func TestDaemon_Run_ReconcilesOrphanedRunningJobBeforeAnyWorkerStarts(t *testing
 
 	// Force run()'s ListenAndServe to return so it exits cleanly instead of
 	// leaking past this test — Close (unlike Shutdown) is safe to call
-	// regardless of whether Serve has started listening yet.
+	// regardless of whether Serve has started listening yet. run()'s
+	// "server stopped on its own" path returns without waiting on
+	// d.workers, so runDone fires as soon as ListenAndServe does — this
+	// receive is what the test needs anyway, and, as a channel receive, it
+	// also establishes a happens-before edge back to everything run() did
+	// in its own goroutine (including startWorker's write to
+	// d.workerCancel). Reading d.workerCancel beforehand, from this
+	// goroutine while run()'s goroutine could still be inside startWorker,
+	// would be a genuine data race — the polling loop above only
+	// synchronizes on the Job's state (set during Reconcile, before
+	// startWorker runs), not on startWorker having completed.
 	_ = d.srv.Close()
-	if d.workerCancel != nil {
-		d.workerCancel()
-	}
+	var runCode int
 	select {
-	case code := <-runDone:
-		if code != 0 {
-			t.Errorf("run() = %d, want 0", code)
-		}
+	case runCode = <-runDone:
 	case <-time.After(time.Second):
 		t.Fatal("run() never returned after srv.Close()")
+	}
+	if runCode != 0 {
+		t.Errorf("run() = %d, want 0", runCode)
+	}
+	if d.workerCancel != nil {
+		d.workerCancel()
 	}
 }
