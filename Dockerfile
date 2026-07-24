@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY web/ web/
 
 # TARGETOS/TARGETARCH are populated by buildx for whichever platform is
 # currently being built, so `docker buildx build --platform
