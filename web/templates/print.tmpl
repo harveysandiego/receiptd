@@ -12,6 +12,7 @@
 {{end}}
 
 <form method="post" action="/print" class="print-form">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <label>Printer <input type="text" name="printer" value="{{.Printer}}" required></label>
 <label>Receipt JSON <textarea name="receipt" class="json-editor" rows="12" required>{{.ReceiptJSON}}</textarea></label>
 <button type="submit">Print</button>

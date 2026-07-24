@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -18,11 +19,17 @@ import (
 )
 
 // uploadRequest builds a multipart/form-data POST /assets request with
-// name as the asset name and content as the uploaded file's bytes.
-func uploadRequest(t *testing.T, name, content string) *http.Request {
+// name as the asset name and content as the uploaded file's bytes,
+// including the hidden csrf_token field (docs/adr/0027) every real
+// upload.tmpl submission carries. token normally comes from
+// csrfTokenFromPage against a prior GET /assets.
+func uploadRequest(t *testing.T, token, name, content string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
+	if err := w.WriteField("csrf_token", token); err != nil {
+		t.Fatalf("WriteField: %v", err)
+	}
 	if name != "" {
 		if err := w.WriteField("name", name); err != nil {
 			t.Fatalf("WriteField: %v", err)
@@ -47,11 +54,14 @@ func uploadRequest(t *testing.T, name, content string) *http.Request {
 }
 
 // uploadRequestNoFile builds a multipart/form-data POST /assets request
-// carrying a name field but no file part at all.
-func uploadRequestNoFile(t *testing.T, name string) *http.Request {
+// carrying a name field and a valid csrf_token but no file part at all.
+func uploadRequestNoFile(t *testing.T, token, name string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
+	if err := w.WriteField("csrf_token", token); err != nil {
+		t.Fatalf("WriteField: %v", err)
+	}
 	if err := w.WriteField("name", name); err != nil {
 		t.Fatalf("WriteField: %v", err)
 	}
@@ -61,6 +71,15 @@ func uploadRequestNoFile(t *testing.T, name string) *http.Request {
 
 	req := httptest.NewRequest(http.MethodPost, "/assets", &body)
 	req.Header.Set("Content-Type", w.FormDataContentType())
+	return req
+}
+
+// deleteAssetRequest builds a form-encoded POST /assets/{name}/delete
+// request carrying the hidden csrf_token field the delete form submits.
+func deleteAssetRequest(token, name string) *http.Request {
+	form := url.Values{"csrf_token": {token}}
+	req := httptest.NewRequest(http.MethodPost, "/assets/"+name+"/delete", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
 }
 
@@ -159,8 +178,9 @@ func TestAssetsHandler_Upload_StoresAssetThenRedirectsToList(t *testing.T) {
 	svc := newAssetsTestService()
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, uploadRequest(t, "logo.png", "fake-png-bytes"))
+	router.ServeHTTP(rec, uploadRequest(t, token, "logo.png", "fake-png-bytes"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -189,8 +209,9 @@ func TestAssetsHandler_Upload_ExistingName_Overwrites(t *testing.T) {
 	}
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, uploadRequest(t, "logo.png", "second"))
+	router.ServeHTTP(rec, uploadRequest(t, token, "logo.png", "second"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -221,8 +242,9 @@ func TestAssetsHandler_Upload_MissingName_RendersValidationError(t *testing.T) {
 	svc := newAssetsTestService()
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, uploadRequest(t, "", "fake-png-bytes"))
+	router.ServeHTTP(rec, uploadRequest(t, token, "", "fake-png-bytes"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
@@ -244,8 +266,9 @@ func TestAssetsHandler_Upload_MissingFile_RendersValidationError(t *testing.T) {
 	svc := newAssetsTestService()
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, uploadRequestNoFile(t, "logo.png"))
+	router.ServeHTTP(rec, uploadRequestNoFile(t, token, "logo.png"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
@@ -289,8 +312,9 @@ func TestAssetsHandler_Delete_RemovesAssetThenRedirectsToList(t *testing.T) {
 	}
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/assets/logo.png/delete", nil))
+	router.ServeHTTP(rec, deleteAssetRequest(token, "logo.png"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -311,8 +335,9 @@ func TestAssetsHandler_Delete_MissingName_RendersGenericNotFoundError(t *testing
 	svc := newAssetsTestService()
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/assets")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/assets/does-not-exist.png/delete", nil))
+	router.ServeHTTP(rec, deleteAssetRequest(token, "does-not-exist.png"))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body)

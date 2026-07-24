@@ -27,8 +27,6 @@ const previewPageTitle = "Preview"
 // ImageDataURI are mutually exclusive outcomes of a POST, both empty on
 // the initial GET.
 type previewPage struct {
-	Title string
-
 	ReceiptJSON string
 	Printer     string
 
@@ -61,7 +59,7 @@ func NewPreviewHandler(svc *app.Service) *PreviewHandler {
 
 // Show serves GET /preview: an empty form and the placeholder state.
 func (h *PreviewHandler) Show(w http.ResponseWriter, _ *http.Request) {
-	render(w, previewTemplate, http.StatusOK, previewPage{Title: previewPageTitle})
+	render(w, previewTemplate, http.StatusOK, previewPage{})
 }
 
 // Generate serves POST /preview. Decoding the submitted JSON is this
@@ -69,7 +67,11 @@ func (h *PreviewHandler) Show(w http.ResponseWriter, _ *http.Request) {
 // validation message, never reaching Service); once it decodes into a
 // receipt.Receipt, Preview owns every other rule — content validation,
 // printer resolution, rendering — so Generate duplicates none of it.
+// Preview has no CSRF check (docs/adr/0027): it never mutates state, so
+// it sits outside that decision's scope the same way it sits outside the
+// PRG pattern every state-changing page follows.
 func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		renderError(w, previewPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Preview", err))
 		return
@@ -81,7 +83,6 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	var rc receipt.Receipt
 	if err := json.Unmarshal([]byte(receiptJSON), &rc); err != nil {
 		render(w, previewTemplate, http.StatusBadRequest, previewPage{
-			Title:       previewPageTitle,
 			ReceiptJSON: receiptJSON,
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
@@ -96,7 +97,6 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render(w, previewTemplate, http.StatusOK, previewPage{
-		Title:        previewPageTitle,
 		ReceiptJSON:  receiptJSON,
 		Printer:      printerName,
 		ImageDataURI: template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)),

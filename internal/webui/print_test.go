@@ -42,9 +42,12 @@ func (failingSaveStore) EnqueueIdempotent(context.Context, *queue.Job, time.Time
 const validPrintReceiptJSON = `{"version":1,"elements":[{"type":"text","content":"hello"}]}`
 
 // printFormRequest builds a form-encoded POST /print request, mirroring
-// how print.tmpl's form actually submits.
-func printFormRequest(receiptJSON, printerName string) *http.Request {
-	form := url.Values{"receipt": {receiptJSON}, "printer": {printerName}}
+// how print.tmpl's form actually submits — including its hidden
+// csrf_token field (docs/adr/0027). token normally comes from
+// csrfTokenFromPage against a prior GET /print, the same way a real
+// browser would read it out of the form it's submitting.
+func printFormRequest(token, receiptJSON, printerName string) *http.Request {
+	form := url.Values{"receipt": {receiptJSON}, "printer": {printerName}, "csrf_token": {token}}
 	req := httptest.NewRequest(http.MethodPost, "/print", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
@@ -102,8 +105,9 @@ func TestPrintHandler_Submit_ValidReceipt_RedirectsWithJobID(t *testing.T) {
 	svc := app.New(queue.New(store, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, printFormRequest(validPrintReceiptJSON, "front-desk"))
+	router.ServeHTTP(rec, printFormRequest(token, validPrintReceiptJSON, "front-desk"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -133,8 +137,9 @@ func TestPrintHandler_Submit_ValidReceipt_CreatesPendingJob(t *testing.T) {
 	svc := app.New(queue.New(store, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, printFormRequest(validPrintReceiptJSON, "front-desk"))
+	router.ServeHTTP(rec, printFormRequest(token, validPrintReceiptJSON, "front-desk"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -174,6 +179,26 @@ func TestPrintHandler_Submit_MalformedFormBody_RendersGenericErrorWithoutLeaking
 	}
 }
 
+// TestPrintHandler_Submit_OversizedBody_Rejected proves a request body
+// over maxRequestBodyBytes is rejected by http.MaxBytesReader before
+// r.ParseForm ever finishes reading it — a request this large is
+// rejected before verifyCSRF even runs, so no token is needed here.
+func TestPrintHandler_Submit_OversizedBody_Rejected(t *testing.T) {
+	svc := app.New(queue.New(queue.NewMemoryStore(), dashboardNoopProcessor{}))
+	router := webui.NewRouter(svc)
+
+	form := url.Values{"receipt": {strings.Repeat("a", 11<<20)}, "printer": {"front-desk"}}
+	req := httptest.NewRequest(http.MethodPost, "/print", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
+	}
+}
+
 // TestPrintHandler_Submit_MalformedJSON_RendersValidationMessage proves
 // JSON that can't be decoded into a receipt.Receipt is reported by the
 // Web UI itself and never reaches Service.Print — no Job is created.
@@ -182,8 +207,9 @@ func TestPrintHandler_Submit_MalformedJSON_RendersValidationMessage(t *testing.T
 	svc := app.New(queue.New(store, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, printFormRequest("not json", "front-desk"))
+	router.ServeHTTP(rec, printFormRequest(token, "not json", "front-desk"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
@@ -214,9 +240,10 @@ func TestPrintHandler_Submit_InvalidReceiptContent_RendersGenericErrorWithoutLea
 	svc := app.New(queue.New(store, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
 	body := `{"version":1,"elements":[{"type":"text","content":""}]}`
-	router.ServeHTTP(rec, printFormRequest(body, "front-desk"))
+	router.ServeHTTP(rec, printFormRequest(token, body, "front-desk"))
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
@@ -248,8 +275,9 @@ func TestPrintHandler_Submit_UnconfiguredPrinter_StillCreatesJob(t *testing.T) {
 	svc := app.New(queue.New(store, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, printFormRequest(validPrintReceiptJSON, "does-not-exist"))
+	router.ServeHTTP(rec, printFormRequest(token, validPrintReceiptJSON, "does-not-exist"))
 
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusSeeOther, rec.Body)
@@ -275,8 +303,9 @@ func TestPrintHandler_Submit_QueueSaveFails_RendersGenericErrorWithoutLeakingDet
 	svc := app.New(queue.New(failingSaveStore{}, dashboardNoopProcessor{}))
 
 	router := webui.NewRouter(svc)
+	token := csrfTokenFromPage(t, router, "/print")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, printFormRequest(validPrintReceiptJSON, "front-desk"))
+	router.ServeHTTP(rec, printFormRequest(token, validPrintReceiptJSON, "front-desk"))
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body)

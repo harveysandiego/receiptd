@@ -23,8 +23,6 @@ var dashboardTemplate = template.Must(template.Must(baseTemplate.Clone()).ParseF
 // caller's benefit doesn't silently appear on this page without a
 // deliberate choice to add it here too.
 type dashboardPage struct {
-	Title string
-
 	PrinterCount   int
 	PrintersOnline int
 	StatusMessage  string
@@ -76,7 +74,6 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	online := onlinePrinterCount(printers)
 
 	render(w, dashboardTemplate, http.StatusOK, dashboardPage{
-		Title:          "Dashboard",
 		PrinterCount:   len(printers),
 		PrintersOnline: online,
 		StatusMessage:  printerStatusMessage(online, len(printers)),

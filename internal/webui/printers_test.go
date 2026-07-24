@@ -19,7 +19,10 @@ func printersRequest() *http.Request {
 // TestPrintersHandler_RendersConfiguredPrinters_WithExpectedFields proves
 // the happy path: every PrinterSummary field this page is responsible for
 // showing (name, transport, address, profile, live status) appears in the
-// rendered body, for both an online and an offline printer.
+// rendered body, for both an online and an offline printer — and that an
+// offline printer's raw StatusDetail (a transport-level error, here
+// "connection refused") is never leaked into that body, only logged
+// server-side (printers.go's ServeHTTP).
 func TestPrintersHandler_RendersConfiguredPrinters_WithExpectedFields(t *testing.T) {
 	svc := app.New(queue.New(queue.NewMemoryStore(), dashboardNoopProcessor{}))
 	svc.Printers = map[string]printer.Printer{
@@ -55,11 +58,14 @@ func TestPrintersHandler_RendersConfiguredPrinters_WithExpectedFields(t *testing
 		"576",
 		"300",
 		"No",
-		"Offline: connection refused",
+		"Offline",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body does not contain %q; body = %s", want, body)
 		}
+	}
+	if strings.Contains(body, "connection refused") {
+		t.Errorf("body leaks the printer's raw StatusDetail: %s", body)
 	}
 }
 
@@ -93,10 +99,10 @@ func TestPrintersHandler_DeterministicOrdering_PrintersSortedByName(t *testing.T
 	}
 }
 
-// TestPrintersHandler_OfflineWithoutDetail_ReportsBareOffline covers the
-// offline branch printerStatusText takes when Status returned no Detail
-// (as opposed to the two other tests' "Online" and "Offline: <detail>"
-// branches).
+// TestPrintersHandler_OfflineWithoutDetail_ReportsBareOffline proves an
+// offline printer with no StatusDetail at all still reports plainly
+// "Offline", with no stray trailing separator from the (now removed)
+// detail-suffix formatting.
 func TestPrintersHandler_OfflineWithoutDetail_ReportsBareOffline(t *testing.T) {
 	svc := app.New(queue.New(queue.NewMemoryStore(), dashboardNoopProcessor{}))
 	svc.Printers = map[string]printer.Printer{

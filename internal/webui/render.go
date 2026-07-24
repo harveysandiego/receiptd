@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"html/template"
 	"log"
 	"net/http"
@@ -17,16 +18,35 @@ import (
 // override every other page's content block.
 var baseTemplate = template.Must(template.ParseFS(web.FS, "templates/base.tmpl"))
 
-// render executes tmpl's "base" template, writing status and a text/html
-// Content-Type first. Every webui handler goes through this one function,
-// so a template execution failure is logged consistently in exactly one
-// place. render has no opinion about what tmpl or data mean — deciding
-// those, and anything about page title, navigation, or layout, is each
-// handler's/page model's job, not this file's.
+// maxRequestBodyBytes bounds every webui POST body — a request whose
+// Content-Type this package parses via r.ParseForm/ParseMultipartForm
+// (assets.go's upload, preview.go, print.go). It happens to equal
+// internal/api's own maxRequestBodyBytes (internal/api/status.go), but is
+// its own constant rather than an import of that one: webui and api are
+// sibling packages, neither depending on the other
+// (docs/ARCHITECTURE.md §11), so sharing the constant would add a
+// package dependency neither side otherwise needs.
+const maxRequestBodyBytes = 10 << 20
+
+// render executes tmpl's "base" template into an in-memory buffer first,
+// and only writes the Content-Type/status/body once execution succeeds —
+// so a template error (a bug in a page's own data, not the client's
+// fault) can never leave a response half-written with headers already
+// committed to a status that turned out to be wrong. Every webui handler
+// goes through this one function, so a template execution failure is
+// logged consistently in exactly one place. render has no opinion about
+// what tmpl or data mean — deciding those, and anything about page
+// title, navigation, or layout, is each handler's/page model's job, not
+// this file's.
 func render(w http.ResponseWriter, tmpl *template.Template, status int, data any) {
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "base", data); err != nil {
+		log.Printf("webui: render base: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		log.Printf("webui: render base: %v", err)
-	}
+	_, _ = w.Write(buf.Bytes())
 }

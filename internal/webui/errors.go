@@ -32,11 +32,10 @@ func statusForErr(err error) int {
 }
 
 // errorPage is the data shape for a Web UI page that failed to load. It
-// reuses base.tmpl's default "content" block (a bare title and message)
-// rather than a dedicated template — an error page has nothing
-// page-specific to render.
+// reuses base.tmpl's default "content" block (a bare message) rather
+// than a dedicated template — an error page has nothing page-specific to
+// render.
 type errorPage struct {
-	Title   string
 	Message string
 }
 
@@ -44,10 +43,12 @@ type errorPage struct {
 // apperr.Kind to an HTTP status without echoing err's own message to the
 // browser (the same trust-boundary rule internal/api/job_status.go
 // applies to a Job's LastError). Callers decide whether/when to call it;
-// renderError only decides how to present the result consistently.
+// renderError only decides how to present the result consistently. title
+// names the page that failed (e.g. "Print", "Assets") for the message
+// text only — base.tmpl never renders a per-page <title>, so there is no
+// second place this needs to go.
 func renderError(w http.ResponseWriter, title string, err error) {
 	render(w, baseTemplate, statusForErr(err), errorPage{
-		Title:   title,
 		Message: title + " could not load right now. Please try again shortly.",
 	})
 }

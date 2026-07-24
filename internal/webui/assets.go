@@ -15,15 +15,6 @@ import (
 // clone, not a shared parse).
 var assetsTemplate = template.Must(template.Must(baseTemplate.Clone()).ParseFS(web.FS, "templates/assets.tmpl"))
 
-// maxAssetUploadBytes bounds a multipart upload body. It happens to equal
-// internal/api's own maxRequestBodyBytes (internal/api/status.go), but is
-// its own constant rather than an import of that one: webui and api are
-// sibling packages, neither depending on the other
-// (docs/ARCHITECTURE.md §11), and docs/adr/0026 scopes multipart decoding
-// to this one webui handler specifically — sharing the constant would add
-// a package dependency neither side otherwise needs.
-const maxAssetUploadBytes = 10 << 20
-
 // assetRow is one stored asset's presentation row. AssetSummary currently
 // carries only a Name, but assetRow is still its own type, mirroring
 // printerRow/dashboardPage: this page's template depends on its own
@@ -33,10 +24,11 @@ type assetRow struct {
 }
 
 // assetsPage is the Assets page's model — the only data its template
-// sees.
+// sees. CSRFToken (docs/adr/0027) is the hidden field both the upload
+// form and every per-row delete form embed.
 type assetsPage struct {
-	Title  string
-	Assets []assetRow
+	Assets    []assetRow
+	CSRFToken string
 }
 
 // AssetsHandler serves the asset-management pages: listing (GET
@@ -67,8 +59,8 @@ func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render(w, assetsTemplate, http.StatusOK, assetsPage{
-		Title:  "Assets",
-		Assets: rows,
+		Assets:    rows,
+		CSRFToken: csrfToken(),
 	})
 }
 
@@ -77,9 +69,13 @@ func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 // assets.Store's own validateName rejecting it (apperr.KindValidation),
 // not a rule Upload duplicates here.
 func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxAssetUploadBytes)
-	if err := r.ParseMultipartForm(maxAssetUploadBytes); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	if err := r.ParseMultipartForm(maxRequestBodyBytes); err != nil {
 		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", err))
+		return
+	}
+	if !verifyCSRF(r) {
+		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", errCSRF))
 		return
 	}
 
@@ -91,7 +87,7 @@ func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = file.Close() }()
 
 	// Read fully into memory rather than streamed: Service.UploadAsset's
-	// contract is a plain []byte (docs/adr/0026), and maxAssetUploadBytes
+	// contract is a plain []byte (docs/adr/0026), and maxRequestBodyBytes
 	// above already bounds this to a small, known size before
 	// ParseMultipartForm even runs — an intentional consequence of that
 	// contract and cap, not an oversight.
@@ -112,6 +108,16 @@ func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 // Delete serves POST /assets/{name}/delete.
 func (h *AssetsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", err))
+		return
+	}
+	if !verifyCSRF(r) {
+		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", errCSRF))
+		return
+	}
+
 	name := r.PathValue("name")
 	if err := h.Service.DeleteAsset(r.Context(), name); err != nil {
 		renderError(w, "Assets", err)

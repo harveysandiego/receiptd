@@ -1,6 +1,6 @@
-// dashboard.js polls GET /status on a timer and updates the dashboard's
-// Printers/Queue cards in place, so an operator who leaves this tab open
-// notices a printer going offline or a job finishing without reloading
+// dashboard.js polls GET /status and updates the dashboard's Printers/
+// Queue cards in place, so an operator who leaves this tab open notices a
+// printer going offline or a job finishing without reloading
 // (docs/adr/0025-dashboard-updates-via-polling.md). This is the Web UI's
 // only script — plain, dependency-free, and scoped to this one job per
 // docs/adr/0022-webui-server-rendered-html-template.md: no framework, no
@@ -14,6 +14,16 @@
   // ADR's decision itself — just this script's own implementation
   // detail, free to retune without revisiting the ADR.
   var POLL_INTERVAL_MS = 5000;
+
+  // timer is non-null exactly when a poll is scheduled to run next (via
+  // setTimeout, below) — null means polling is currently paused because
+  // the tab is hidden. inFlight is true for the (usually brief) window
+  // between starting a fetch and it settling, when timer is also null
+  // but for a different reason — onVisibilityChange must check both, or
+  // a hidden/visible flip during an in-flight request would start a
+  // second, overlapping one.
+  var timer = null;
+  var inFlight = false;
 
   function setText(id, text) {
     var el = document.getElementById(id);
@@ -33,7 +43,21 @@
     setText("queue-total", data.queue_total + " total");
   }
 
+  // poll schedules its own successor only once its fetch fully settles
+  // (via .finally below), rather than running on a fixed setInterval —
+  // that's what guarantees at most one request in flight at a time: the
+  // next poll can't start until this one has finished, no matter how
+  // long it takes.
   function poll() {
+    if (document.hidden) {
+      // Paused: no fetch, and nothing scheduled — onVisibilityChange
+      // resumes this once the tab is visible again.
+      timer = null;
+      return;
+    }
+
+    inFlight = true;
+
     // credentials: "same-origin" is already fetch's default for a
     // same-origin request like this one — stated explicitly so a future
     // reader doesn't have to recall that default to know this poll
@@ -54,14 +78,28 @@
         // Between polls the dashboard already shows the last-fetched
         // state (docs/adr/0025) — a failed poll just retries next
         // interval rather than replacing real data with an error.
+      })
+      .finally(function () {
+        inFlight = false;
+        timer = setTimeout(poll, POLL_INTERVAL_MS);
       });
+  }
+
+  // Resumes immediately on becoming visible again, rather than waiting
+  // out whatever's left of a stale interval — but only when poll() isn't
+  // already paused-and-waiting or already running (see timer/inFlight
+  // above).
+  function onVisibilityChange() {
+    if (!document.hidden && timer === null && !inFlight) {
+      poll();
+    }
   }
 
   // Guards against running on a page that doesn't have these elements —
   // this script is only ever included by dashboard.tmpl, but the guard
   // keeps it a no-op rather than a console error if that ever changes.
   if (document.getElementById("printers-online")) {
+    document.addEventListener("visibilitychange", onVisibilityChange);
     poll();
-    setInterval(poll, POLL_INTERVAL_MS);
   }
 })();

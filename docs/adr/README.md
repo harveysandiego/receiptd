@@ -36,6 +36,7 @@ does without reopening a discussion that already happened.
 | [0024](0024-printer-settings-screen-is-read-only.md) | Web UI's printer settings screen is read-only |
 | [0025](0025-dashboard-updates-via-polling.md) | Dashboard state via periodic client-side polling, not SSE/WebSockets |
 | [0026](0026-asset-upload-multipart-form-data.md) | Asset uploads via `multipart/form-data`, not JSON+base64 |
+| [0027](0027-webui-csrf-protection-via-per-process-hmac-token.md) | Web UI CSRF protection via a per-process HMAC token, not a session cookie |
 
 ## Conventions
 

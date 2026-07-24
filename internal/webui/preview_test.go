@@ -119,6 +119,25 @@ func TestPreviewHandler_Generate_MalformedFormBody_RendersGenericErrorWithoutLea
 	}
 }
 
+// TestPreviewHandler_Generate_OversizedBody_Rejected proves a request
+// body over maxRequestBodyBytes is rejected by http.MaxBytesReader before
+// r.ParseForm ever finishes reading it, the same size cap internal/api
+// already applies (internal/api/status.go's own maxRequestBodyBytes).
+func TestPreviewHandler_Generate_OversizedBody_Rejected(t *testing.T) {
+	router := webui.NewRouter(newPreviewTestService())
+
+	form := url.Values{"receipt": {strings.Repeat("a", 11<<20)}, "printer": {"front-desk"}}
+	req := httptest.NewRequest(http.MethodPost, "/preview", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body)
+	}
+}
+
 // TestPreviewHandler_Generate_MalformedJSON_RendersValidationMessage proves
 // JSON that can't even be decoded into a receipt.Receipt is reported by the
 // Web UI itself, as a validation message on the Preview page — distinct

@@ -25,13 +25,15 @@ const printPageTitle = "Print"
 // ReceiptJSON and Printer echo back a rejected submission's form values;
 // Message is a malformed-JSON validation message; JobID is set only on
 // the GET that follows a successful submission's redirect (see Submit),
-// never alongside ReceiptJSON/Printer/Message.
+// never alongside ReceiptJSON/Printer/Message. CSRFToken is the current
+// token (docs/adr/0027), embedded as the form's hidden field on every
+// render — including a rejected submission's re-render, since the token
+// doesn't vary by request and print.tmpl always includes the form.
 type printPage struct {
-	Title string
-
 	ReceiptJSON string
 	Printer     string
 	Message     string
+	CSRFToken   string
 
 	// JobID is confirmation text, echoed from the redirect's "job" query
 	// parameter rather than looked up against the Queue — this page
@@ -59,8 +61,8 @@ func NewPrintHandler(svc *app.Service) *PrintHandler {
 // Submit (see printPage.JobID).
 func (h *PrintHandler) Show(w http.ResponseWriter, r *http.Request) {
 	render(w, printTemplate, http.StatusOK, printPage{
-		Title: printPageTitle,
-		JobID: r.URL.Query().Get("job"),
+		JobID:     r.URL.Query().Get("job"),
+		CSRFToken: csrfToken(),
 	})
 }
 
@@ -71,8 +73,13 @@ func (h *PrintHandler) Show(w http.ResponseWriter, r *http.Request) {
 // A successful submission redirects (PRG) rather than rendering a body
 // directly, so reloading or retrying the response never resubmits it.
 func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		renderError(w, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", err))
+		return
+	}
+	if !verifyCSRF(r) {
+		renderError(w, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", errCSRF))
 		return
 	}
 
@@ -82,10 +89,10 @@ func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	var rc receipt.Receipt
 	if err := json.Unmarshal([]byte(receiptJSON), &rc); err != nil {
 		render(w, printTemplate, http.StatusBadRequest, printPage{
-			Title:       printPageTitle,
 			ReceiptJSON: receiptJSON,
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
+			CSRFToken:   csrfToken(),
 		})
 		return
 	}

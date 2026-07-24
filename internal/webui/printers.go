@@ -2,6 +2,7 @@ package webui
 
 import (
 	"html/template"
+	"log"
 	"net/http"
 
 	"github.com/harveysandiego/receiptd/internal/app"
@@ -35,7 +36,6 @@ type printerRow struct {
 // printersPage is the Printers page's model — the only data its template
 // sees.
 type printersPage struct {
-	Title    string
 	Printers []printerRow
 }
 
@@ -59,6 +59,13 @@ func (h *PrintersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]printerRow, len(summaries))
 	for i, s := range summaries {
+		// StatusDetail is a raw transport-level error (a dial failure's
+		// address/port/message) — logged here for an administrator, but
+		// never rendered to the browser; see printerStatusText.
+		if !s.Online && s.StatusDetail != "" {
+			log.Printf("webui: printer %q offline: %s", s.Name, s.StatusDetail)
+		}
+
 		rows[i] = printerRow{
 			Name:       s.Name,
 			Transport:  s.Transport,
@@ -67,12 +74,11 @@ func (h *PrintersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			DPI:        s.DPI,
 			Cut:        capabilityText(s.SupportsCut),
 			PartialCut: capabilityText(s.SupportsPartialCut),
-			Status:     printerStatusText(s.Online, s.StatusDetail),
+			Status:     printerStatusText(s.Online),
 		}
 	}
 
 	render(w, printersTemplate, http.StatusOK, printersPage{
-		Title:    "Printers",
 		Printers: rows,
 	})
 }
@@ -87,17 +93,19 @@ func capabilityText(supported bool) string {
 }
 
 // printerStatusText turns a printer's live reachability into the table's
-// Status cell text. detail is PrinterSummary's own point-in-time
-// printer.Printer.Status detail (docs/adr/0024) — a dial/transport error
-// about reaching the printer itself, not arbitrary internal state, so
-// unlike a Job's LastError (internal/api/job_status.go, which can carry
-// receipt content) it's shown verbatim rather than sanitized.
-func printerStatusText(online bool, detail string) string {
+// Status cell text. It deliberately never includes PrinterSummary's raw
+// StatusDetail (a dial/transport error that can carry an OS-level error
+// string) — unlike this package's earlier stance, that detail is now
+// treated the same trust-boundary way a Job's LastError already is
+// (internal/api/job_status.go): logged server-side for an administrator
+// (ServeHTTP, above), never echoed to the browser. This isn't a retreat
+// to a vague "Unknown error": Online/Offline is itself the operationally
+// meaningful signal this table exists to show, and the printer's address
+// — the one other fact StatusDetail could add — is already its own
+// column (printerRow.Address), not hidden by this change.
+func printerStatusText(online bool) string {
 	if online {
 		return "Online"
 	}
-	if detail == "" {
-		return "Offline"
-	}
-	return "Offline: " + detail
+	return "Offline"
 }
