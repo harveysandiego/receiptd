@@ -24,15 +24,15 @@ jobs:
       # amd64 GitHub-hosted runners can't natively execute arm64
       # binaries, including the arm64 half of a multi-platform build —
       # QEMU is what makes that cross-build possible.
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: inputs.push
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -45,7 +45,7 @@ jobs:
       # neither caller workflow has to compute any of this by hand.
       - name: Derive image tags and OCI labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           # latest=auto is metadata-action's default, spelled out here so
@@ -67,7 +67,7 @@ jobs:
       # metadata-action's parsed version (e.g. "1.2.3", no "v" prefix) to
       # match GoReleaser's `{{.Version}}` template variable.
       - name: Build${{ inputs.push && ' and push' || '' }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
