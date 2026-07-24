@@ -46,7 +46,7 @@ type errorPage struct {
 // applies to a Job's LastError). Callers decide whether/when to call it;
 // renderError only decides how to present the result consistently.
 func renderError(w http.ResponseWriter, title string, err error) {
-	render(w, baseTemplate, statusForErr(err), "base", errorPage{
+	render(w, baseTemplate, statusForErr(err), errorPage{
 		Title:   title,
 		Message: title + " could not load right now. Please try again shortly.",
 	})

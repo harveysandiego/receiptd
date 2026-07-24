@@ -12,8 +12,9 @@ import (
 
 // TestNewRouter_EveryStubRoute_Returns501 proves every route in the
 // Milestone 4 contract (docs/ARCHITECTURE.md §10) that still lacks its
-// own slice exists and answers 501. GET / is covered separately in
-// dashboard_test.go now that the Dashboard slice has replaced its stub.
+// own slice exists and answers 501. GET / and GET /printers are covered
+// separately, in dashboard_test.go and printers_test.go, now that those
+// two slices have replaced their stubs.
 func TestNewRouter_EveryStubRoute_Returns501(t *testing.T) {
 	svc := &app.Service{}
 	router := webui.NewRouter(svc)
@@ -23,7 +24,6 @@ func TestNewRouter_EveryStubRoute_Returns501(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/status"},
-		{http.MethodGet, "/printers"},
 		{http.MethodGet, "/assets"},
 		{http.MethodPost, "/assets"},
 		{http.MethodPost, "/assets/logo.png/delete"},

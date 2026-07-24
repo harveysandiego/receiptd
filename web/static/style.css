@@ -52,3 +52,15 @@ main {
   font-weight: bold;
   margin: 0.25rem 0;
 }
+
+table.printers {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.printers th,
+table.printers td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}

@@ -80,7 +80,7 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	render(w, dashboardTemplate, http.StatusOK, "base", dashboardPage{
+	render(w, dashboardTemplate, http.StatusOK, dashboardPage{
 		Title:          "Dashboard",
 		PrinterCount:   len(printers),
 		PrintersOnline: online,

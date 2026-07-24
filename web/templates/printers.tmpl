@@ -1,0 +1,36 @@
+{{define "content"}}
+<h2>Printers</h2>
+
+{{if .Printers}}
+<table class="printers">
+<thead>
+<tr>
+<th>Name</th>
+<th>Transport</th>
+<th>Address</th>
+<th>Width (dots)</th>
+<th>DPI</th>
+<th>Cut</th>
+<th>Partial cut</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+{{range .Printers}}
+<tr>
+<td>{{.Name}}</td>
+<td>{{.Transport}}</td>
+<td>{{.Address}}</td>
+<td>{{.WidthDots}}</td>
+<td>{{.DPI}}</td>
+<td>{{.Cut}}</td>
+<td>{{.PartialCut}}</td>
+<td>{{.Status}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p>No printers configured.</p>
+{{end}}
+{{end}}

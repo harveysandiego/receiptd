@@ -17,17 +17,17 @@ import (
 // override every other page's content block.
 var baseTemplate = template.Must(template.ParseFS(web.FS, "templates/base.tmpl"))
 
-// render executes name against tmpl, writing status and a text/html
+// render executes tmpl's "base" template, writing status and a text/html
 // Content-Type first. Every webui handler goes through this one function,
 // so a template execution failure is logged consistently in exactly one
-// place. render has no opinion about what tmpl, name, or data mean —
-// deciding those, and anything about page title, navigation, or layout,
-// is each handler's/page model's job, not this file's.
-func render(w http.ResponseWriter, tmpl *template.Template, status int, name string, data any) {
+// place. render has no opinion about what tmpl or data mean — deciding
+// those, and anything about page title, navigation, or layout, is each
+// handler's/page model's job, not this file's.
+func render(w http.ResponseWriter, tmpl *template.Template, status int, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
-		log.Printf("webui: render %s: %v", name, err)
+	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
+		log.Printf("webui: render base: %v", err)
 	}
 }
 
@@ -43,7 +43,7 @@ type stubPage struct {
 // data, that handler stops calling renderStub and calls render directly
 // — render itself is the only permanent part of this file.
 func renderStub(w http.ResponseWriter, title string) {
-	render(w, baseTemplate, http.StatusNotImplemented, "base", stubPage{
+	render(w, baseTemplate, http.StatusNotImplemented, stubPage{
 		Title:   title,
 		Message: title + " is not implemented yet.",
 	})
