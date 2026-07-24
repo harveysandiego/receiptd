@@ -9,6 +9,8 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-24
+
 ### Added
 
 - Web UI (Milestone 4): a server-rendered `html/template` frontend in
@@ -234,7 +236,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/harveysandiego/receiptd/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/harveysandiego/receiptd/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/harveysandiego/receiptd/compare/v0.2.0...v0.3.0
