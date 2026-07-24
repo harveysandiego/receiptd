@@ -3,65 +3,11 @@ package webui_test
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/webui"
 )
-
-// TestNewRouter_EveryStubRoute_Returns501 proves every route in the
-// Milestone 4 contract (docs/ARCHITECTURE.md §10) that still lacks its
-// own slice exists and answers 501. GET / and GET /printers are covered
-// separately, in dashboard_test.go and printers_test.go, the Assets
-// routes in assets_test.go, the Preview routes in preview_test.go, and
-// the Print routes in print_test.go, now that those slices have replaced
-// their stubs.
-func TestNewRouter_EveryStubRoute_Returns501(t *testing.T) {
-	svc := &app.Service{}
-	router := webui.NewRouter(svc)
-
-	tests := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodGet, "/status"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusNotImplemented {
-				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotImplemented, rec.Body)
-			}
-		})
-	}
-}
-
-// TestNewRouter_StubPage_RendersPlaceholderHTML proves a stub route
-// actually executes the shared base template rather than writing a bare
-// status code — the render helper and base.tmpl are wired together, not
-// just present.
-func TestNewRouter_StubPage_RendersPlaceholderHTML(t *testing.T) {
-	router := webui.NewRouter(&app.Service{})
-
-	req := httptest.NewRequest(http.MethodGet, "/status", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("Content-Type = %q, want a text/html prefix", ct)
-	}
-	if !strings.Contains(rec.Body.String(), "Status is not implemented yet.") {
-		t.Errorf("body = %s, want it to mention the page is not implemented", rec.Body)
-	}
-	if !strings.Contains(rec.Body.String(), `href="/printers"`) {
-		t.Errorf("body = %s, want the shared base layout's nav to be present", rec.Body)
-	}
-}
 
 // TestNewRouter_StaticAssets_Served proves web/static/style.css is
 // reachable under /static/, the one route outside the routing contract

@@ -30,21 +30,3 @@ func render(w http.ResponseWriter, tmpl *template.Template, status int, data any
 		log.Printf("webui: render base: %v", err)
 	}
 }
-
-// stubPage is base.tmpl's "content" block's default data shape.
-type stubPage struct {
-	Title   string
-	Message string
-}
-
-// renderStub writes a 501 placeholder page for a page whose slice hasn't
-// landed yet. It exists only for this Infrastructure slice's stub
-// period: once a page's own slice gives it real content and its own
-// data, that handler stops calling renderStub and calls render directly
-// — render itself is the only permanent part of this file.
-func renderStub(w http.ResponseWriter, title string) {
-	render(w, baseTemplate, http.StatusNotImplemented, stubPage{
-		Title:   title,
-		Message: title + " is not implemented yet.",
-	})
-}

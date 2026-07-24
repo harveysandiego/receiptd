@@ -624,69 +624,49 @@ func TestBuild_WebDisabled_RootPathNotMounted(t *testing.T) {
 	}
 }
 
-// webUIStubRoutes is every route in the Milestone 4 routing contract
-// (docs/ARCHITECTURE.md §10) still awaiting its own slice, shared by the
-// auth-disabled and auth-enabled coverage tests below so both exercise
-// exactly the same route list. GET / (Dashboard), GET /printers
-// (Printers), the Assets routes, the Preview routes, and the Print routes
-// are covered separately by the tests below, since those slices have
-// replaced their stubs and no longer answer 501.
-func webUIStubRoutes() []struct{ method, path string } {
-	return []struct{ method, path string }{
-		{http.MethodGet, "/status"},
-	}
-}
-
-func TestBuild_WebEnabled_AuthDisabled_EveryRoute_ReachesStub(t *testing.T) {
+// TestBuild_WebEnabled_AuthDisabled_Status_RendersOK proves GET /status
+// now reaches the real StatusHandler (docs/adr/0025-dashboard-updates-via-polling.md)
+// rather than the old 501 stub.
+func TestBuild_WebEnabled_AuthDisabled_Status_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
 	d := buildDaemon(t, cfg)
 
-	for _, rt := range webUIStubRoutes() {
-		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
-			if rec.Code != http.StatusNotImplemented {
-				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotImplemented, rec.Body)
-			}
-		})
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
 	}
 }
 
-// TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub
-// proves the routing contract's full coverage: every documented route is
-// both mounted and protected — a missing credential is 401 and never
-// reaches a handler, a valid one reaches the (still-stub) handler and
-// gets 501, for every route, not just one representative path.
-func TestBuild_WebEnabled_AuthEnabled_EveryRoute_RequiresBasicThenReachesStub(t *testing.T) {
+// TestBuild_WebEnabled_AuthEnabled_Status_RequiresBasicThenRendersOK
+// proves /status stays Basic-protected the same way every other Web UI
+// route does, now that it answers dashboard.js's poll with real content
+// instead of a 501 stub.
+func TestBuild_WebEnabled_AuthEnabled_Status_RequiresBasicThenRendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
 	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
 	d := buildDaemon(t, cfg)
 
-	for _, rt := range webUIStubRoutes() {
-		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
-			if rec.Code != http.StatusUnauthorized {
-				t.Errorf("missing credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
-			}
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/status", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
 
-			req := httptest.NewRequest(rt.method, rt.path, nil)
-			req.SetBasicAuth("operator", "secret-token")
-			rec = httptest.NewRecorder()
-			d.srv.Handler.ServeHTTP(rec, req)
-			if rec.Code != http.StatusNotImplemented {
-				t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusNotImplemented, rec.Body)
-			}
-		})
+	req := httptest.NewRequest(http.MethodGet, "/status", nil)
+	req.SetBasicAuth("operator", "secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
 	}
 }
 
 // TestBuild_WebEnabled_AuthDisabled_Dashboard_RendersOK proves GET / now
 // reaches the real Dashboard handler (docs/ARCHITECTURE.md §10) rather
-// than the stub — its own slice has landed, so it no longer belongs in
-// webUIStubRoutes' 501 coverage above.
+// than the stub — its own slice has landed.
 func TestBuild_WebEnabled_AuthDisabled_Dashboard_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
@@ -726,8 +706,7 @@ func TestBuild_WebEnabled_AuthEnabled_Dashboard_RequiresBasicThenRendersOK(t *te
 
 // TestBuild_WebEnabled_AuthDisabled_Printers_RendersOK proves GET
 // /printers now reaches the real Printers handler (docs/ARCHITECTURE.md
-// §10) rather than the stub — its own slice has landed, so it no longer
-// belongs in webUIStubRoutes' 501 coverage above.
+// §10) rather than the stub — its own slice has landed.
 func TestBuild_WebEnabled_AuthDisabled_Printers_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
@@ -767,8 +746,7 @@ func TestBuild_WebEnabled_AuthEnabled_Printers_RequiresBasicThenRendersOK(t *tes
 
 // TestBuild_WebEnabled_AuthDisabled_Assets_RendersOK proves GET /assets
 // now reaches the real Assets handler (docs/ARCHITECTURE.md §10) rather
-// than the stub — its own slice has landed, so it no longer belongs in
-// webUIStubRoutes' 501 coverage above.
+// than the stub — its own slice has landed.
 func TestBuild_WebEnabled_AuthDisabled_Assets_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
@@ -821,8 +799,7 @@ func TestBuild_WebEnabled_AuthEnabled_Assets_RequiresBasicThenRendersOK(t *testi
 
 // TestBuild_WebEnabled_AuthDisabled_Preview_RendersOK proves GET /preview
 // now reaches the real Preview handler (docs/ARCHITECTURE.md §10) rather
-// than the stub — its own slice has landed, so it no longer belongs in
-// webUIStubRoutes' 501 coverage above.
+// than the stub — its own slice has landed.
 func TestBuild_WebEnabled_AuthDisabled_Preview_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}
@@ -869,8 +846,7 @@ func TestBuild_WebEnabled_AuthEnabled_Preview_RequiresBasicThenRendersOK(t *test
 
 // TestBuild_WebEnabled_AuthDisabled_Print_RendersOK proves GET /print now
 // reaches the real Print handler (docs/ARCHITECTURE.md §10) rather than
-// the stub — its own slice has landed, so it no longer belongs in
-// webUIStubRoutes' 501 coverage above.
+// the stub — its own slice has landed.
 func TestBuild_WebEnabled_AuthDisabled_Print_RendersOK(t *testing.T) {
 	cfg := validConfig(t)
 	cfg.Web = config.WebConfig{Enabled: true}

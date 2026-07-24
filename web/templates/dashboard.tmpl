@@ -4,8 +4,8 @@
 <section class="summary">
 <div class="card">
 <h3>Printers</h3>
-<p class="metric">{{.PrintersOnline}} / {{.PrinterCount}} online</p>
-<p>{{.StatusMessage}}</p>
+<p class="metric" id="printers-online">{{.PrintersOnline}} / {{.PrinterCount}} online</p>
+<p id="printers-status-message">{{.StatusMessage}}</p>
 </div>
 
 <div class="card">
@@ -16,13 +16,15 @@
 <div class="card">
 <h3>Queue</h3>
 <ul>
-<li>Pending: {{.QueuePending}}</li>
-<li>Running: {{.QueueRunning}}</li>
-<li>Done: {{.QueueDone}}</li>
-<li>Failed: {{.QueueFailed}}</li>
-<li>Cancelled: {{.QueueCancelled}}</li>
+<li id="queue-pending">Pending: {{.QueuePending}}</li>
+<li id="queue-running">Running: {{.QueueRunning}}</li>
+<li id="queue-done">Done: {{.QueueDone}}</li>
+<li id="queue-failed">Failed: {{.QueueFailed}}</li>
+<li id="queue-cancelled">Cancelled: {{.QueueCancelled}}</li>
 </ul>
-<p class="metric">{{.QueueTotal}} total</p>
+<p class="metric" id="queue-total">{{.QueueTotal}} total</p>
 </div>
 </section>
 {{end}}
+
+{{define "scripts"}}<script src="/static/dashboard.js" defer></script>{{end}}

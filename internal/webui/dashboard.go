@@ -73,12 +73,7 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	online := 0
-	for _, p := range printers {
-		if p.Online {
-			online++
-		}
-	}
+	online := onlinePrinterCount(printers)
 
 	render(w, dashboardTemplate, http.StatusOK, dashboardPage{
 		Title:          "Dashboard",
@@ -93,6 +88,20 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		QueueCancelled: queueSummary.Cancelled,
 		QueueTotal:     queueSummary.Total(),
 	})
+}
+
+// onlinePrinterCount returns how many of printers report Online — shared
+// by DashboardHandler and StatusHandler (status.go) so both derive the
+// same count from the same rule rather than each keeping their own copy
+// of this loop.
+func onlinePrinterCount(printers []app.PrinterSummary) int {
+	online := 0
+	for _, p := range printers {
+		if p.Online {
+			online++
+		}
+	}
+	return online
 }
 
 // printerStatusMessage turns online/total counts into the dashboard's
