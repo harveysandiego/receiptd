@@ -26,6 +26,15 @@ type Service struct {
 	// as Printers. A nil map is safe to read from: an unknown PrinterName
 	// is reported as apperr.KindNotFound, not a panic.
 	Profiles map[string]printer.Profile
+	// Connections maps a printer name to its display-only connection
+	// metadata (transport, address) for ListPrinters (printers.go), the
+	// same key space as Printers/Profiles. This exists so the Web UI's
+	// printer settings screen (docs/adr/0024) can show where a printer is
+	// reached without Service ever holding a printer.Connection: cmd/receiptd
+	// is still the only thing that constructs one, same as before this
+	// field existed — it just also copies the two display fields out of
+	// it into a ConnectionSummary here. A nil map is safe to read from.
+	Connections map[string]ConnectionSummary
 	// Assets resolves a receipt.Asset's Name to its bytes
 	// (docs/ARCHITECTURE.md §3 "Image vs. Asset"), passed through to
 	// layout.Build by render. A nil Assets is safe unless a Receipt

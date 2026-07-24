@@ -97,7 +97,7 @@ func build(cfg *config.Config) (*daemon, error) {
 	q := queue.NewWithRetry(store, svc, cfg.Queue.MaxAttempts, cfg.Queue.RetryBackoff)
 	svc.Queue = q
 	var printerNames []string
-	svc.Printers, svc.Profiles, printerNames = buildPrinters(cfg.Printers)
+	svc.Printers, svc.Profiles, svc.Connections, printerNames = buildPrinters(cfg.Printers)
 	svc.Assets = assets.NewFilesystemStore(cfg.Assets.Path)
 
 	apiMux := http.NewServeMux()
@@ -151,23 +151,26 @@ func buildStore(cfg config.QueueConfig) (queue.Store, error) {
 	return queue.NewBoltStore(cfg.Path)
 }
 
-// buildPrinters constructs a printer.Printer and resolves the Profile
-// for every entry in cfgs, keyed by PrinterConfig.Name — the key
-// app.Service.Process looks a Job's PrinterName up under
-// (docs/ARCHITECTURE.md §4 step 8a, 8f) — plus that same name set as a
-// slice, so it and the maps can never disagree about which printers are
-// configured. Only "network" transport exists (config.Validate rejects
-// others), so a second case isn't needed yet (docs/ARCHITECTURE.md §11).
-func buildPrinters(cfgs []config.PrinterConfig) (printers map[string]printer.Printer, profiles map[string]printer.Profile, names []string) {
+// buildPrinters constructs a printer.Printer, resolves the Profile, and
+// copies the display-only ConnectionSummary for every entry in cfgs, keyed
+// by PrinterConfig.Name (docs/ARCHITECTURE.md §4 step 8a, 8f), plus that
+// same name set as a slice — all four come from one loop over cfgs, so
+// they can never disagree. Only "network" transport exists
+// (config.Validate rejects others), so a second case isn't needed yet
+// (docs/ARCHITECTURE.md §11). connections carries only two display
+// fields, never the Connection itself (docs/ARCHITECTURE.md §1).
+func buildPrinters(cfgs []config.PrinterConfig) (printers map[string]printer.Printer, profiles map[string]printer.Profile, connections map[string]app.ConnectionSummary, names []string) {
 	printers = make(map[string]printer.Printer, len(cfgs))
 	profiles = make(map[string]printer.Profile, len(cfgs))
+	connections = make(map[string]app.ConnectionSummary, len(cfgs))
 	names = make([]string, 0, len(cfgs))
 	for _, c := range cfgs {
 		printers[c.Name] = printer.NewNetworkPrinter(c.Connection)
 		profiles[c.Name] = c.Profile
+		connections[c.Name] = app.ConnectionSummary{Transport: c.Connection.Transport, Address: c.Connection.Address}
 		names = append(names, c.Name)
 	}
-	return printers, profiles, names
+	return printers, profiles, connections, names
 }
 
 // startWorker starts one runWorker goroutine per entry of d.printerNames,

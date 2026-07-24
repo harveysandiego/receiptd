@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/config"
 	"github.com/harveysandiego/receiptd/internal/printer"
@@ -93,13 +94,16 @@ func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *test
 		},
 	}
 
-	printers, profiles, names := buildPrinters(cfgs)
+	printers, profiles, connections, names := buildPrinters(cfgs)
 
 	if len(printers) != len(cfgs) {
 		t.Errorf("len(printers) = %d, want %d", len(printers), len(cfgs))
 	}
 	if len(profiles) != len(cfgs) {
 		t.Errorf("len(profiles) = %d, want %d", len(profiles), len(cfgs))
+	}
+	if len(connections) != len(cfgs) {
+		t.Errorf("len(connections) = %d, want %d", len(connections), len(cfgs))
 	}
 	if len(names) != len(cfgs) {
 		t.Errorf("len(names) = %d, want %d", len(names), len(cfgs))
@@ -111,10 +115,15 @@ func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *test
 		if got := profiles[c.Name]; got != c.Profile {
 			t.Errorf("profiles[%q] = %+v, want %+v", c.Name, got, c.Profile)
 		}
+		want := app.ConnectionSummary{Transport: c.Connection.Transport, Address: c.Connection.Address}
+		if got := connections[c.Name]; got != want {
+			t.Errorf("connections[%q] = %+v, want %+v", c.Name, got, want)
+		}
 	}
 	// names must be exactly the same set of printer names as printers/
-	// profiles are keyed by — all three come from the same loop over cfgs,
-	// so they can never disagree; this pins that they don't.
+	// profiles/connections are keyed by — all four come from the same
+	// loop over cfgs, so they can never disagree; this pins that they
+	// don't.
 	for _, name := range names {
 		if _, ok := printers[name]; !ok {
 			t.Errorf("names contains %q, which is not a key of printers", name)
@@ -123,12 +132,15 @@ func TestBuildPrinters_ConstructsPrinterAndProfileForEachConfiguredEntry(t *test
 }
 
 func TestBuildPrinters_NoConfiguredPrinters_ReturnsEmptyMaps(t *testing.T) {
-	printers, profiles, names := buildPrinters(nil)
+	printers, profiles, connections, names := buildPrinters(nil)
 	if len(printers) != 0 {
 		t.Errorf("len(printers) = %d, want 0", len(printers))
 	}
 	if len(profiles) != 0 {
 		t.Errorf("len(profiles) = %d, want 0", len(profiles))
+	}
+	if len(connections) != 0 {
+		t.Errorf("len(connections) = %d, want 0", len(connections))
 	}
 	if len(names) != 0 {
 		t.Errorf("len(names) = %d, want 0", len(names))

@@ -130,6 +130,7 @@ type fakeCancelStore struct {
 	getJob  *queue.Job
 	getErr  error
 	saveErr error
+	listErr error
 }
 
 func (f *fakeCancelStore) Save(_ context.Context, _ *queue.Job) error { return f.saveErr }
@@ -142,6 +143,9 @@ func (f *fakeCancelStore) Get(_ context.Context, _ string) (*queue.Job, error) {
 }
 
 func (f *fakeCancelStore) List(_ context.Context, _ queue.Filter) ([]*queue.Job, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return nil, nil
 }
 
