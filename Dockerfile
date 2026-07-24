@@ -4,7 +4,7 @@
 # golang:1.25 matches go.mod's `go 1.25.0` minimum. Pinned to a specific
 # minor version (not "latest") for reproducible builds — bump this
 # alongside go.mod's `go` directive, not independently of it.
-FROM golang:1.25-bookworm AS build
+FROM golang:1.26-bookworm AS build
 
 WORKDIR /src
 
