@@ -46,6 +46,15 @@ the 0.x series.
   and Assets tables now scroll horizontally within their own container
   rather than widening the page on a narrow viewport.
 
+### Fixed
+
+- `internal/queue`'s `EnqueueIdempotent` tests opened a bbolt store and
+  never closed it, so `t.TempDir()`'s cleanup could not remove the
+  database file and eight tests failed. Only ever visible on Windows,
+  which refuses to unlink a file that is still open where Linux allows
+  it — so `go test ./...` was reliably red on a Windows checkout and
+  green everywhere else.
+
 ## [0.5.1] - 2026-07-25
 
 ### Fixed

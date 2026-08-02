@@ -28,6 +28,11 @@ func idempotentStoreConstructors(t *testing.T) map[string]func() queue.Store {
 			if err != nil {
 				t.Fatalf("NewBoltStore() error = %v, want nil", err)
 			}
+			t.Cleanup(func() {
+				if closer, ok := s.(interface{ Close() error }); ok {
+					_ = closer.Close()
+				}
+			})
 			return s
 		},
 	}
