@@ -55,6 +55,14 @@ type jobStatusResponse struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
+// versionResponse is the wire shape of a successful GET /api/v1/version
+// response body.
+type versionResponse struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Date    string `json:"date"`
+}
+
 // errorResponse is the wire shape of a non-2xx API response body.
 type errorResponse struct {
 	Error string `json:"error"`
@@ -167,6 +175,21 @@ func (c *apiClient) print(ctx context.Context, r receipt.Receipt, printerName st
 		return "", err
 	}
 	return resp.JobID, nil
+}
+
+// serverVersion calls GET /api/v1/version and returns the decoded
+// versionResponse.
+func (c *apiClient) serverVersion(ctx context.Context) (*versionResponse, error) {
+	data, err := c.do(ctx, http.MethodGet, "/api/v1/version", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp versionResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
 }
 
 // jobStatus calls GET /api/v1/jobs/{id} and returns the decoded

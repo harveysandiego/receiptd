@@ -29,6 +29,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newPreviewCmd())
 	cmd.AddCommand(newPrintCmd())
 	cmd.AddCommand(newJobsCmd())
+	cmd.AddCommand(newVersionCmd())
 
 	return cmd
 }
