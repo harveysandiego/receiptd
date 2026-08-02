@@ -1,6 +1,6 @@
 # 0021. TLS termination is a deployment concern, not an application one
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

@@ -88,7 +88,7 @@ internal/
 
   config/                 YAML config struct + loader + validation.
                          Depends on printer/ (Profile+Connection shape),
-                         queue/ (store choice), assets/ (path), apperr/.
+                         apperr/.
 
   auth/                   Bearer-token (API/CLI) and Basic-Auth (browser)
                          middleware, one shared token check. Kept separate
@@ -1450,6 +1450,29 @@ OpenWeather), all three convenience endpoints
 (`/api/v1/templates/weather`, `/preview`, `/print`) end to end. Validates
 the registration/DI extension model in practice before Shopping/Homelab/Plex.
 
+### Build version reporting
+
+`docs/adr/0030-build-version-surfaced-at-operator-seams.md` — the same
+`-ldflags`-injected `version`/`commit`/`date` (`main.version` etc., set by
+`.goreleaser.yml`, defaulting to `"dev"` in an unreleased build) is surfaced
+at four operator seams rather than only being visible via `receiptd`'s
+startup log line:
+
+- `receiptd --version` prints `versionLine()` and exits before config is
+  loaded, so it works even with no config file present
+  (`cmd/receiptd/main.go`).
+- `GET /api/v1/version` (`internal/api/version.go`) — Bearer-protected like
+  every other `/api/v1/` route, `Cache-Control: no-store` for the same
+  reason `webui`'s `/status` sets it (docs/adr/0021: a reverse proxy must
+  never cache a version response across an upgrade).
+- `receipt version` (`cmd/receipt/version.go`) prints this CLI's own build
+  identity, then calls the API above to print the daemon's — never failing
+  on an unreachable daemon, since the CLI's own version is the command's
+  primary job and a daemon that won't start is exactly when someone runs
+  it.
+- The Web UI footer, via `pageEnvelope{Page, Version}` — see "Milestone 4
+  as built" above.
+
 ---
 
 ## 11. Final architecture review
@@ -1464,7 +1487,7 @@ optimization, and future maintenance concerns.
 Previous draft had ~19 packages once every subpackage was counted
 (`render/font`, `render/output/{escpos,png,pdf,ansi}`,
 `printer/network`, `queue/{boltstore,memstore}`, plus the core set). This
-revision has **13 real packages** for everything through Milestone 6:
+revision has **14 real packages** for everything through Milestone 6:
 `apperr`, `receipt`, `printer`, `render/layout`, `render/canvas`,
 `render/escpos`, `queue`, `templates`, `assets`, `config`, `auth`, `app`,
 `api`, `webui`. Five packages were folded because they had exactly one
