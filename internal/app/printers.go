@@ -79,6 +79,18 @@ func (s *Service) ListPrinters(ctx context.Context) ([]PrinterSummary, error) {
 	return summaries, nil
 }
 
+// PrinterNames returns every configured printer's name, sorted. Unlike
+// ListPrinters it does no I/O (no Status probe), so it's cheap enough to
+// call on every page render.
+func (s *Service) PrinterNames() []string {
+	names := make([]string, 0, len(s.Printers))
+	for name := range s.Printers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // printerSummaryWithStatus checks one printer's Status, bounded by its own
 // derived context (the earlier of ctx's deadline and printerStatusTimeout
 // — see context.WithTimeout), and builds its PrinterSummary. A timeout or

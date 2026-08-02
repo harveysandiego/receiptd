@@ -9,6 +9,15 @@ the 0.x series.
 
 ## [Unreleased]
 
+### Added
+
+- The Web UI's Print and Preview forms now suggest every configured
+  printer's name in the printer field via a `<datalist>`, backed by a new
+  `app.Service.PrinterNames`. It reads only the configured printers' names
+  and deliberately does no `Status` probe, unlike `ListPrinters`, so it
+  stays cheap enough to call on every page render and an unreachable
+  printer can't slow the form down.
+
 ## [0.5.1] - 2026-07-25
 
 ### Fixed

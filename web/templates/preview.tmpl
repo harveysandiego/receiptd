@@ -6,7 +6,8 @@
 {{end}}
 
 <form method="post" action="/preview" class="preview-form">
-<label>Printer <input type="text" name="printer" value="{{.Printer}}" required></label>
+<label>Printer <input type="text" name="printer" value="{{.Printer}}" list="printer-options" required></label>
+<datalist id="printer-options">{{range .Printers}}<option value="{{.}}">{{end}}</datalist>
 <label>Receipt JSON <textarea name="receipt" class="json-editor" rows="12" required>{{.ReceiptJSON}}</textarea></label>
 <button type="submit">Generate preview</button>
 </form>

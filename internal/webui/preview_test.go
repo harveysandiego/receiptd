@@ -28,6 +28,7 @@ const validPreviewReceiptJSON = `{"version":1,"elements":[{"type":"text","conten
 func newPreviewTestService() *app.Service {
 	svc := app.New(queue.New(queue.NewMemoryStore(), dashboardNoopProcessor{}))
 	svc.Profiles = map[string]printer.Profile{"front-desk": {}}
+	svc.Printers = map[string]printer.Printer{"front-desk": &dashboardFakePrinter{}}
 	return svc
 }
 
@@ -58,6 +59,22 @@ func TestPreviewHandler_Show_RendersFormAndPlaceholder(t *testing.T) {
 	}
 	if strings.Contains(body, "<img") {
 		t.Errorf("body = %s, want no preview image before any submission", body)
+	}
+}
+
+// TestPreviewHandler_Show_RendersPrinterDatalist proves a configured
+// printer's name is offered as a <datalist> suggestion for the printer
+// field.
+func TestPreviewHandler_Show_RendersPrinterDatalist(t *testing.T) {
+	router := webui.NewRouter(newPreviewTestService())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/preview", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `<option value="front-desk">`) {
+		t.Errorf("body = %s, want a datalist option for %q", body, "front-desk")
 	}
 }
 

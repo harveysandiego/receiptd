@@ -41,6 +41,11 @@ type previewPage struct {
 	// string: html/template rejects an untrusted data: URL unless it's
 	// explicitly marked trusted this way.
 	ImageDataURI template.URL
+
+	// Printers backs the printer field's <datalist> suggestions
+	// (Service.PrinterNames — no live Status probe, so it's cheap on every
+	// render).
+	Printers []string
 }
 
 // PreviewHandler serves the receipt preview pages: the form (GET
@@ -59,7 +64,9 @@ func NewPreviewHandler(svc *app.Service) *PreviewHandler {
 
 // Show serves GET /preview: an empty form and the placeholder state.
 func (h *PreviewHandler) Show(w http.ResponseWriter, _ *http.Request) {
-	render(w, previewTemplate, http.StatusOK, previewPage{})
+	render(w, previewTemplate, http.StatusOK, previewPage{
+		Printers: h.Service.PrinterNames(),
+	})
 }
 
 // Generate serves POST /preview. Decoding the submitted JSON is this
@@ -86,6 +93,7 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 			ReceiptJSON: receiptJSON,
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
+			Printers:    h.Service.PrinterNames(),
 		})
 		return
 	}
@@ -100,5 +108,6 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		ReceiptJSON:  receiptJSON,
 		Printer:      printerName,
 		ImageDataURI: template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)),
+		Printers:     h.Service.PrinterNames(),
 	})
 }

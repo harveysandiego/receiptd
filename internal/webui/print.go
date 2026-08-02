@@ -40,6 +40,11 @@ type printPage struct {
 	// confirms submission, not the Job's current state, which may
 	// already differ by the time this GET runs.
 	JobID string
+
+	// Printers backs the printer field's <datalist> suggestions
+	// (Service.PrinterNames — no live Status probe, so it's cheap on every
+	// render).
+	Printers []string
 }
 
 // PrintHandler serves the Quick Print pages: the form (GET /print) and
@@ -63,6 +68,7 @@ func (h *PrintHandler) Show(w http.ResponseWriter, r *http.Request) {
 	render(w, printTemplate, http.StatusOK, printPage{
 		JobID:     r.URL.Query().Get("job"),
 		CSRFToken: csrfToken(),
+		Printers:  h.Service.PrinterNames(),
 	})
 }
 
@@ -93,6 +99,7 @@ func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
 			CSRFToken:   csrfToken(),
+			Printers:    h.Service.PrinterNames(),
 		})
 		return
 	}

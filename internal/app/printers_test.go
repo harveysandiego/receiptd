@@ -402,3 +402,53 @@ func TestService_ListPrinters_ContextCancellation_ReturnsPromptly(t *testing.T) 
 		t.Errorf("ListPrinters took %v after cancellation, want it to return promptly rather than waiting out printerStatusTimeout", elapsed)
 	}
 }
+
+func TestService_PrinterNames_NoPrinters_ReturnsEmptySlice(t *testing.T) {
+	s := newTestService()
+
+	names := s.PrinterNames()
+	if len(names) != 0 {
+		t.Errorf("PrinterNames() = %v, want empty", names)
+	}
+}
+
+func TestService_PrinterNames_ReturnsSortedNames(t *testing.T) {
+	s := newTestService()
+	s.Printers = map[string]printer.Printer{
+		"zebra":      &statusFakePrinter{},
+		"front-desk": &statusFakePrinter{},
+		"kitchen":    &statusFakePrinter{},
+	}
+
+	got := s.PrinterNames()
+	want := []string{"front-desk", "kitchen", "zebra"}
+	if len(got) != len(want) {
+		t.Fatalf("PrinterNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("PrinterNames() = %v, want %v", got, want)
+			break
+		}
+	}
+}
+
+// TestService_PrinterNames_DoesNotProbeStatus proves PrinterNames reads
+// only the Printers map's keys — a printer whose Status would block
+// forever must not prevent PrinterNames from returning.
+func TestService_PrinterNames_DoesNotProbeStatus(t *testing.T) {
+	s := newTestService()
+	s.Printers = map[string]printer.Printer{"front-desk": newBarrierPrinter()}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.PrinterNames()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("PrinterNames did not return promptly — it must not call Status")
+	}
+}

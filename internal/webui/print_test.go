@@ -12,6 +12,7 @@ import (
 
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
+	"github.com/harveysandiego/receiptd/internal/printer"
 	"github.com/harveysandiego/receiptd/internal/queue"
 	"github.com/harveysandiego/receiptd/internal/webui"
 )
@@ -71,6 +72,26 @@ func TestPrintHandler_Show_RendersFormAndExplanation(t *testing.T) {
 	}
 	if strings.Contains(body, "confirmation-message") {
 		t.Errorf("body = %s, want no confirmation before any submission", body)
+	}
+}
+
+// TestPrintHandler_Show_RendersPrinterDatalist proves a configured
+// printer's name is offered as a <datalist> suggestion for the printer
+// field, without PrintHandler probing live printer status to get it
+// (Service.PrinterNames, not Service.ListPrinters).
+func TestPrintHandler_Show_RendersPrinterDatalist(t *testing.T) {
+	svc := app.New(queue.New(queue.NewMemoryStore(), dashboardNoopProcessor{}))
+	svc.Printers = map[string]printer.Printer{"front-desk": &dashboardFakePrinter{}}
+
+	router := webui.NewRouter(svc)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/print", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `<option value="front-desk">`) {
+		t.Errorf("body = %s, want a datalist option for %q", body, "front-desk")
 	}
 }
 
