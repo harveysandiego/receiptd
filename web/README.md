@@ -9,4 +9,5 @@ a build step other than `go build` itself
   page plus `base.tmpl`'s shared layout.
 - `static/` — CSS and vanilla-JS static assets served under `/static/`:
   `style.css` (design tokens + theming), `app.js` (sitewide progressive
-  enhancement), `dashboard.js`.
+  enhancement), `dashboard.js`, `builder.js` (Print/Preview's element
+  builder).

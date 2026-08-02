@@ -1,9 +1,9 @@
 // dashboard.js polls GET /status and updates the dashboard's Printers/
 // Queue cards in place, so an operator who leaves this tab open notices a
 // printer going offline or a job finishing without reloading
-// (docs/adr/0025-dashboard-updates-via-polling.md). Like app.js it is
-// plain and dependency-free, and scoped to this one job per
-// docs/adr/0022-webui-server-rendered-html-template.md: no framework.
+// (docs/adr/0025-dashboard-updates-via-polling.md). Like app.js and
+// builder.js it is plain and dependency-free, and scoped to this one job
+// per docs/adr/0022-webui-server-rendered-html-template.md: no framework.
 (function () {
   "use strict";
 

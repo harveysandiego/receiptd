@@ -30,6 +30,15 @@ the 0.x series.
   changes it, so a value ticking over is noticeable without watching the
   tab.
 
+- A form-based receipt element builder on the Print and Preview pages
+  (`web/static/builder.js`), covering every `receipt` element type
+  including nested `columns`. It is progressive enhancement over the
+  existing Receipt JSON textarea rather than a replacement: the server
+  side is unchanged, "Use raw JSON instead" restores the textarea, and a
+  receipt containing anything the builder can't represent leaves the raw
+  editor in place instead of dropping content. Preview also flags when a
+  displayed preview is older than the current input.
+
 ### Changed
 
 - The Web UI stylesheet is a full redesign around CSS custom-property

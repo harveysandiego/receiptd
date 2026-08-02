@@ -12,6 +12,8 @@
 <button type="submit">Generate preview</button>
 </form>
 
+<p id="stale-notice" class="stale-notice" hidden>Preview may be out of date — regenerate to see your latest changes.</p>
+
 <div class="preview-area">
 {{if .ImageDataURI}}
 <img src="{{.ImageDataURI}}" alt="Receipt preview">
@@ -20,3 +22,5 @@
 {{end}}
 </div>
 {{end}}
+
+{{define "scripts"}}<script src="/static/builder.js" defer></script>{{end}}

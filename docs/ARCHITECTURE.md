@@ -1406,6 +1406,20 @@ above it.
   rather than a fixed timer, so overlapping requests are structurally
   impossible; it also pauses while the tab is hidden
   (`document.hidden`), resuming on `visibilitychange`.
+- **The Print/Preview element builder is enhancement only.**
+  `web/static/builder.js` (loaded by `print.tmpl`/`preview.tmpl`'s
+  `"scripts"` block) renders a form per `receipt.Element` type and writes
+  the resulting JSON into the existing `textarea[name="receipt"]` — the
+  same field the server already reads. `print.go`/`preview.go` are
+  unmodified and unaware it exists, so the raw-JSON path stays the real
+  contract and remains available through the builder's own "Use raw JSON
+  instead" toggle. Any element the builder can't represent makes it
+  decline to initialize at all rather than silently drop content
+  (`parseInitialState` returning `null`). Table cells are the one place
+  its two directions have to be exact inverses: they round-trip through
+  RFC 4180 quoting, because a bare comma split can express neither a cell
+  containing a comma nor an empty one, and `Table.Validate` rejects any
+  row whose length stops matching `Headers`.
 
 **Milestone 5 — Packaging**
 Multi-stage Dockerfile (`CGO_ENABLED=0`), `buildx` multi-arch (amd64/arm64),
