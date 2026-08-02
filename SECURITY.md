@@ -30,13 +30,19 @@ timeline before any public details are published.
 
 ## Scope
 
-Receiptd exposes a REST API (a Web UI is planned — see the README's
-[Roadmap](README.md#roadmap) — but not yet implemented) intended to run
-on a trusted local network (home lab, homeserver, Raspberry Pi). Relevant
-security concerns include, but are not limited to:
+Receiptd exposes a REST API and an optional server-rendered Web UI
+(opt-in via `web.enabled`, behind the same shared-token auth), both
+intended to run on a trusted local network (home lab, homeserver,
+Raspberry Pi). Relevant security concerns include, but are not limited
+to:
 
 - Authentication/authorization bypass in `auth` (bearer token / basic auth)
-- Path traversal or injection via the `assets` store or uploaded images
+- Path traversal or injection via the `assets` store or uploaded images,
+  in either direction: a name escaping the store's root on the way in, or
+  stored bytes being served back to a browser in a way that lets uploaded
+  content execute in the Web UI's origin
+- Cross-site scripting or CSRF in the Web UI, including bypasses of the
+  per-process CSRF token on any state-changing route
 - Denial of service via malformed Receipt JSON (e.g. pathological
   `columns`/`table` nesting) that causes excessive CPU/memory in `render/layout`
   or `render/canvas`

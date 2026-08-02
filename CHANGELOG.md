@@ -66,6 +66,14 @@ the 0.x series.
   `render/layout.Build` calls, so nothing downstream of a Receipt is
   affected. See [ADR-0028](docs/adr/0028-asset-store-list-returns-info.md).
 
+### Documentation
+
+- `SECURITY.md`'s Scope section said the Web UI was planned but not yet
+  implemented, which stopped being true in v0.5.0. It now describes the
+  Web UI as a real surface and names Web UI XSS/CSRF and the serving of
+  stored asset bytes as in scope, so a reporter isn't told a whole
+  surface is out of scope.
+
 ### Fixed
 
 - `internal/queue`'s `EnqueueIdempotent` tests opened a bbolt store and
