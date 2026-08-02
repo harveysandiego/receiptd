@@ -65,7 +65,7 @@ func NewPrintHandler(svc *app.Service) *PrintHandler {
 // query parameter is present — the redirect target of a successful
 // Submit (see printPage.JobID).
 func (h *PrintHandler) Show(w http.ResponseWriter, r *http.Request) {
-	render(w, printTemplate, http.StatusOK, printPage{
+	render(w, h.Service.Build.Version, printTemplate, http.StatusOK, printPage{
 		JobID:     r.URL.Query().Get("job"),
 		CSRFToken: csrfToken(),
 		Printers:  h.Service.PrinterNames(),
@@ -81,11 +81,11 @@ func (h *PrintHandler) Show(w http.ResponseWriter, r *http.Request) {
 func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseForm(); err != nil {
-		renderError(w, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", err))
+		renderError(w, h.Service.Build.Version, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", err))
 		return
 	}
 	if !verifyCSRF(r) {
-		renderError(w, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", errCSRF))
+		renderError(w, h.Service.Build.Version, printPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Print", errCSRF))
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
 
 	var rc receipt.Receipt
 	if err := json.Unmarshal([]byte(receiptJSON), &rc); err != nil {
-		render(w, printTemplate, http.StatusBadRequest, printPage{
+		render(w, h.Service.Build.Version, printTemplate, http.StatusBadRequest, printPage{
 			ReceiptJSON: receiptJSON,
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
@@ -106,7 +106,7 @@ func (h *PrintHandler) Submit(w http.ResponseWriter, r *http.Request) {
 
 	jobID, err := h.Service.Print(r.Context(), rc, printerName, "")
 	if err != nil {
-		renderError(w, printPageTitle, err)
+		renderError(w, h.Service.Build.Version, printPageTitle, err)
 		return
 	}
 

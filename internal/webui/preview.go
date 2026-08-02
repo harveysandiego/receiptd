@@ -64,7 +64,7 @@ func NewPreviewHandler(svc *app.Service) *PreviewHandler {
 
 // Show serves GET /preview: an empty form and the placeholder state.
 func (h *PreviewHandler) Show(w http.ResponseWriter, _ *http.Request) {
-	render(w, previewTemplate, http.StatusOK, previewPage{
+	render(w, h.Service.Build.Version, previewTemplate, http.StatusOK, previewPage{
 		Printers: h.Service.PrinterNames(),
 	})
 }
@@ -80,7 +80,7 @@ func (h *PreviewHandler) Show(w http.ResponseWriter, _ *http.Request) {
 func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseForm(); err != nil {
-		renderError(w, previewPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Preview", err))
+		renderError(w, h.Service.Build.Version, previewPageTitle, apperr.Wrap(apperr.KindValidation, "webui.Preview", err))
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 
 	var rc receipt.Receipt
 	if err := json.Unmarshal([]byte(receiptJSON), &rc); err != nil {
-		render(w, previewTemplate, http.StatusBadRequest, previewPage{
+		render(w, h.Service.Build.Version, previewTemplate, http.StatusBadRequest, previewPage{
 			ReceiptJSON: receiptJSON,
 			Printer:     printerName,
 			Message:     "The submitted receipt JSON could not be parsed. Check the JSON and try again.",
@@ -100,11 +100,11 @@ func (h *PreviewHandler) Generate(w http.ResponseWriter, r *http.Request) {
 
 	pngBytes, err := h.Service.Preview(r.Context(), rc, printerName)
 	if err != nil {
-		renderError(w, previewPageTitle, err)
+		renderError(w, h.Service.Build.Version, previewPageTitle, err)
 		return
 	}
 
-	render(w, previewTemplate, http.StatusOK, previewPage{
+	render(w, h.Service.Build.Version, previewTemplate, http.StatusOK, previewPage{
 		ReceiptJSON:  receiptJSON,
 		Printer:      printerName,
 		ImageDataURI: template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)),

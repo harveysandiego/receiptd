@@ -55,7 +55,7 @@ func NewPrintersHandler(svc *app.Service) *PrintersHandler {
 func (h *PrintersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	summaries, err := h.Service.ListPrinters(r.Context())
 	if err != nil {
-		renderError(w, "Printers", err)
+		renderError(w, h.Service.Build.Version, "Printers", err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (h *PrintersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	render(w, printersTemplate, http.StatusOK, printersPage{
+	render(w, h.Service.Build.Version, printersTemplate, http.StatusOK, printersPage{
 		Printers: rows,
 	})
 }

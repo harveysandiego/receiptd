@@ -14,6 +14,16 @@ type ConnectionSummary struct {
 	Address   string
 }
 
+// BuildInfo is the running binary's build identity, as injected into
+// cmd/receiptd via -ldflags. Service carries it for the same reason it
+// carries ConnectionSummary: so webui and api can display it without
+// reaching outside the app.Service seam. A zero BuildInfo is safe to read.
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 // PrinterSummary is a read-only, presentation-oriented view of one
 // configured printer — name, connection metadata, capability profile,
 // and current reachability — for the Web UI's printer status and

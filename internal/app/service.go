@@ -41,6 +41,9 @@ type Service struct {
 	// actually contains an Asset element; cmd/receiptd always supplies one,
 	// and only a test that doesn't need it may leave this nil.
 	Assets assets.Store
+	// Build is display-only build identity, set by cmd/receiptd at startup.
+	// Only a test that doesn't need it leaves this zero.
+	Build BuildInfo
 }
 
 // New returns a Service that enqueues print work via queue.

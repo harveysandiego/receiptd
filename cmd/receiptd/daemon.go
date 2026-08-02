@@ -99,11 +99,13 @@ func build(cfg *config.Config) (*daemon, error) {
 	var printerNames []string
 	svc.Printers, svc.Profiles, svc.Connections, printerNames = buildPrinters(cfg.Printers)
 	svc.Assets = assets.NewFilesystemStore(cfg.Assets.Path)
+	svc.Build = app.BuildInfo{Version: version, Commit: commit, Date: date}
 
 	apiMux := http.NewServeMux()
 	apiMux.Handle("POST /api/v1/print", api.NewPrintHandler(svc))
 	apiMux.Handle("POST /api/v1/preview", api.NewPreviewHandler(svc))
 	apiMux.Handle("GET /api/v1/jobs/{id}", api.NewJobStatusHandler(svc))
+	apiMux.Handle("GET /api/v1/version", api.NewVersionHandler(version, commit, date))
 
 	var apiHandler http.Handler = apiMux
 	if cfg.Auth.Enabled {

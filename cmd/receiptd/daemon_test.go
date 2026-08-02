@@ -413,6 +413,51 @@ func TestBuild_PrintAndJobStatusRoutesWired(t *testing.T) {
 	}
 }
 
+func TestBuild_VersionRouteWired(t *testing.T) {
+	d := buildDaemon(t, validConfig(t))
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+
+	var resp struct {
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+		Date    string `json:"date"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode /version response: %v", err)
+	}
+	// A test binary carries main.go's placeholder defaults, not -ldflags.
+	if resp.Version != version || resp.Commit != commit || resp.Date != date {
+		t.Errorf("got %+v, want version=%q commit=%q date=%q", resp, version, commit, date)
+	}
+}
+
+func TestBuild_AuthEnabled_VersionRouteRequiresBearerToken(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Auth = config.AuthConfig{Enabled: true, TokenFile: writeTokenFile(t)}
+
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/version", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("missing credential: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec = httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid credential: status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
 func TestBuild_PrintWithConfiguredPrinter_JobSucceeds(t *testing.T) {
 	// This is the wiring TestBuild_PrintWithoutConfiguredPrinter_JobFails
 	// pins the absence of: build() populates Service.Printers/Profiles from
@@ -676,6 +721,21 @@ func TestBuild_WebEnabled_AuthDisabled_Dashboard_RendersOK(t *testing.T) {
 	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body)
+	}
+}
+
+// The Web UI footer is the only consumer of Service.Build, so this is what
+// pins build() populating it.
+func TestBuild_WebEnabled_Dashboard_FooterShowsVersion(t *testing.T) {
+	cfg := validConfig(t)
+	cfg.Web = config.WebConfig{Enabled: true}
+	d := buildDaemon(t, cfg)
+
+	rec := httptest.NewRecorder()
+	d.srv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if want := "Receiptd " + version; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("body = %s, want it to contain %q", rec.Body, want)
 	}
 }
 

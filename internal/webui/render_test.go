@@ -17,7 +17,7 @@ import (
 func TestRender_ExecutesBaseTemplateWithoutError(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	render(rec, baseTemplate, http.StatusOK, errorPage{Message: "hello"})
+	render(rec, "0.5.1", baseTemplate, http.StatusOK, errorPage{Message: "hello"})
 
 	if got, want := rec.Header().Get("Content-Type"), "text/html; charset=utf-8"; got != want {
 		t.Errorf("Content-Type = %q, want %q", got, want)
@@ -27,6 +27,44 @@ func TestRender_ExecutesBaseTemplateWithoutError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "hello") {
 		t.Errorf("body = %s, want it to contain the rendered message", rec.Body)
+	}
+}
+
+func TestRender_RendersVersionInFooter(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	render(rec, "0.5.1", baseTemplate, http.StatusOK, errorPage{Message: "hello"})
+
+	if got := rec.Body.String(); !strings.Contains(got, "<footer><p>Receiptd 0.5.1</p></footer>") {
+		t.Errorf("body = %s, want it to contain the version footer", got)
+	}
+}
+
+// A Service left without BuildInfo (only tests do this) must not render a
+// footer trailing an empty version.
+func TestRender_NoVersion_OmitsFooter(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	render(rec, "", baseTemplate, http.StatusOK, errorPage{Message: "hello"})
+
+	if got := rec.Body.String(); strings.Contains(got, "<footer") {
+		t.Errorf("body = %s, want no footer", got)
+	}
+}
+
+// The envelope must stay invisible to a page: its own "content" block
+// still receives its own model, not the wrapper.
+func TestRender_ContentBlockReceivesThePageModel(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	render(rec, "0.5.1", dashboardTemplate, http.StatusOK, dashboardPage{StatusMessage: "page-owned"})
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "page-owned") {
+		t.Errorf("body = %s, want the page's own model rendered by its content block", body)
+	}
+	if !strings.Contains(body, "Receiptd 0.5.1") {
+		t.Errorf("body = %s, want the footer alongside the page's own content", body)
 	}
 }
 
@@ -40,7 +78,7 @@ func TestRender_TemplateExecutionFails_RespondsWithGenericErrorNotPartialBody(t 
 	badTmpl := template.Must(template.New("base").Parse(`{{.NoSuchField}}`))
 	rec := httptest.NewRecorder()
 
-	render(rec, badTmpl, http.StatusOK, errorPage{Message: "hello"})
+	render(rec, "0.5.1", badTmpl, http.StatusOK, errorPage{Message: "hello"})
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d (the caller asked for 200, but execution failed, so that status must never be committed)", rec.Code, http.StatusInternalServerError)

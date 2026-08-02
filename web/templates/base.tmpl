@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{block "title" .}}Receiptd{{end}}</title>
+<title>{{block "title" .Page}}Receiptd{{end}}</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/app.js" defer></script>
 </head>
@@ -28,8 +28,9 @@
 </label>
 </div>
 </header>
-<main>{{block "content" .}}<p>{{.Message}}</p>{{end}}</main>
-{{block "scripts" .}}{{end}}
+<main>{{block "content" .Page}}<p>{{.Message}}</p>{{end}}</main>
+{{with .Version}}<footer><p>Receiptd {{.}}</p></footer>{{end}}
+{{block "scripts" .Page}}{{end}}
 </body>
 </html>
 {{end}}

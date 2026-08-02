@@ -47,8 +47,8 @@ type errorPage struct {
 // names the page that failed (e.g. "Print", "Assets") for the message
 // text only — base.tmpl never renders a per-page <title>, so there is no
 // second place this needs to go.
-func renderError(w http.ResponseWriter, title string, err error) {
-	render(w, baseTemplate, statusForErr(err), errorPage{
+func renderError(w http.ResponseWriter, version, title string, err error) {
+	render(w, version, baseTemplate, statusForErr(err), errorPage{
 		Message: title + " could not load right now. Please try again shortly.",
 	})
 }

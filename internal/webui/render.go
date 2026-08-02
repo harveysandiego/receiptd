@@ -28,6 +28,15 @@ var baseTemplate = template.Must(template.ParseFS(web.FS, "templates/base.tmpl")
 // package dependency neither side otherwise needs.
 const maxRequestBodyBytes = 10 << 20
 
+// pageEnvelope pairs a page's own model with the sitewide chrome data
+// base.tmpl needs, so no page model carries a field it doesn't own.
+// base.tmpl passes .Page into every block, so a page template still sees
+// exactly its own model.
+type pageEnvelope struct {
+	Page    any
+	Version string
+}
+
 // render executes tmpl's "base" template into an in-memory buffer first,
 // and only writes the Content-Type/status/body once execution succeeds —
 // so a template error (a bug in a page's own data, not the client's
@@ -38,9 +47,9 @@ const maxRequestBodyBytes = 10 << 20
 // what tmpl or data mean — deciding those, and anything about page
 // title, navigation, or layout, is each handler's/page model's job, not
 // this file's.
-func render(w http.ResponseWriter, tmpl *template.Template, status int, data any) {
+func render(w http.ResponseWriter, version string, tmpl *template.Template, status int, data any) {
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "base", data); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "base", pageEnvelope{Page: data, Version: version}); err != nil {
 		log.Printf("webui: render base: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return

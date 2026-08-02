@@ -71,7 +71,7 @@ func NewAssetsHandler(svc *app.Service) *AssetsHandler {
 func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 	summaries, err := h.Service.ListAssets(r.Context())
 	if err != nil {
-		renderError(w, "Assets", err)
+		renderError(w, h.Service.Build.Version, "Assets", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	render(w, assetsTemplate, http.StatusOK, assetsPage{
+	render(w, h.Service.Build.Version, assetsTemplate, http.StatusOK, assetsPage{
 		Assets:    rows,
 		CSRFToken: csrfToken(),
 	})
@@ -98,17 +98,17 @@ func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseMultipartForm(maxRequestBodyBytes); err != nil {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", err))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", err))
 		return
 	}
 	if !verifyCSRF(r) {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", errCSRF))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", errCSRF))
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", err))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Upload", err))
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -120,13 +120,13 @@ func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	// contract and cap, not an oversight.
 	data, err := io.ReadAll(file)
 	if err != nil {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindPermanent, "webui.Upload", err))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindPermanent, "webui.Upload", err))
 		return
 	}
 
 	name := r.FormValue("name")
 	if err := h.Service.UploadAsset(r.Context(), name, data); err != nil {
-		renderError(w, "Assets", err)
+		renderError(w, h.Service.Build.Version, "Assets", err)
 		return
 	}
 
@@ -143,7 +143,7 @@ func (h *AssetsHandler) Content(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	data, err := h.Service.GetAsset(r.Context(), name)
 	if err != nil {
-		renderError(w, "Assets", err)
+		renderError(w, h.Service.Build.Version, "Assets", err)
 		return
 	}
 
@@ -169,17 +169,17 @@ func (h *AssetsHandler) Content(w http.ResponseWriter, r *http.Request) {
 func (h *AssetsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := r.ParseForm(); err != nil {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", err))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", err))
 		return
 	}
 	if !verifyCSRF(r) {
-		renderError(w, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", errCSRF))
+		renderError(w, h.Service.Build.Version, "Assets", apperr.Wrap(apperr.KindValidation, "webui.Delete", errCSRF))
 		return
 	}
 
 	name := r.PathValue("name")
 	if err := h.Service.DeleteAsset(r.Context(), name); err != nil {
-		renderError(w, "Assets", err)
+		renderError(w, h.Service.Build.Version, "Assets", err)
 		return
 	}
 

@@ -57,23 +57,23 @@ func (h *DashboardHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	printers, err := h.Service.ListPrinters(ctx)
 	if err != nil {
-		renderError(w, "Dashboard", err)
+		renderError(w, h.Service.Build.Version, "Dashboard", err)
 		return
 	}
 	assetList, err := h.Service.ListAssets(ctx)
 	if err != nil {
-		renderError(w, "Dashboard", err)
+		renderError(w, h.Service.Build.Version, "Dashboard", err)
 		return
 	}
 	queueSummary, err := h.Service.QueueSummary(ctx)
 	if err != nil {
-		renderError(w, "Dashboard", err)
+		renderError(w, h.Service.Build.Version, "Dashboard", err)
 		return
 	}
 
 	online := onlinePrinterCount(printers)
 
-	render(w, dashboardTemplate, http.StatusOK, dashboardPage{
+	render(w, h.Service.Build.Version, dashboardTemplate, http.StatusOK, dashboardPage{
 		PrinterCount:   len(printers),
 		PrintersOnline: online,
 		StatusMessage:  printerStatusMessage(online, len(printers)),

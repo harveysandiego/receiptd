@@ -1344,6 +1344,12 @@ above it.
   `app`-layer type. A future field added to an `app` summary type for some
   other caller's benefit doesn't silently appear on a page's template
   without a deliberate choice to add it there too.
+- **Sitewide chrome via a render envelope.** `render` wraps a page's own
+  model in a `pageEnvelope{Page, Version}` and `base.tmpl` passes `.Page`
+  into every block, so a page template still sees exactly its own model.
+  This is how the footer's build version (`app.Service.Build`) reaches
+  every page without any page model carrying a field it doesn't own —
+  see docs/adr/0030.
 - **`render`/`renderError` (`render.go`/`errors.go`).** Every handler ends
   in exactly one of these two calls; `render` executes the page's own
   template (cloned from `baseTemplate`, since `html/template` treats
