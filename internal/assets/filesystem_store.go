@@ -90,7 +90,7 @@ func (s *filesystemStore) Delete(_ context.Context, name string) error {
 	return nil
 }
 
-func (s *filesystemStore) List(_ context.Context) ([]string, error) {
+func (s *filesystemStore) List(_ context.Context) ([]Info, error) {
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -98,11 +98,21 @@ func (s *filesystemStore) List(_ context.Context) ([]string, error) {
 		}
 		return nil, apperr.Wrap(apperr.KindPermanent, "assets.Store.List", err)
 	}
-	var names []string
+	var infos []Info
 	for _, e := range entries {
-		if !e.IsDir() {
-			names = append(names, e.Name())
+		if e.IsDir() {
+			continue
 		}
+		fi, err := e.Info()
+		if err != nil {
+			// Deleted between ReadDir and Info: a concurrent Delete, not a
+			// failure of this listing.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, apperr.Wrap(apperr.KindPermanent, "assets.Store.List", err)
+		}
+		infos = append(infos, Info{Name: e.Name(), Size: fi.Size(), ModTime: fi.ModTime()})
 	}
-	return names, nil
+	return infos, nil
 }

@@ -45,6 +45,13 @@ the 0.x series.
   design tokens, replacing the previous minimal stylesheet. The Printers
   and Assets tables now scroll horizontally within their own container
   rather than widening the page on a narrow viewport.
+- `assets.Store.List` now returns `[]assets.Info` (name, size, modified
+  time) rather than `[]string`, and `app.AssetSummary` carries the size
+  and modified time through to the Web UI. Both implementations already
+  held those fields when `List` ran, so this costs no extra I/O. `Get`,
+  `Put`, and `Delete` are unchanged — in particular `Get`, the only method
+  `render/layout.Build` calls, so nothing downstream of a Receipt is
+  affected. See [ADR-0028](docs/adr/0028-asset-store-list-returns-info.md).
 
 ### Fixed
 

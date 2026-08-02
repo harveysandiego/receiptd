@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/assets"
 )
@@ -18,7 +17,7 @@ type errAssetStore struct {
 	listErr error
 }
 
-func (s *errAssetStore) List(_ context.Context) ([]string, error) {
+func (s *errAssetStore) List(_ context.Context) ([]assets.Info, error) {
 	return nil, s.listErr
 }
 
@@ -49,9 +48,17 @@ func TestService_ListAssets_ReturnsSummaryPerStoredAsset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAssets() error = %v, want nil", err)
 	}
-	want := []app.AssetSummary{{Name: "logo.png"}}
-	if len(summaries) != len(want) || summaries[0] != want[0] {
-		t.Errorf("ListAssets() = %+v, want %+v", summaries, want)
+	if len(summaries) != 1 {
+		t.Fatalf("ListAssets() = %+v, want 1 summary", summaries)
+	}
+	if summaries[0].Name != "logo.png" {
+		t.Errorf("ListAssets()[0].Name = %q, want %q", summaries[0].Name, "logo.png")
+	}
+	if summaries[0].Size != int64(len("fake-png-bytes")) {
+		t.Errorf("ListAssets()[0].Size = %d, want %d", summaries[0].Size, len("fake-png-bytes"))
+	}
+	if summaries[0].ModTime.IsZero() {
+		t.Errorf("ListAssets()[0].ModTime is zero, want it carried through from the Store")
 	}
 }
 
@@ -166,5 +173,46 @@ func TestService_DeleteAsset_MissingName_ReturnsNotFound(t *testing.T) {
 	err := s.DeleteAsset(context.Background(), "does-not-exist.png")
 	if !apperr.Is(err, apperr.KindNotFound) {
 		t.Fatalf("DeleteAsset() error = %v, want apperr.KindNotFound", err)
+	}
+}
+
+func TestService_GetAsset_ReturnsStoredBytes(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+	want := []byte("fake-png-bytes")
+	if err := s.Assets.Put(ctx, "logo.png", want); err != nil {
+		t.Fatalf("Put() error = %v, want nil", err)
+	}
+
+	got, err := s.GetAsset(ctx, "logo.png")
+	if err != nil {
+		t.Fatalf("GetAsset() error = %v, want nil", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("GetAsset() = %q, want %q", got, want)
+	}
+}
+
+func TestService_GetAsset_MissingName_ReturnsNotFound(t *testing.T) {
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	_, err := s.GetAsset(context.Background(), "does-not-exist.png")
+	if !apperr.Is(err, apperr.KindNotFound) {
+		t.Fatalf("GetAsset() error = %v, want apperr.KindNotFound", err)
+	}
+}
+
+// A path-escaping name must be rejected by the Store's own validateName
+// before any I/O, since GetAsset is reached from a URL path segment.
+func TestService_GetAsset_PathEscapingName_ReturnsValidation(t *testing.T) {
+	s := newTestService()
+	s.Assets = assets.NewMemoryStore()
+
+	for _, name := range []string{"", "..", "../escape", "sub/dir.png"} {
+		if _, err := s.GetAsset(context.Background(), name); !apperr.Is(err, apperr.KindValidation) {
+			t.Errorf("GetAsset(%q) error = %v, want apperr.KindValidation", name, err)
+		}
 	}
 }

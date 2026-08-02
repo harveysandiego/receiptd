@@ -11,14 +11,18 @@ import (
 // already sort, but ListAssets doesn't rely on that — it sorts its own
 // result independently of the Store's guarantees).
 func (s *Service) ListAssets(ctx context.Context) ([]AssetSummary, error) {
-	names, err := s.Assets.List(ctx)
+	infos, err := s.Assets.List(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	summaries := make([]AssetSummary, 0, len(names))
-	for _, name := range names {
-		summaries = append(summaries, AssetSummary{Name: name})
+	summaries := make([]AssetSummary, 0, len(infos))
+	for _, info := range infos {
+		summaries = append(summaries, AssetSummary{
+			Name:    info.Name,
+			Size:    info.Size,
+			ModTime: info.ModTime,
+		})
 	}
 
 	sort.Slice(summaries, func(i, j int) bool { return summaries[i].Name < summaries[j].Name })
@@ -39,4 +43,11 @@ func (s *Service) UploadAsset(ctx context.Context, name string, data []byte) err
 // apperr.KindNotFound for a name that isn't currently stored.
 func (s *Service) DeleteAsset(ctx context.Context, name string) error {
 	return s.Assets.Delete(ctx, name)
+}
+
+// GetAsset returns the named asset's bytes, for the Web UI to serve back
+// to a browser. Store.Get already classifies a missing name and an
+// invalid one, so this adds no rules of its own.
+func (s *Service) GetAsset(ctx context.Context, name string) ([]byte, error) {
+	return s.Assets.Get(ctx, name)
 }

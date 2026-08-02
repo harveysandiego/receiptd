@@ -166,7 +166,7 @@ type errListAssetStore struct {
 	assets.Store
 }
 
-func (errListAssetStore) List(_ context.Context) ([]string, error) {
+func (errListAssetStore) List(_ context.Context) ([]assets.Info, error) {
 	return nil, apperr.Wrap(apperr.KindPermanent, "assets.Store.List", errors.New("disk error"))
 }
 

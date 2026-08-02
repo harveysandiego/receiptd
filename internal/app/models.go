@@ -1,5 +1,7 @@
 package app
 
+import "time"
+
 // ConnectionSummary is a configured printer's connection metadata, exposed
 // as plain display data — never printer.Connection itself
 // (docs/ARCHITECTURE.md §1: capabilities and transport are different
@@ -46,12 +48,14 @@ type PrinterSummary struct {
 }
 
 // AssetSummary is a read-only view of one stored asset for the Web UI's
-// asset management page. assets.Store.List currently reports only a
-// name, so that's all AssetSummary carries; it's its own type rather
-// than a bare string so a later field (size, content type) can be added
-// without changing Service.ListAssets's return type.
+// asset management page. It carries no content type: which types are safe
+// to render inline in a browser is a webui concern
+// (docs/adr/0029-asset-content-endpoint-inline-type-allowlist.md), not a
+// property of the stored asset.
 type AssetSummary struct {
-	Name string
+	Name    string
+	Size    int64
+	ModTime time.Time
 }
 
 // QueueSummary is a point-in-time count of every Job the Queue knows

@@ -5,9 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 )
+
+// Info describes one stored asset without reading its bytes. List returns
+// these rather than bare names — see
+// docs/adr/0028-asset-store-list-returns-info.md.
+type Info struct {
+	Name    string
+	Size    int64
+	ModTime time.Time
+}
 
 // Store is named asset storage: Get resolves a previously-stored name back
 // to its bytes (the only method render/layout.Build itself calls, to
@@ -20,7 +30,7 @@ type Store interface {
 	Get(ctx context.Context, name string) ([]byte, error)
 	Put(ctx context.Context, name string, data []byte) error
 	Delete(ctx context.Context, name string) error
-	List(ctx context.Context) ([]string, error)
+	List(ctx context.Context) ([]Info, error)
 }
 
 // validateName rejects any name that isn't a safe, single-segment asset

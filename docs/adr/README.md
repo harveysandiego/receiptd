@@ -37,6 +37,7 @@ does without reopening a discussion that already happened.
 | [0025](0025-dashboard-updates-via-polling.md) | Dashboard state via periodic client-side polling, not SSE/WebSockets |
 | [0026](0026-asset-upload-multipart-form-data.md) | Asset uploads via `multipart/form-data`, not JSON+base64 |
 | [0027](0027-webui-csrf-protection-via-per-process-hmac-token.md) | Web UI CSRF protection via a per-process HMAC token, not a session cookie |
+| [0028](0028-asset-store-list-returns-info.md) | `assets.Store.List` returns `[]Info` (name, size, mod time), not `[]string` |
 
 ## Conventions
 

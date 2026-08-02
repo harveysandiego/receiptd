@@ -400,11 +400,17 @@ type Provider interface {
 
 ```go
 // assets
+type Info struct {          // one stored asset's metadata, without its bytes
+    Name    string
+    Size    int64
+    ModTime time.Time
+}
+
 type Store interface {
     Get(ctx context.Context, name string) ([]byte, error)
     Put(ctx context.Context, name string, data []byte) error
     Delete(ctx context.Context, name string) error
-    List(ctx context.Context) ([]string, error)
+    List(ctx context.Context) ([]Info, error)
 }
 
 func NewFilesystemStore(root string) Store // filesystem_store.go — cmd/receiptd's
@@ -426,6 +432,11 @@ Receipt, reused here so a name arriving directly at a `Store` method (e.g.
 a future asset-management API handler, which never goes through
 `receipt.Asset.Validate()` at all) gets the same protection against
 `FilesystemStore` escaping its root via `".."`.
+
+`List` reports an `Info` per asset rather than a bare name — both
+implementations already hold the size and mod time at that point, and the
+Web UI's asset browser shows both. See
+[ADR-0028](adr/0028-asset-store-list-returns-info.md).
 
 ```go
 // app

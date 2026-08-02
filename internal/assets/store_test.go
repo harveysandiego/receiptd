@@ -3,6 +3,7 @@ package assets_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/internal/assets"
@@ -139,10 +140,73 @@ func TestStore_List_ReturnsEveryPutName(t *testing.T) {
 			if len(got) != len(want) {
 				t.Fatalf("List() = %v, want 2 names", got)
 			}
-			for _, n := range got {
-				if !want[n] {
-					t.Errorf("List() contains unexpected name %q", n)
+			for _, info := range got {
+				if !want[info.Name] {
+					t.Errorf("List() contains unexpected name %q", info.Name)
 				}
+			}
+		})
+	}
+}
+
+func TestStore_List_ReportsSizeAndModTime(t *testing.T) {
+	for name, newStore := range storeFactories(t) {
+		t.Run(name, func(t *testing.T) {
+			s := newStore()
+			ctx := context.Background()
+			data := []byte("twelve bytes")
+			if err := s.Put(ctx, "logo.png", data); err != nil {
+				t.Fatalf("Put() error = %v, want nil", err)
+			}
+			got, err := s.List(ctx)
+			if err != nil {
+				t.Fatalf("List() error = %v, want nil", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("List() = %v, want 1 entry", got)
+			}
+			if got[0].Size != int64(len(data)) {
+				t.Errorf("List()[0].Size = %d, want %d", got[0].Size, len(data))
+			}
+			if got[0].ModTime.IsZero() {
+				t.Errorf("List()[0].ModTime is zero, want the time the asset was stored")
+			}
+		})
+	}
+}
+
+// Both implementations must report a fresh ModTime after an overwrite,
+// not the original Put's — the Web UI shows it, and a stale value would
+// claim an asset hadn't changed when it had.
+func TestStore_List_OverwriteAdvancesModTime(t *testing.T) {
+	for name, newStore := range storeFactories(t) {
+		t.Run(name, func(t *testing.T) {
+			s := newStore()
+			ctx := context.Background()
+			if err := s.Put(ctx, "logo.png", []byte("first")); err != nil {
+				t.Fatalf("Put() error = %v, want nil", err)
+			}
+			before, err := s.List(ctx)
+			if err != nil {
+				t.Fatalf("List() error = %v, want nil", err)
+			}
+
+			// Filesystem mod times have coarse resolution on some platforms;
+			// without a gap the second Put can land in the same tick.
+			time.Sleep(10 * time.Millisecond)
+
+			if err := s.Put(ctx, "logo.png", []byte("second")); err != nil {
+				t.Fatalf("Put() error = %v, want nil", err)
+			}
+			after, err := s.List(ctx)
+			if err != nil {
+				t.Fatalf("List() error = %v, want nil", err)
+			}
+			if !after[0].ModTime.After(before[0].ModTime) {
+				t.Errorf("ModTime after overwrite = %v, want later than %v", after[0].ModTime, before[0].ModTime)
+			}
+			if after[0].Size != int64(len("second")) {
+				t.Errorf("Size after overwrite = %d, want %d", after[0].Size, len("second"))
 			}
 		})
 	}
