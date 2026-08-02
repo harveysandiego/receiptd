@@ -38,6 +38,7 @@ does without reopening a discussion that already happened.
 | [0026](0026-asset-upload-multipart-form-data.md) | Asset uploads via `multipart/form-data`, not JSON+base64 |
 | [0027](0027-webui-csrf-protection-via-per-process-hmac-token.md) | Web UI CSRF protection via a per-process HMAC token, not a session cookie |
 | [0028](0028-asset-store-list-returns-info.md) | `assets.Store.List` returns `[]Info` (name, size, mod time), not `[]string` |
+| [0029](0029-asset-content-endpoint-inline-type-allowlist.md) | Asset content served inline only for an allowlisted image type whose bytes agree; everything else downloads |
 
 ## Conventions
 

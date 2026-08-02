@@ -303,6 +303,67 @@ table.assets tbody tr:nth-child(even) {
   background: var(--color-surface-alt);
 }
 
+/* Checkerboard so a transparent logo reads as transparent, not as
+   whatever the current theme's background happens to be. */
+.asset-thumb,
+.preview-dialog-image {
+  background-color: var(--color-surface);
+  background-image:
+    linear-gradient(45deg, var(--color-surface-alt) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-surface-alt) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-surface-alt) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-surface-alt) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
+.asset-thumb {
+  display: block;
+  max-width: 64px;
+  max-height: 64px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Asset preview dialog --- */
+
+.preview-dialog {
+  max-width: min(90vw, 900px);
+  max-height: 90vh;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.preview-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+
+.preview-dialog-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.preview-dialog-caption {
+  margin: var(--space-3) 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  word-break: break-all;
+}
+
+.preview-dialog-close {
+  display: block;
+  margin: 0 auto;
+}
+
 /* --- Badges --- */
 
 .badge {

@@ -135,8 +135,9 @@ philosophy, and the reasoning behind each decision, lives in
 - **Named asset storage** for logos and reusable images
 - **Optional bearer-token / basic auth**, on by default
 - **Web UI** (opt-in via `web.enabled`): a dashboard (printer/asset/queue
-  counts), a read-only printer settings screen, asset management
-  (upload/list/delete), a receipt preview form, and a quick-print form —
+  counts), a read-only printer settings screen, an asset browser
+  (upload/browse/delete, with thumbnails), a receipt preview form, and a
+  quick-print form —
   CSRF-protected, with a set of defensive security headers on every
   response; see [Web UI](#web-ui) below
 - Single static binary — Linux/macOS/Windows, amd64/arm64, no CGO
@@ -466,7 +467,7 @@ Referrer-Policy).
 |---|---|---|
 | Dashboard | `/` | Printer/asset/queue counts; Printers/Queue cards refresh live via polling |
 | Printers | `/printers` | Name, transport, address, profile, live status — read-only; edit `config.yaml` and restart to change a printer ([ADR-0024](docs/adr/0024-printer-settings-screen-is-read-only.md)). Status checks run concurrently with a per-printer timeout, so one slow or offline printer never delays the rest; a printer's raw connection error is logged server-side, not shown in the browser. |
-| Assets | `/assets` | Upload (`multipart/form-data`), list, and delete named assets |
+| Assets | `/assets` | Upload (`multipart/form-data`), browse, and delete named assets. Each row shows size, modified time, and a thumbnail for common image formats; clicking one opens the full-size asset in an overlay without leaving the page (a plain link to the file with JavaScript disabled). Anything else — including SVG — downloads rather than rendering in the browser, since an asset's bytes are caller-supplied ([ADR-0029](docs/adr/0029-asset-content-endpoint-inline-type-allowlist.md)). |
 | Preview | `/preview` | Paste a Receipt as JSON, render it as a PNG against a chosen printer's profile — never prints |
 | Print | `/print` | Paste a Receipt as JSON, submit it — creates a print Job on the queue, same as `POST /api/v1/print` |
 

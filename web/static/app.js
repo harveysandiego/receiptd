@@ -100,6 +100,94 @@
     });
   }
 
+  // The Assets page picks a thumbnail from the file extension alone, but
+  // the server only serves an asset inline once its bytes agree with that
+  // extension (docs/adr/0029). A mislabelled file therefore renders a
+  // broken image; fall back to the same Download link a non-image gets.
+  function replaceWithDownloadLink(img) {
+    var link = img.parentNode;
+    if (!link || link.tagName !== "A") {
+      return;
+    }
+    link.removeChild(img);
+    link.textContent = "Download";
+  }
+
+  function initAssetThumbnails() {
+    document.querySelectorAll("img.asset-thumb").forEach(function (img) {
+      img.addEventListener("error", function () {
+        replaceWithDownloadLink(img);
+      });
+      // Already failed before this script ran.
+      if (img.complete && img.naturalWidth === 0) {
+        replaceWithDownloadLink(img);
+      }
+    });
+  }
+
+  // Thumbnail click opens the full-size asset in a <dialog> rather than
+  // navigating. Native showModal() supplies the focus trap, Escape
+  // handling and backdrop, so this stays small; with JS off, or on a
+  // browser without <dialog>, the link is left alone and navigates as
+  // normal.
+  function initAssetPreview() {
+    var thumbs = document.querySelectorAll("a > img.asset-thumb");
+    if (!thumbs.length || typeof window.HTMLDialogElement === "undefined") {
+      return;
+    }
+
+    var dialog = document.createElement("dialog");
+    dialog.className = "preview-dialog";
+
+    var full = document.createElement("img");
+    full.className = "preview-dialog-image";
+
+    var caption = document.createElement("p");
+    caption.className = "preview-dialog-caption";
+
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "preview-dialog-close";
+    close.textContent = "Close";
+    close.addEventListener("click", function () {
+      dialog.close();
+    });
+
+    dialog.appendChild(full);
+    dialog.appendChild(caption);
+    dialog.appendChild(close);
+    document.body.appendChild(dialog);
+
+    // A click landing on the dialog itself is the backdrop: the image and
+    // buttons are children, so they never match.
+    dialog.addEventListener("click", function (e) {
+      if (e.target === dialog) {
+        dialog.close();
+      }
+    });
+
+    // Release the src on close so a closed dialog isn't holding a decoded
+    // image, and so reopening re-fetches (responses are no-store).
+    dialog.addEventListener("close", function () {
+      full.removeAttribute("src");
+    });
+
+    thumbs.forEach(function (img) {
+      img.parentNode.addEventListener("click", function (e) {
+        // initAssetThumbnails may have swapped this thumbnail for a
+        // download link after load failed; let the link do its job.
+        if (!img.isConnected) {
+          return;
+        }
+        e.preventDefault();
+        full.src = img.getAttribute("src");
+        full.alt = img.getAttribute("alt");
+        caption.textContent = img.getAttribute("alt");
+        dialog.showModal();
+      });
+    });
+  }
+
   // localStorage can throw (private browsing, disabled storage); theming
   // is a nicety, so a failure here just means it doesn't persist.
   function readStoredTheme() {
@@ -158,6 +246,8 @@
     highlightActiveNav();
     initDropzones();
     initThemePicker();
+    initAssetThumbnails();
+    initAssetPreview();
   });
 
   document.addEventListener("submit", onSubmit);

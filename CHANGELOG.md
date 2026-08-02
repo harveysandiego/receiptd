@@ -30,6 +30,19 @@ the 0.x series.
   changes it, so a value ticking over is noticeable without watching the
   tab.
 
+- An asset browser on the Web UI's Assets page: each row now shows the
+  asset's size, modified time, and — for common image formats — a
+  thumbnail, served by a new `GET /assets/{name}/content`. An asset is
+  served inline only when its extension is on a fixed image allowlist
+  *and* its bytes sniff to the same type; everything else, including SVG,
+  downloads as an attachment, since a caller controls both an asset's
+  name and its content. See
+  [ADR-0029](docs/adr/0029-asset-content-endpoint-inline-type-allowlist.md).
+  Clicking a thumbnail opens the full-size asset in a native `<dialog>`
+  without leaving the page; with JavaScript disabled the same thumbnail
+  is a plain link to the asset, and a file whose bytes don't match its
+  extension falls back to a download link rather than a broken image.
+
 - A form-based receipt element builder on the Print and Preview pages
   (`web/static/builder.js`), covering every `receipt` element type
   including nested `columns`. It is progressive enhancement over the

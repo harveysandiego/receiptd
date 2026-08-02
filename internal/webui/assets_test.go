@@ -346,3 +346,139 @@ func TestAssetsHandler_Delete_MissingName_RendersGenericNotFoundError(t *testing
 		t.Errorf("body leaks the underlying error detail: %s", body)
 	}
 }
+
+// contentRequest builds a GET /assets/{name}/content request.
+func contentRequest(name string) *http.Request {
+	return httptest.NewRequest(http.MethodGet, "/assets/"+name+"/content", nil)
+}
+
+func serveContent(t *testing.T, svc *app.Service, name string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	webui.NewRouter(svc).ServeHTTP(rec, contentRequest(name))
+	return rec
+}
+
+// TestAssetsHandler_Content_ImageServesInline proves an asset whose
+// extension and bytes agree is served with its real image type and no
+// attachment disposition, so the Assets page can render it in an <img>.
+func TestAssetsHandler_Content_ImageServesInline(t *testing.T) {
+	svc := newAssetsTestService()
+	png := []byte("\x89PNG\r\n\x1a\n")
+	if err := svc.Assets.Put(context.Background(), "logo.png", png); err != nil {
+		t.Fatalf("Assets.Put: %v", err)
+	}
+
+	rec := serveContent(t, svc, "logo.png")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Errorf("Content-Type = %q, want %q", got, "image/png")
+	}
+	// inline, not attachment — but still naming the asset, since the URL
+	// ends in /content and a save-as would otherwise offer that.
+	if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "inline") {
+		t.Errorf("Content-Disposition = %q, want an inline disposition", got)
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "logo.png") {
+		t.Errorf("Content-Disposition = %q, want it to name the asset", got)
+	}
+	if got := rec.Body.Bytes(); string(got) != string(png) {
+		t.Errorf("body = %q, want the stored bytes %q", got, png)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q (Put overwrites in place)", got, "no-store")
+	}
+}
+
+// TestAssetsHandler_Content_HTMLNamedAsPNGDownloads is the security case
+// this endpoint exists to get right: a caller controls both the asset
+// name and its bytes, so an HTML payload under an image extension must
+// never be served inline, where it would execute in the operator's
+// authenticated origin.
+func TestAssetsHandler_Content_HTMLNamedAsPNGDownloads(t *testing.T) {
+	svc := newAssetsTestService()
+	payload := []byte(`<!DOCTYPE html><html><body><script>alert(1)</script></body></html>`)
+	if err := svc.Assets.Put(context.Background(), "evil.png", payload); err != nil {
+		t.Fatalf("Assets.Put: %v", err)
+	}
+
+	rec := serveContent(t, svc, "evil.png")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want %q — HTML must never be served under an image type", got, "application/octet-stream")
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment") {
+		t.Errorf("Content-Disposition = %q, want an attachment disposition", got)
+	}
+}
+
+// TestAssetsHandler_Content_SVGDownloads proves SVG is excluded from the
+// inline allowlist despite being an image: it executes script when a
+// browser renders it (docs/adr/0029).
+func TestAssetsHandler_Content_SVGDownloads(t *testing.T) {
+	svc := newAssetsTestService()
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
+	if err := svc.Assets.Put(context.Background(), "logo.svg", svg); err != nil {
+		t.Fatalf("Assets.Put: %v", err)
+	}
+
+	rec := serveContent(t, svc, "logo.svg")
+
+	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want %q", got, "application/octet-stream")
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment") {
+		t.Errorf("Content-Disposition = %q, want an attachment disposition", got)
+	}
+}
+
+func TestAssetsHandler_Content_MissingAsset_ReturnsNotFound(t *testing.T) {
+	rec := serveContent(t, newAssetsTestService(), "does-not-exist.png")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "does-not-exist.png") {
+		t.Errorf("body leaks the underlying error detail: %s", body)
+	}
+}
+
+// TestAssetsHandler_List_RendersThumbnailForImageAndLinkOtherwise proves
+// the listing distinguishes the two by extension, and shows the size and
+// modified columns the Store now reports.
+func TestAssetsHandler_List_RendersThumbnailForImageAndLinkOtherwise(t *testing.T) {
+	svc := newAssetsTestService()
+	ctx := context.Background()
+	if err := svc.Assets.Put(ctx, "logo.png", []byte("\x89PNG\r\n\x1a\n")); err != nil {
+		t.Fatalf("Assets.Put: %v", err)
+	}
+	if err := svc.Assets.Put(ctx, "notes.txt", []byte("hello")); err != nil {
+		t.Fatalf("Assets.Put: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	webui.NewRouter(svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `<img src="/assets/logo.png/content"`) {
+		t.Errorf("body has no thumbnail for the image asset: %s", body)
+	}
+	if strings.Contains(body, `<img src="/assets/notes.txt/content"`) {
+		t.Errorf("body renders a thumbnail for a non-image asset: %s", body)
+	}
+	if !strings.Contains(body, "/assets/notes.txt/content") {
+		t.Errorf("body has no download link for the non-image asset: %s", body)
+	}
+	if !strings.Contains(body, "5 B") {
+		t.Errorf("body does not show the non-image asset's size: %s", body)
+	}
+}

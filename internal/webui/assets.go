@@ -1,26 +1,48 @@
 package webui
 
 import (
+	"fmt"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
+	"strconv"
 
 	"github.com/harveysandiego/receiptd/internal/app"
 	"github.com/harveysandiego/receiptd/internal/apperr"
 	"github.com/harveysandiego/receiptd/web"
 )
 
+// formatSize renders a byte count for display, in the largest unit that
+// keeps it under four digits.
+func formatSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for size := n / unit; size >= unit; size /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+}
+
 // assetsTemplate clones baseTemplate and layers assets.tmpl's "content"
 // override on top of the clone (see render.go/dashboard.go for why a
 // clone, not a shared parse).
 var assetsTemplate = template.Must(template.Must(baseTemplate.Clone()).ParseFS(web.FS, "templates/assets.tmpl"))
 
-// assetRow is one stored asset's presentation row. AssetSummary currently
-// carries only a Name, but assetRow is still its own type, mirroring
+// assetRow is one stored asset's presentation row, mirroring
 // printerRow/dashboardPage: this page's template depends on its own
-// model, never on app.AssetSummary directly.
+// model, never on app.AssetSummary directly. Size and Modified are
+// pre-formatted strings so the template does no arithmetic; IsImage
+// decides between a thumbnail and a download link.
 type assetRow struct {
-	Name string
+	Name     string
+	Size     string
+	Modified string
+	IsImage  bool
 }
 
 // assetsPage is the Assets page's model — the only data its template
@@ -55,7 +77,12 @@ func (h *AssetsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]assetRow, len(summaries))
 	for i, s := range summaries {
-		rows[i] = assetRow{Name: s.Name}
+		rows[i] = assetRow{
+			Name:     s.Name,
+			Size:     formatSize(s.Size),
+			Modified: s.ModTime.Format("2006-01-02 15:04"),
+			IsImage:  isInlineExtension(s.Name),
+		}
 	}
 
 	render(w, assetsTemplate, http.StatusOK, assetsPage{
@@ -104,6 +131,38 @@ func (h *AssetsHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/assets", http.StatusSeeOther)
+}
+
+// Content serves GET /assets/{name}/content: the asset's own bytes, so
+// the Assets page can show a thumbnail and link to the full-size image.
+// Anything not on the inline allowlist downloads instead of rendering
+// (docs/adr/0029-asset-content-endpoint-inline-type-allowlist.md). It has
+// no CSRF check for the same reason GET/POST preview doesn't — it mutates
+// nothing.
+func (h *AssetsHandler) Content(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	data, err := h.Service.GetAsset(r.Context(), name)
+	if err != nil {
+		renderError(w, "Assets", err)
+		return
+	}
+
+	// The disposition carries the asset's name in both cases: the URL ends
+	// in /content, so without it a browser's save-as would offer
+	// "content".
+	disposition := "attachment"
+	if ct, ok := inlineType(name, data); ok {
+		disposition = "inline"
+		w.Header().Set("Content-Type", ct)
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
+	// Put overwrites in place, so a cached response would show the
+	// previous asset under an unchanged name.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	_, _ = w.Write(data)
 }
 
 // Delete serves POST /assets/{name}/delete.

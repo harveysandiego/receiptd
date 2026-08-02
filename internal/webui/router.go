@@ -28,6 +28,7 @@ func NewRouter(svc *app.Service) http.Handler {
 	assets := NewAssetsHandler(svc)
 	mux.HandleFunc("GET /assets", assets.List)
 	mux.HandleFunc("POST /assets", assets.Upload)
+	mux.HandleFunc("GET /assets/{name}/content", assets.Content)
 	mux.HandleFunc("POST /assets/{name}/delete", assets.Delete)
 
 	preview := NewPreviewHandler(svc)

@@ -1326,6 +1326,7 @@ above it.
 | GET | `/status` | `StatusHandler` | JSON poll target for the dashboard (docs/adr/0025) |
 | GET | `/printers` | `PrintersHandler` | read-only (docs/adr/0024) |
 | GET, POST | `/assets` | `AssetsHandler.List`/`Upload` | multipart upload (docs/adr/0026); POST is CSRF-protected (docs/adr/0027) |
+| GET | `/assets/{name}/content` | `AssetsHandler.Content` | serves an asset's own bytes for the page's thumbnails; inline only for an allowlisted image type whose bytes agree, else `attachment` (docs/adr/0029). Read-only, so not CSRF-protected |
 | POST | `/assets/{name}/delete` | `AssetsHandler.Delete` | CSRF-protected (docs/adr/0027) |
 | GET, POST | `/preview` | `PreviewHandler.Show`/`Generate` | never enqueues a Job (docs/adr/0006); not CSRF-protected — it never mutates state |
 | GET, POST | `/print` | `PrintHandler.Show`/`Submit` | always enqueues a Job on success; POST is CSRF-protected (docs/adr/0027) |
@@ -1358,8 +1359,9 @@ above it.
   per-process HMAC-signed token (`csrf.go`), embedded as each protected
   form's hidden `csrf_token` field and checked in constant time before any
   handler logic runs — no session, no cookie, nothing `docs/adr/0023`
-  already ruled out. `POST /preview` is the deliberate exception: it never
-  mutates state, so it sits outside this decision's scope.
+  already ruled out. `POST /preview` and `GET /assets/{name}/content` are
+  the deliberate exceptions: neither mutates state, so both sit outside
+  this decision's scope.
 - **Security headers.** The whole router is wrapped in a
   `securityHeaders` middleware (`router.go`) applying a fixed
   Content-Security-Policy, `X-Frame-Options`, `X-Content-Type-Options`,

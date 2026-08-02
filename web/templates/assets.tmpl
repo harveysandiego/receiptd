@@ -16,14 +16,26 @@
 <table class="assets">
 <thead>
 <tr>
+<th scope="col">Preview</th>
 <th scope="col">Name</th>
+<th scope="col">Size</th>
+<th scope="col">Modified</th>
 <th scope="col">Actions</th>
 </tr>
 </thead>
 <tbody>
 {{range .Assets}}
 <tr>
+<td>
+{{if .IsImage}}
+<a href="/assets/{{.Name}}/content"><img src="/assets/{{.Name}}/content" alt="{{.Name}}" class="asset-thumb" loading="lazy"></a>
+{{else}}
+<a href="/assets/{{.Name}}/content">Download</a>
+{{end}}
+</td>
 <td>{{.Name}}</td>
+<td>{{.Size}}</td>
+<td>{{.Modified}}</td>
 <td>
 <form method="post" action="/assets/{{.Name}}/delete" class="delete-form">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
