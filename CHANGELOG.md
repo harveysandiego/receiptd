@@ -11,6 +11,16 @@ the 0.x series.
 
 ### Added
 
+- The running build is now readable from every operator-facing seam: a
+  `receiptd --version` flag, `GET /api/v1/version`, a footer on every Web
+  UI page, and a `receipt version` subcommand reporting the CLI's own
+  build alongside the daemon's. `receiptd --version` needs no config file
+  and `receipt version` still reports the CLI's build when the daemon is
+  unreachable — both are meant to work while filing a bug about a daemon
+  that won't start. The endpoint sits behind the same Bearer auth as every
+  other route. See
+  [ADR-0030](docs/adr/0030-build-version-surfaced-at-operator-seams.md).
+
 - The Web UI's Print and Preview forms now suggest every configured
   printer's name in the printer field via a `<datalist>`, backed by a new
   `app.Service.PrinterNames`. It reads only the configured printers' names
@@ -76,6 +86,9 @@ the 0.x series.
 
 ### Fixed
 
+- `receiptd --version`, which `.github/ISSUE_TEMPLATE/bug_report.md` asks
+  bug reporters to run, exited with a flag error instead of printing a
+  version — the daemon only ever registered `-config`.
 - `internal/queue`'s `EnqueueIdempotent` tests opened a bbolt store and
   never closed it, so `t.TempDir()`'s cleanup could not remove the
   database file and eight tests failed. Only ever visible on Windows,

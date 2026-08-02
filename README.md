@@ -372,11 +372,18 @@ receipt print receipt.json --printer front-desk
 
 # Check a job's status
 receipt jobs <job-id>
+
+# Show this CLI's version and the running daemon's
+receipt version
 ```
 
-`preview`, `print`, and `jobs` read the same `config.yaml` `receiptd`
-loads (`--config`, default `/etc/receiptd/config.yaml`) to find the daemon
-and its Bearer token; `render` is fully offline and ignores `--config`.
+`preview`, `print`, `jobs`, and `version` read the same `config.yaml`
+`receiptd` loads (`--config`, default `/etc/receiptd/config.yaml`) to find
+the daemon and its Bearer token; `render` is fully offline and ignores
+`--config`. `version` still reports the CLI's own build when the daemon is
+unreachable, so it's usable when filing a bug about a daemon that won't
+start. `receiptd --version` prints the daemon's build the same way, without
+loading a config file.
 Plain-text printing and the weather template (`receipt weather ...`) are
 planned for later milestones — see the [roadmap](#roadmap).
 
@@ -412,7 +419,17 @@ curl -X POST http://receiptd.local:8080/api/v1/print \
 # Check job status
 curl http://receiptd.local:8080/api/v1/jobs/<job-id> \
   -H "Authorization: Bearer $RECEIPTD_TOKEN"
+
+# Ask a running daemon which build it is
+curl http://receiptd.local:8080/api/v1/version \
+  -H "Authorization: Bearer $RECEIPTD_TOKEN"
 ```
+
+`/version` returns `{"version", "commit", "date"}` — the `-ldflags` values
+stamped at build time. It sits behind the same Bearer auth as every other
+endpoint rather than being public, so an unauthenticated caller can't
+fingerprint the exact build
+([ADR-0030](docs/adr/0030-build-version-surfaced-at-operator-seams.md)).
 
 `/print` accepts an optional `Idempotency-Key` header (unrelated to the
 `printer` field): supplying the same key on a retry returns the original
@@ -470,6 +487,10 @@ Referrer-Policy).
 | Assets | `/assets` | Upload (`multipart/form-data`), browse, and delete named assets. Each row shows size, modified time, and a thumbnail for common image formats; clicking one opens the full-size asset in an overlay without leaving the page (a plain link to the file with JavaScript disabled). Anything else — including SVG — downloads rather than rendering in the browser, since an asset's bytes are caller-supplied ([ADR-0029](docs/adr/0029-asset-content-endpoint-inline-type-allowlist.md)). |
 | Preview | `/preview` | Paste a Receipt as JSON, render it as a PNG against a chosen printer's profile — never prints |
 | Print | `/print` | Paste a Receipt as JSON, submit it — creates a print Job on the queue, same as `POST /api/v1/print` |
+
+Every page carries a footer showing the running build, so an operator whose
+only interface is the browser can name their version in a bug report
+without shelling into the container.
 
 The dashboard's Printers and Queue cards refresh every 5 seconds via a
 small client-side script polling `GET /status`, a JSON endpoint owned by
