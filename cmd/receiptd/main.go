@@ -26,11 +26,25 @@ var (
 	date    = "unknown"
 )
 
+// versionLine is shared by --version and the startup banner so the two
+// can't drift.
+func versionLine() string {
+	return fmt.Sprintf("receiptd %s (commit %s, built %s)", version, commit, date)
+}
+
 func main() {
 	configPath := flag.String("config", "/etc/receiptd/config.yaml", "path to Receiptd's YAML configuration file")
+	showVersion := flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
 
-	fmt.Printf("receiptd %s (commit %s, built %s)\n", version, commit, date)
+	// Before loadAndBuild, so --version still works with no config file —
+	// the state someone filing a bug report may well be in.
+	if *showVersion {
+		fmt.Println(versionLine())
+		return
+	}
+
+	fmt.Println(versionLine())
 
 	d, err := loadAndBuild(*configPath)
 	if err != nil {
