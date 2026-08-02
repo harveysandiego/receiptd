@@ -59,6 +59,8 @@ func TestPrintersHandler_RendersConfiguredPrinters_WithExpectedFields(t *testing
 		"300",
 		"No",
 		"Offline",
+		"badge-online",
+		"badge-offline",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body does not contain %q; body = %s", want, body)

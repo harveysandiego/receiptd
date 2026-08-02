@@ -17,6 +17,25 @@ the 0.x series.
   and deliberately does no `Status` probe, unlike `ListPrinters`, so it
   stays cheap enough to call on every page render and an unreachable
   printer can't slow the form down.
+- Web UI theming: a Theme picker in the header offers System, Light, Dark
+  and High contrast, persisted in `localStorage` and applied as a
+  `data-theme` attribute. "System" stores nothing and defers to the
+  browser's `prefers-color-scheme`.
+- `app.js`, a sitewide progressive-enhancement script: active-nav
+  highlighting, drag-and-drop onto the Assets file picker, a confirmation
+  prompt on destructive submits (asset deletion), and submit buttons that
+  disable themselves for the duration of a form navigation.
+- The Printers page renders each printer's status as a coloured badge, and
+  the Dashboard briefly flashes a Printers/Queue figure when polling
+  changes it, so a value ticking over is noticeable without watching the
+  tab.
+
+### Changed
+
+- The Web UI stylesheet is a full redesign around CSS custom-property
+  design tokens, replacing the previous minimal stylesheet. The Printers
+  and Assets tables now scroll horizontally within their own container
+  rather than widening the page on a narrow viewport.
 
 ## [0.5.1] - 2026-07-25
 

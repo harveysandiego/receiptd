@@ -2,6 +2,7 @@
 <h2>Printers</h2>
 
 {{if .Printers}}
+<div class="table-responsive">
 <table class="printers">
 <thead>
 <tr>
@@ -25,11 +26,12 @@
 <td>{{.DPI}}</td>
 <td>{{.Cut}}</td>
 <td>{{.PartialCut}}</td>
-<td>{{.Status}}</td>
+<td><span class="badge badge-{{.StatusClass}}">{{.Status}}</span></td>
 </tr>
 {{end}}
 </tbody>
 </table>
+</div>
 {{else}}
 <p>No printers configured.</p>
 {{end}}

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{block "title" .}}Receiptd{{end}}</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
 </head>
 <body>
 <header>
@@ -16,6 +17,16 @@
 <a href="/preview">Preview</a>
 <a href="/print">Print</a>
 </nav>
+<div class="theme-picker">
+<label for="theme-picker">Theme
+<select id="theme-picker">
+<option value="system">System</option>
+<option value="light">Light</option>
+<option value="dark">Dark</option>
+<option value="contrast">High contrast</option>
+</select>
+</label>
+</div>
 </header>
 <main>{{block "content" .}}<p>{{.Message}}</p>{{end}}</main>
 {{block "scripts" .}}{{end}}

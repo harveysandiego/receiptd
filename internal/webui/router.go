@@ -51,8 +51,9 @@ func NewRouter(svc *app.Service) http.Handler {
 //   - Content-Security-Policy: everything ('self') except images, which
 //     also allow data: for Preview's embedded PNG
 //     (previewPage.ImageDataURI) — no inline script or style exists
-//     anywhere in web/templates, so neither gets 'unsafe-inline', and
-//     dashboard.js is the only script, served same-origin. object-src and
+//     anywhere in web/templates, so neither gets 'unsafe-inline'.
+//     app.js and dashboard.js are the only scripts, each served
+//     same-origin as a static file. object-src and
 //     frame-ancestors are pinned to 'none' rather than left to
 //     default-src's 'self' fallback: this UI never embeds a plugin/object
 //     and is never meant to be framed by anyone, including itself, so

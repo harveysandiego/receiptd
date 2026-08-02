@@ -31,6 +31,8 @@ type printerRow struct {
 	Cut        string
 	PartialCut string
 	Status     string
+	// StatusClass is the Status badge's CSS modifier ("online"/"offline").
+	StatusClass string
 }
 
 // printersPage is the Printers page's model — the only data its template
@@ -67,14 +69,15 @@ func (h *PrintersHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		rows[i] = printerRow{
-			Name:       s.Name,
-			Transport:  s.Transport,
-			Address:    s.Address,
-			WidthDots:  s.WidthDots,
-			DPI:        s.DPI,
-			Cut:        capabilityText(s.SupportsCut),
-			PartialCut: capabilityText(s.SupportsPartialCut),
-			Status:     printerStatusText(s.Online),
+			Name:        s.Name,
+			Transport:   s.Transport,
+			Address:     s.Address,
+			WidthDots:   s.WidthDots,
+			DPI:         s.DPI,
+			Cut:         capabilityText(s.SupportsCut),
+			PartialCut:  capabilityText(s.SupportsPartialCut),
+			Status:      printerStatusText(s.Online),
+			StatusClass: printerStatusClass(s.Online),
 		}
 	}
 
@@ -108,4 +111,12 @@ func printerStatusText(online bool) string {
 		return "Online"
 	}
 	return "Offline"
+}
+
+// printerStatusClass returns printerRow.StatusClass for online.
+func printerStatusClass(online bool) string {
+	if online {
+		return "online"
+	}
+	return "offline"
 }

@@ -1,106 +1,629 @@
+/* Every rule below references these color variables, never a literal
+   color, so a theme (below) only needs to override this block. */
 :root {
   color-scheme: light;
+
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f0f1f4;
+  --color-border: #d8dbe0;
+  --color-text: #1a1c20;
+  --color-text-muted: #5f6570;
+  --color-primary: #2454e0;
+  --color-primary-hover: #1c3fb8;
+  --color-primary-contrast: #ffffff;
+  --color-success: #157347;
+  --color-success-bg: #e6f4ea;
+  --color-success-border: #a8dab8;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fbeaea;
+  --color-danger-border: #eeb4b0;
+  --color-focus-ring: #2454e0;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06), 0 1px 1px rgba(20, 20, 30, 0.04);
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Mirrored by the prefers-color-scheme block below for an unset preference. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #16181d;
+  --color-surface: #1e2127;
+  --color-surface-alt: #262a31;
+  --color-border: #363c46;
+  --color-text: #eceef1;
+  --color-text-muted: #9aa1ac;
+  --color-primary: #6d8dff;
+  --color-primary-hover: #8ba3ff;
+  --color-primary-contrast: #0d1117;
+  --color-success: #4ade80;
+  --color-success-bg: #123322;
+  --color-success-border: #1f5c3c;
+  --color-danger: #f87171;
+  --color-danger-bg: #3a1a1a;
+  --color-danger-border: #6b2b2b;
+  --color-focus-ring: #6d8dff;
+}
+
+/* Needs its own block: :root's defaults would otherwise be masked by a
+   dark system preference (below). */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f0f1f4;
+  --color-border: #d8dbe0;
+  --color-text: #1a1c20;
+  --color-text-muted: #5f6570;
+  --color-primary: #2454e0;
+  --color-primary-hover: #1c3fb8;
+  --color-primary-contrast: #ffffff;
+  --color-success: #157347;
+  --color-success-bg: #e6f4ea;
+  --color-success-border: #a8dab8;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fbeaea;
+  --color-danger-border: #eeb4b0;
+  --color-focus-ring: #2454e0;
+}
+
+:root[data-theme="contrast"] {
+  color-scheme: light;
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-alt: #eaeaea;
+  --color-border: #000000;
+  --color-text: #000000;
+  --color-text-muted: #202020;
+  --color-primary: #0033cc;
+  --color-primary-hover: #002499;
+  --color-primary-contrast: #ffffff;
+  --color-success: #005c1f;
+  --color-success-bg: #d8f0de;
+  --color-success-border: #005c1f;
+  --color-danger: #a60000;
+  --color-danger-bg: #fbdada;
+  --color-danger-border: #a60000;
+  --color-focus-ring: #0033cc;
+}
+
+/* :not([data-theme]) so an explicit "light" pick still wins on a
+   dark-mode system, regardless of stylesheet source order. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-bg: #16181d;
+    --color-surface: #1e2127;
+    --color-surface-alt: #262a31;
+    --color-border: #363c46;
+    --color-text: #eceef1;
+    --color-text-muted: #9aa1ac;
+    --color-primary: #6d8dff;
+    --color-primary-hover: #8ba3ff;
+    --color-primary-contrast: #0d1117;
+    --color-success: #4ade80;
+    --color-success-bg: #123322;
+    --color-success-border: #1f5c3c;
+    --color-danger: #f87171;
+    --color-danger-bg: #3a1a1a;
+    --color-danger-border: #6b2b2b;
+    --color-focus-ring: #6d8dff;
+  }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
-  color: #1a1a1a;
+  color: var(--color-text);
+  background: var(--color-bg);
 }
 
 header {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #ccc;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 header h1 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.25rem;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
 }
 
 nav a {
-  margin-right: 1rem;
-  color: #0645ad;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
   text-decoration: none;
+  font-weight: 500;
 }
 
 nav a:hover {
-  text-decoration: underline;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+
+nav a.active {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.theme-picker select {
+  font: inherit;
+  color: inherit;
 }
 
 main {
-  padding: 1.5rem;
+  padding: var(--space-5);
   max-width: 60rem;
+  margin: 0 auto;
 }
+
+main h2 {
+  margin-top: 0;
+}
+
+/* --- Dashboard cards --- */
 
 .summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .summary .card {
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
   min-width: 12rem;
+  flex: 1 1 12rem;
+}
+
+.summary .card h3 {
+  margin: 0 0 var(--space-2) 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
 }
 
 .summary .metric {
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin: 0.25rem 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: var(--space-1) 0;
+}
+
+.summary ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: var(--color-text-muted);
+}
+
+.summary li {
+  padding: 0.1rem 0;
+}
+
+/* dashboard.js removes this class on "animationend". */
+@keyframes flash-bg {
+  from {
+    background: var(--color-primary);
+    color: var(--color-primary-contrast);
+    border-radius: var(--radius-sm);
+  }
+  to {
+    background: transparent;
+    color: inherit;
+  }
+}
+
+.flash {
+  animation: flash-bg 900ms ease-out;
+}
+
+/* --- Tables --- */
+
+.table-responsive {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
 }
 
 table.printers,
 table.assets {
   border-collapse: collapse;
   width: 100%;
+  background: var(--color-surface);
 }
 
 table.printers th,
 table.printers td,
 table.assets th,
 table.assets td {
-  border: 1px solid #ccc;
-  padding: 0.5rem;
+  padding: var(--space-3);
   text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+table.printers thead th,
+table.assets thead th {
+  background: var(--color-surface-alt);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+table.printers tbody tr:last-child td,
+table.assets tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.printers tbody tr:nth-child(even),
+table.assets tbody tr:nth-child(even) {
+  background: var(--color-surface-alt);
+}
+
+/* --- Badges --- */
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.badge-online {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: var(--color-success-border);
+}
+
+.badge-offline {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+/* --- Forms --- */
+
+form {
+  margin-bottom: var(--space-5);
+}
+
+/* label's own display:block above beats the UA [hidden] rule (author
+   always wins over user-agent) — builder.js uses this class instead. */
+.js-hidden {
+  display: none;
+}
+
+label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-weight: 500;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="file"],
+select,
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.json-editor {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+button {
+  font: inherit;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+button.button-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+button.button-secondary:hover:not(:disabled) {
+  background: var(--color-surface-alt);
+}
+
+button.button-danger {
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+}
+
+button.button-danger:hover:not(:disabled) {
+  background: var(--color-danger-bg);
 }
 
 .upload-form {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .delete-form {
   display: inline;
 }
 
-.upload-form label,
-.preview-form label,
-.print-form label {
-  display: block;
-  margin-bottom: 0.5rem;
+.delete-form button {
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
+  padding: var(--space-1) var(--space-3);
 }
 
-.json-editor {
-  width: 100%;
-  font-family: monospace;
+.delete-form button:hover:not(:disabled) {
+  background: var(--color-danger-bg);
 }
+
+/* --- Alerts --- */
+
+.validation-message,
+.confirmation-message,
+.stale-notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.validation-message {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
+}
+
+.confirmation-message {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+
+.stale-notice {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+  border-color: var(--color-border);
+}
+
+/* --- Preview --- */
 
 .preview-area {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .preview-area img {
   max-width: 100%;
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
-.validation-message {
-  color: #a00;
+/* --- Assets dropzone (app.js) --- */
+
+.dropzone {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  text-align: center;
 }
 
-.confirmation-message {
-  color: #070;
+.dropzone.dragover {
+  border-color: var(--color-primary);
+  background: var(--color-surface-alt);
+}
+
+.dropzone-hint {
+  margin: var(--space-2) 0 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* --- Element builder (builder.js) --- */
+
+.element-builder {
+  margin-bottom: var(--space-4);
+}
+
+.builder-toggle {
+  margin-bottom: var(--space-3);
+}
+
+.copies-field {
+  max-width: 10rem;
+}
+
+.add-element-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.add-element-row select {
+  width: auto;
+  margin-top: 0;
+}
+
+.element-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.element-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+}
+
+.element-card.columns {
+  background: var(--color-surface-alt);
+}
+
+.element-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.element-card-title {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.element-card-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.element-card-actions button {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85rem;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.field-row:last-child {
+  margin-bottom: 0;
+}
+
+.field {
+  flex: 1 1 10rem;
+  margin-bottom: 0;
+}
+
+.field-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  font-weight: normal;
+}
+
+.field-checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+.column-slot {
+  border-left: 3px solid var(--color-primary);
+  padding-left: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.column-slot-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.column-slot-header .field {
+  flex: 0 0 8rem;
+  margin-bottom: 0;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 40rem) {
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  main {
+    padding: var(--space-4);
+  }
+
+  .field-row {
+    flex-direction: column;
+  }
 }

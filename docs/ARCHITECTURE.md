@@ -1390,13 +1390,16 @@ above it.
   `DashboardHandler` renders into HTML — read through the identical
   `Service.ListPrinters`/`Service.QueueSummary` calls, so there is no
   second code path, and no JSON round-trip through `internal/api`
-  (docs/adr/0022). `web/static/dashboard.js`, the Web UI's only script, is
-  a small dependency-free poller: it fetches `/status` once immediately
-  and then every five seconds, rewriting the dashboard's card text in
-  place via `getElementById`. It is wired in through a `"scripts"` block
-  in `base.tmpl` (defaulting to empty, the same last-write-wins-per-clone
-  technique used for `"content"`) that only `dashboard.tmpl` overrides —
-  no other page loads or runs it. Every `/status` response carries
+  (docs/adr/0022). `web/static/dashboard.js` is a small dependency-free
+  poller: it fetches `/status` once immediately and then every five
+  seconds, rewriting the dashboard's card text in place via
+  `getElementById`. It is wired in through a `"scripts"` block in
+  `base.tmpl` (defaulting to empty, the same last-write-wins-per-clone
+  technique used for `"content"`) that `dashboard.tmpl` overrides — the
+  per-page counterpart to `web/static/app.js`, which `base.tmpl` itself
+  loads on every page for sitewide progressive enhancement (theme
+  picker, active-nav highlighting, drag-and-drop, destructive-submit
+  confirmation). Every `/status` response carries
   `Cache-Control: no-store`, so neither the browser nor a reverse proxy
   in front of it (docs/adr/0021) ever serves a stale poll. Polling
   self-schedules its next request only once the current one settles,

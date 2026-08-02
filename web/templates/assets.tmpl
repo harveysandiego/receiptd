@@ -4,11 +4,15 @@
 <form method="post" action="/assets" enctype="multipart/form-data" class="upload-form">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <label>Name <input type="text" name="name" required></label>
+<div class="dropzone">
 <label>File <input type="file" name="file" required></label>
+<p class="dropzone-hint">Drag and drop a file here, or use the picker above.</p>
+</div>
 <button type="submit">Upload</button>
 </form>
 
 {{if .Assets}}
+<div class="table-responsive">
 <table class="assets">
 <thead>
 <tr>
@@ -23,13 +27,14 @@
 <td>
 <form method="post" action="/assets/{{.Name}}/delete" class="delete-form">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" aria-label="Delete {{.Name}}">Delete</button>
+<button type="submit" aria-label="Delete {{.Name}}" data-confirm="Delete {{.Name}}? This cannot be undone.">Delete</button>
 </form>
 </td>
 </tr>
 {{end}}
 </tbody>
 </table>
+</div>
 {{else}}
 <p>No assets stored.</p>
 {{end}}

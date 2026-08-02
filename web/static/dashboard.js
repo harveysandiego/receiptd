@@ -1,10 +1,9 @@
 // dashboard.js polls GET /status and updates the dashboard's Printers/
 // Queue cards in place, so an operator who leaves this tab open notices a
 // printer going offline or a job finishing without reloading
-// (docs/adr/0025-dashboard-updates-via-polling.md). This is the Web UI's
-// only script — plain, dependency-free, and scoped to this one job per
-// docs/adr/0022-webui-server-rendered-html-template.md: no framework, no
-// other client-side behavior.
+// (docs/adr/0025-dashboard-updates-via-polling.md). Like app.js it is
+// plain and dependency-free, and scoped to this one job per
+// docs/adr/0022-webui-server-rendered-html-template.md: no framework.
 (function () {
   "use strict";
 
@@ -32,15 +31,28 @@
     }
   }
 
+  // Flashes the element when its text actually changes between polls, so a
+  // value ticking over (e.g. queue-failed) is noticeable without staring
+  // at the tab. The "flash" class is removed on the animation's own
+  // "animationend" event (below), not a timeout.
+  function setTextWithFlash(id, text) {
+    var el = document.getElementById(id);
+    if (!el || el.textContent === text) {
+      return;
+    }
+    el.textContent = text;
+    el.classList.add("flash");
+  }
+
   function applyStatus(data) {
-    setText("printers-online", data.printers_online + " / " + data.printer_count + " online");
+    setTextWithFlash("printers-online", data.printers_online + " / " + data.printer_count + " online");
     setText("printers-status-message", data.status_message);
-    setText("queue-pending", "Pending: " + data.queue_pending);
-    setText("queue-running", "Running: " + data.queue_running);
-    setText("queue-done", "Done: " + data.queue_done);
-    setText("queue-failed", "Failed: " + data.queue_failed);
-    setText("queue-cancelled", "Cancelled: " + data.queue_cancelled);
-    setText("queue-total", data.queue_total + " total");
+    setTextWithFlash("queue-pending", "Pending: " + data.queue_pending);
+    setTextWithFlash("queue-running", "Running: " + data.queue_running);
+    setTextWithFlash("queue-done", "Done: " + data.queue_done);
+    setTextWithFlash("queue-failed", "Failed: " + data.queue_failed);
+    setTextWithFlash("queue-cancelled", "Cancelled: " + data.queue_cancelled);
+    setTextWithFlash("queue-total", data.queue_total + " total");
   }
 
   // poll schedules its own successor only once its fetch fully settles
@@ -95,11 +107,18 @@
     }
   }
 
+  function onFlashAnimationEnd(e) {
+    if (e.animationName === "flash-bg") {
+      e.target.classList.remove("flash");
+    }
+  }
+
   // Guards against running on a page that doesn't have these elements —
   // this script is only ever included by dashboard.tmpl, but the guard
   // keeps it a no-op rather than a console error if that ever changes.
   if (document.getElementById("printers-online")) {
     document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("animationend", onFlashAnimationEnd);
     poll();
   }
 })();
