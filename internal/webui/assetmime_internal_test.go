@@ -1,6 +1,9 @@
 package webui
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 // pngBytes/gifBytes are the shortest byte sequences http.DetectContentType
 // recognises as those types — enough to exercise the sniff cross-check
@@ -75,6 +78,11 @@ func TestFormatSize(t *testing.T) {
 		{1536, "1.5 KB"},
 		{1048576, "1.0 MB"},
 		{1073741824, "1.0 GB"},
+		{1 << 40, "1.0 TB"},
+		// Above 1 PiB, exp reaches 4 — formatSize used to index "KMGT"[4]
+		// and panic; these two guard against that regressing.
+		{1 << 50, "1.0 PB"},
+		{math.MaxInt64, "8.0 EB"},
 	}
 	for _, tt := range tests {
 		if got := formatSize(tt.in); got != tt.want {

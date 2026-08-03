@@ -15,8 +15,11 @@ List(ctx context.Context) ([]string, error)
 Adding an asset browser — thumbnails plus a size and modified time per row
 — needs two facts `List` doesn't carry. Both implementations already have
 them at the moment `List` runs: `filesystemStore` calls `os.ReadDir`, whose
-`fs.DirEntry` exposes `Info()` with size and mod time and no additional
-syscall; `memoryStore` knows `len(data)` outright.
+`fs.DirEntry` exposes `Info()` with size and mod time; on Windows this is
+free (`FindNextFile` already returned the metadata), while on Unix it costs
+one additional `lstat` per entry — still one `lstat` per asset rather than
+the `Stat`-per-row the rejected alternative below requires. `memoryStore`
+knows `len(data)` outright.
 
 `app.AssetSummary`'s own doc comment already anticipated this ("a later
 field (size, content type) can be added without changing
@@ -58,8 +61,9 @@ implemented in `internal/webui` — not a property of a stored byte slice.
 
 ## Consequences
 
-- The Assets page gets size and modified time for free, in the same call
-  it already made. No second round of I/O per row.
+- The Assets page gets size and modified time in the same call it already
+  made, with no second round-trip per row (just, on Unix, the per-entry
+  `lstat` `Info()` already does).
 - `List` is a wider contract than it was: both implementations must now
   populate three fields correctly, and `memoryStore` carries a `modTime`
   it has no intrinsic need for. That is a real cost, paid to keep the two

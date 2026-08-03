@@ -25,7 +25,7 @@ func formatSize(n int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // assetsTemplate clones baseTemplate and layers assets.tmpl's "content"

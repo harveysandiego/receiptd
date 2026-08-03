@@ -39,12 +39,10 @@ func main() {
 
 	// Before loadAndBuild, so --version still works with no config file —
 	// the state someone filing a bug report may well be in.
+	fmt.Println(versionLine())
 	if *showVersion {
-		fmt.Println(versionLine())
 		return
 	}
-
-	fmt.Println(versionLine())
 
 	d, err := loadAndBuild(*configPath)
 	if err != nil {

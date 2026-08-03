@@ -192,15 +192,24 @@ func TestStore_List_OverwriteAdvancesModTime(t *testing.T) {
 			}
 
 			// Filesystem mod times have coarse resolution on some platforms;
-			// without a gap the second Put can land in the same tick.
-			time.Sleep(10 * time.Millisecond)
-
-			if err := s.Put(ctx, "logo.png", []byte("second")); err != nil {
-				t.Fatalf("Put() error = %v, want nil", err)
-			}
-			after, err := s.List(ctx)
-			if err != nil {
-				t.Fatalf("List() error = %v, want nil", err)
+			// retry the overwrite with backoff until ModTime actually
+			// advances rather than trusting a single fixed sleep to clear
+			// whatever tick granularity the underlying filesystem has.
+			var after []assets.Info
+			sleep := 10 * time.Millisecond
+			for i := 0; i < 10; i++ {
+				time.Sleep(sleep)
+				if err := s.Put(ctx, "logo.png", []byte("second")); err != nil {
+					t.Fatalf("Put() error = %v, want nil", err)
+				}
+				after, err = s.List(ctx)
+				if err != nil {
+					t.Fatalf("List() error = %v, want nil", err)
+				}
+				if after[0].ModTime.After(before[0].ModTime) {
+					break
+				}
+				sleep *= 2
 			}
 			if !after[0].ModTime.After(before[0].ModTime) {
 				t.Errorf("ModTime after overwrite = %v, want later than %v", after[0].ModTime, before[0].ModTime)
