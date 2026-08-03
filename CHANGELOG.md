@@ -9,6 +9,8 @@ the 0.x series.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-03
+
 ### Added
 
 - The running build is now readable from every operator-facing seam: a
@@ -97,6 +99,9 @@ the 0.x series.
   which refuses to unlink a file that is still open where Linux allows
   it — so `go test ./...` was reliably red on a Windows checkout and
   green everywhere else.
+- The Assets page's size column panicked (index out of range) for any
+  stored asset of 1 PiB or larger, taking down `GET /assets` entirely
+  until the offending file was removed.
 
 ## [0.5.1] - 2026-07-25
 
@@ -346,7 +351,8 @@ First tagged release. Covers
 - Repository scaffolding: architecture documentation, ADRs, CI/CD, and
   contribution guidelines — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/harveysandiego/receiptd/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/harveysandiego/receiptd/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/harveysandiego/receiptd/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/harveysandiego/receiptd/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/harveysandiego/receiptd/compare/v0.3.1...v0.4.0
