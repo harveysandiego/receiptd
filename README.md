@@ -14,6 +14,7 @@ appliance on your home network.
 [![codecov](https://codecov.io/gh/harveysandiego/receiptd/graph/badge.svg)](https://codecov.io/gh/harveysandiego/receiptd)
 [![Go Reference](https://pkg.go.dev/badge/github.com/harveysandiego/receiptd.svg)](https://pkg.go.dev/github.com/harveysandiego/receiptd)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/harveysandiego/receiptd)](go.mod)
+[![Release](https://img.shields.io/github/v/release/harveysandiego/receiptd)](https://github.com/harveysandiego/receiptd/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Status:** pre-alpha. Milestones 1–5 (local render, REST API + queue +
